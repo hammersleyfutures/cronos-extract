@@ -19,7 +19,7 @@ from cronos_builder import (
     write_database,
 )
 
-from cronos_extract.Database import Database
+from cronos_extract.Database import KOD_HINT, Database
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
 
 FIELD_VALUES = [b"42", b"text", "Привет".encode("cp1251"), b"1240315", b"0930", b"", b"seven", b"", b"", b"", b"eleven"]
@@ -112,7 +112,12 @@ def test_encrypted_database_decodes_only_with_its_kod(tmp_path: Path, capsys: py
     with Database(dbdir, False, KODcoding(kod)) as db:
         (table,) = db.enumerate_tables()
     assert table.tablename == "erdgeist"
+    capsys.readouterr()
 
     with Database(dbdir, False, KODcoding(INITIAL_KOD)) as db:
         assert list(db.enumerate_tables()) == []
-    assert "ERROR decoding db definition" in capsys.readouterr().err
+    assert capsys.readouterr().err.splitlines() == [
+        "WARN: expected dbinfo to start with 0x03",
+        "ERROR decoding db definition: the database definition is cut off after 0 keys",
+        KOD_HINT,
+    ]
