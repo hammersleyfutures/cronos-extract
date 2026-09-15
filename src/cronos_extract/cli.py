@@ -1,5 +1,5 @@
 # ABOUTME: The cronos-extract command: an argparse parser whose subcommands read CronosPro databases.
-# ABOUTME: Holds only the survey subcommand for now; the export, inspect and crack subcommands follow.
+# ABOUTME: Its survey subcommand reports the format version of every database under the directories given.
 import argparse
 import sys
 from pathlib import Path
@@ -13,7 +13,12 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands = parser.add_subparsers(dest="subcommand", required=True)
     survey_parser = subcommands.add_parser("survey", help="report the CronosPro version of every database found")
     output = survey_parser.add_mutually_exclusive_group()
-    output.add_argument("--counts", action="store_true", help="print only counts per version, naming no directories")
+    output.add_argument(
+        "--counts",
+        action="store_true",
+        help="print only a count of the files of each version and generation, and of those that could not be read, "
+        "naming no directories",
+    )
     output.add_argument("--jsonl", action="store_true", help="print one JSON object per database")
     survey_parser.add_argument(
         "--list",

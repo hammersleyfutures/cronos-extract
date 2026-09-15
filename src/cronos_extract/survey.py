@@ -86,7 +86,11 @@ def format_text(databases: Iterable[SurveyedDatabase]) -> Iterator[str]:
 
 
 def format_counts(databases: Iterable[SurveyedDatabase]) -> Iterator[str]:
-    """Yield one line per version with the number of files, naming no directories."""
+    """
+    Yield a line per version and generation with the number of files, naming no directories.
+
+    A last line gives the number of files whose header could not be read, when there are any.
+    """
     counts: Counter[tuple[str, str]] = Counter()
     problems = 0
     for database in databases:
