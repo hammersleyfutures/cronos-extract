@@ -24,3 +24,12 @@ def test_unreadable_datafile_leaves_no_open_files(tmp_path: Path) -> None:
 
     with pytest.raises(Exception, match="not a Crofile"):
         Database(str(tmp_path), False, KODcoding(INITIAL_KOD))
+
+
+def test_enumerate_tables_names_the_missing_crostru_files(tmp_path: Path) -> None:
+    (tmp_path / "CroBank.dat").write_bytes(b"")
+    with Database(str(tmp_path), False, KODcoding(INITIAL_KOD)) as db, pytest.raises(FileNotFoundError) as error:
+        list(db.enumerate_tables())
+
+    assert "CroStru.dat" in str(error.value)
+    assert str(tmp_path) in str(error.value)

@@ -1,6 +1,7 @@
 # ABOUTME: Decodes CronosPro table definitions, field definitions and records.
 # ABOUTME: Turns raw field bytes into presentable content such as dates, times, file references and text.
 # -*- coding: utf-8 -*-
+import sys
 from typing import override
 
 from .hexdump import ashex, tohex
@@ -52,7 +53,7 @@ class FieldDefinition:
             2: "VARCHAR(" + str(self.maxval) + ")",
             3: "TEXT",  # dictionaray
             4: "DATE",
-            5: "TIMESTAMP",
+            5: "TIME",
             6: "TEXT",  # file reference
         }.get(self.typ, "TEXT")
 
@@ -128,7 +129,7 @@ class TableDefinition:
             # Then there's another unknow dword and then (probably section indicator) 02 byte
             self.unk8_ = rd.readdword()
             if rd.readbyte() != 2:
-                print("Warning: FieldDefinition Section 2 not marked with a 2")
+                print("Warning: FieldDefinition Section 2 not marked with a 2", file=sys.stderr)
             self.unk9 = rd.readdword()
 
             # Then there's the amount of extra fields in the second section
@@ -139,14 +140,14 @@ class TableDefinition:
                 fielddef = rd.readbytes(deflen)
                 self.fields.append(FieldDefinition(fielddef))
         except Exception as e:
-            print(f"Warning: Error '{e}' parsing FieldDefinitions")
+            print(f"Warning: Error '{e}' parsing FieldDefinitions", file=sys.stderr)
 
         try:
             self.terminator = rd.readdword()
         except EOFError:
-            print("Warning: FieldDefinition section not terminated")
+            print("Warning: FieldDefinition section not terminated", file=sys.stderr)
         except Exception as e:
-            print(f"Warning: Error '{e}' parsing Tabledefinition")
+            print(f"Warning: Error '{e}' parsing Tabledefinition", file=sys.stderr)
 
         self.fields.sort(key=lambda field: field.idx2)
 
@@ -203,7 +204,7 @@ class Field:
                 y, m, d = 1900 + int(data[:-4]), int(data[-4:-2]), int(data[-2:])
                 self.content = f"{y:04d}-{m:02d}-{d:02d}"
             except ValueError:
-                self.content = str(data)
+                self.content = data.decode("cp1251", "ignore")
 
         elif self.typ == 5:
             # typ 5 is TIME, formatted like: <hour:2digits><minute:2digits>
@@ -212,7 +213,7 @@ class Field:
                 h, m = int(data[-4:-2]), int(data[-2:])
                 self.content = f"{h:02d}:{m:02d}"
             except ValueError:
-                self.content = str(data)
+                self.content = data.decode("cp1251", "ignore")
 
         elif self.typ == 6:
             # decode internal file reference
@@ -253,14 +254,34 @@ class Record:
         # the system number, in russian: Системный номер.
         self.fields = [Field(tabledef[0], str(recno))]
 
+        # (field name, description of the error) for every field that could not be decoded.
+        # Those fields are kept with empty content, so the record still has one field per field definition.
+        self.errors = []
+
         rd = ByteReader(data)
         for fielddef in tabledef[1:]:
-            if not rd.eof() and rd.testbyte(0x1B):
-                # read complex record indicated by b"\x1b"
-                rd.readbyte()
-                size = rd.readdword()
-                fielddata = rd.readbytes(size)
-            else:
-                fielddata = rd.readtoseperator(b"\x1e")
+            try:
+                if not rd.eof() and rd.testbyte(0x1B):
+                    # read complex record indicated by b"\x1b"
+                    rd.readbyte()
+                    size = rd.readdword()
+                    fielddata = rd.readbytes(size)
+                else:
+                    fielddata = rd.readtoseperator(b"\x1e")
+            except Exception as e:
+                # Without this field's length, the start of the next field is unknown: leave the rest empty too.
+                self.errors.append((fielddef.name, f"{describe_error(e)}; the fields after it are left empty too"))
+                self.fields.extend(Field(emptydef, b"") for emptydef in tabledef[len(self.fields) :])
+                return
 
-            self.fields.append(Field(fielddef, fielddata))
+            try:
+                self.fields.append(Field(fielddef, fielddata))
+            except Exception as e:
+                self.errors.append((fielddef.name, describe_error(e)))
+                self.fields.append(Field(fielddef, b""))
+
+
+def describe_error(error):
+    """Return the type and, when it has one, the message of `error`, such as "EOFError" or "ValueError: bad"."""
+    message = str(error)
+    return f"{type(error).__name__}: {message}" if message else type(error).__name__

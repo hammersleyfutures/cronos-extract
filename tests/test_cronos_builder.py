@@ -66,4 +66,4 @@ def test_encrypted_database_decodes_only_with_its_kod(tmp_path: Path, capsys: py
 
     with Database(dbdir, False, KODcoding(INITIAL_KOD)) as db:
         assert list(db.enumerate_tables()) == []
-    assert "ERROR decoding db definition" in capsys.readouterr().out
+    assert "ERROR decoding db definition" in capsys.readouterr().err
