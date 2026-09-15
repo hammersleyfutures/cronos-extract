@@ -23,6 +23,9 @@ DAT_HEADER = struct.Struct("<8sH5sHH")
 DAT_HEADER_PADDING = 0xE9
 TAD_V3_HEADER = struct.Struct("<2L")
 TAD_V3_ENTRY = struct.Struct("<LLL")
+BLOCKSIZE = 0x40
+# Size of the .dat file header and the padding that follows it; the first record starts here.
+DAT_PREFIX_SIZE = DAT_HEADER.size + DAT_HEADER_PADDING
 # Version 01.04 is a 32-bit v3 file whose records are decoded with the database's own KOD table.
 ENCRYPTED_V3_VERSION = b"01.04"
 # A non-zero flag byte in the top of a v3 .tad length marks a record stored inline, not in extension blocks.
@@ -39,28 +42,39 @@ def random_kod(seed: int) -> list[int]:
     return kod
 
 
+def write_raw_datafile(
+    directory: Path, name: str, body: bytes, tad_entries: Sequence[tuple[int, int]], encoding: int = 0
+) -> None:
+    """Write Cro<name>.dat holding `body` after the file header, and Cro<name>.tad with one entry per record.
+
+    Each entry is (absolute file offset, length field); the body starts at DAT_PREFIX_SIZE. This lets tests lay
+    out inline, extended or corrupt records byte by byte.
+    """
+    dat = DAT_HEADER.pack(b"CroFile\x00", 0, ENCRYPTED_V3_VERSION, encoding, BLOCKSIZE) + bytes(DAT_HEADER_PADDING)
+    tad = TAD_V3_HEADER.pack(0, 0) + b"".join(TAD_V3_ENTRY.pack(offset, length, 0) for offset, length in tad_entries)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"Cro{name}.dat").write_bytes(dat + body)
+    (directory / f"Cro{name}.tad").write_bytes(tad)
+
+
 def write_datafile(
     directory: Path, name: str, records: Sequence[bytes | None], kod: Sequence[int] | None = None
 ) -> None:
-    """Write Cro<name>.dat and Cro<name>.tad holding `records`, where None marks a deleted record.
+    """Write Cro<name>.dat and Cro<name>.tad holding `records` inline, where None marks a deleted record.
 
     With `kod`, each record is KOD-encoded using its record number as the shift and the encoding bit is set.
     """
     coder = KODcoding(list(kod)) if kod is not None else None
-    encoding = 1 if coder else 0
-    dat = bytearray(DAT_HEADER.pack(b"CroFile\x00", 0, ENCRYPTED_V3_VERSION, encoding, 0x40))
-    dat += bytes(DAT_HEADER_PADDING)
-    tad = bytearray(TAD_V3_HEADER.pack(0, 0))
+    body = bytearray()
+    tad_entries = []
     for recno, plain in enumerate(records, start=1):
         if plain is None:
-            tad += TAD_V3_ENTRY.pack(0, DELETED_RECORD_LENGTH, 0)
+            tad_entries.append((0, DELETED_RECORD_LENGTH))
             continue
         stored = coder.encode(recno, plain) if coder else plain
-        tad += TAD_V3_ENTRY.pack(len(dat), len(stored) | INLINE_RECORD_FLAGS << 24, 0)
-        dat += stored
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / f"Cro{name}.dat").write_bytes(dat)
-    (directory / f"Cro{name}.tad").write_bytes(tad)
+        tad_entries.append((DAT_PREFIX_SIZE + len(body), len(stored) | INLINE_RECORD_FLAGS << 24))
+        body += stored
+    write_raw_datafile(directory, name, bytes(body), tad_entries, encoding=1 if coder else 0)
 
 
 def stru_records_from_test_db() -> list[bytes | None]:

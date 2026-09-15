@@ -3,9 +3,24 @@
 import io
 import struct
 import zlib
+from typing import NamedTuple
 
 from . import koddecoder
 from .hexdump import tohex, toout
+
+
+class ExtendedRecord(NamedTuple):
+    """
+    A record reassembled from extension blocks.
+
+    `tail` holds the bytes read past the record's end; `chain` holds the first block offset from the record
+    header followed by the next-block offset read from each extension block.
+    """
+
+    data: bytes
+    tail: bytes
+    length: int
+    chain: list[int]
 
 
 class Datafile:
@@ -169,25 +184,7 @@ class Datafile:
             # empty record
             encdat = dat
         elif not flags:
-            if self.use64bit:
-                extofs, extlen = struct.unpack("<QL", dat[:12])
-                o = 12
-            else:
-                extofs, extlen = struct.unpack("<LL", dat[:8])
-                o = 8
-
-            encdat = dat[o:]
-            while len(encdat) < extlen:
-                dat = self.readdata(extofs, self.blocksize)
-                if self.use64bit:
-                    (extofs,) = struct.unpack("<Q", dat[:8])
-                    o = 8
-                else:
-                    (extofs,) = struct.unpack("<L", dat[:4])
-                    o = 4
-                encdat += dat[o:]
-
-            encdat = encdat[:extlen]
+            encdat = self.readextendedrecord(idx, dat).data
         else:
             encdat = dat
 
@@ -198,6 +195,35 @@ class Datafile:
             encdat = self.decompress(encdat)
 
         return encdat
+
+    def readextendedrecord(self, idx, dat):
+        """
+        Reassemble record `idx` from extension blocks, given `dat`, the record's first block.
+
+        The first block holds the offset of the first extension block, the record length, then data; each
+        extension block starts with the offset of the next one. Raises ValueError when the header is truncated,
+        the length exceeds the file, the blocks loop, or a block lies past the end of the file.
+        """
+        headersize, pointersize, pointerformat = (12, 8, "<Q") if self.use64bit else (8, 4, "<L")
+        where = f"record {idx} in Cro{self.name}.dat"
+        if len(dat) < headersize:
+            raise ValueError(f"{where} is shorter than its {headersize}-byte extended record header")
+        extofs, extlen = struct.unpack("<QL" if self.use64bit else "<LL", dat[:headersize])
+        if extlen > self.datsize:
+            raise ValueError(f"{where} claims {extlen} bytes, more than the file holds")
+
+        encdat = dat[headersize:]
+        chain = [extofs]
+        while len(encdat) < extlen:
+            if extofs in chain[:-1]:
+                raise ValueError(f"{where} has a loop in its extension blocks at offset {extofs:#x}")
+            block = self.readdata(extofs, self.blocksize)
+            if len(block) <= pointersize:
+                raise ValueError(f"{where} has an extension block past the end of the file at offset {extofs:#x}")
+            (extofs,) = struct.unpack(pointerformat, block[:pointersize])
+            chain.append(extofs)
+            encdat += block[pointersize:]
+        return ExtendedRecord(encdat[:extlen], encdat[extlen:], extlen, chain)
 
     def enumrecords(self):
         for i in range(self.nrofrecords):
@@ -263,27 +289,17 @@ class Datafile:
                 # empty record
                 encdat = dat
             elif not flags:
-                if self.use64bit:
-                    extofs, extlen = struct.unpack("<QL", dat[:12])
-                    o = 12
-                else:
-                    extofs, extlen = struct.unpack("<LL", dat[:8])
-                    o = 8
-                infostr = f"{extofs:08x};{extlen:08x}"
-                encdat = dat[o:]
-                while len(encdat) < extlen:
-                    dat = self.readdata(extofs, self.blocksize)
-                    ranges.append((extofs, extofs + self.blocksize, f"item #{i:d} ext"))
-                    if self.use64bit:
-                        (extofs,) = struct.unpack("<Q", dat[:8])
-                        o = 8
-                    else:
-                        (extofs,) = struct.unpack("<L", dat[:4])
-                        o = 4
-                    infostr += f";{extofs:08x}"
-                    encdat += dat[o:]
-                tail = encdat[extlen:]
-                encdat = encdat[:extlen]
+                try:
+                    extended = self.readextendedrecord(idx, dat)
+                except ValueError as e:
+                    print(f"{idx:5d}: {ofs:08x}-{ofs + ln:08x}: ({flags:02x}:{chk:08x}) <{e}>")
+                    continue
+                infostr = ";".join(
+                    f"{value:08x}" for value in [extended.chain[0], extended.length, *extended.chain[1:]]
+                )
+                for blockofs in extended.chain[:-1]:
+                    ranges.append((blockofs, blockofs + self.blocksize, f"item #{i:d} ext"))
+                encdat, tail = extended.data, extended.tail
                 decflags[0] = "+"
             else:
                 encdat = dat
