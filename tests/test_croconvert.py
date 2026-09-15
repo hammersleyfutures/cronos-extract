@@ -18,8 +18,16 @@ from cronos_builder import (
     complex_field,
     file_record,
     file_reference_field,
+    stru_records_from_test_db,
     write_database,
+    write_datafile,
 )
+
+from cronos_extract.Database import Database
+from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
+
+# The offset of the table id in a table definition of TEST_DB, which has version 3 and an extra dword.
+TABLE_ID_OFFSET = 14
 
 
 def run_croconvert(args: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
@@ -349,3 +357,42 @@ def test_croconvert_stops_with_a_clear_message_without_crostru(tmp_path: Path) -
     assert "CroStru.dat" in result.stderr
     assert dbdir in result.stderr
     assert result.stdout == ""
+
+
+def duplicate_table_name_database(directory: Path) -> str:
+    """Write a database with two tables named "erdgeist", ids 1 and 2, holding records "one" and "two".
+
+    The second table is the first table's definition with its table id changed, added to CroStru's
+    database definition as an inline Base002 entry.
+    """
+    stru = stru_records_from_test_db()
+    with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD)) as db:
+        assert db.stru is not None
+        base001 = db.decode_db_definition(db.stru.readrec(1)[1:])["Base001"]
+    base002 = base001[:TABLE_ID_OFFSET] + struct.pack("<L", 2) + base001[TABLE_ID_OFFSET + 4 :]
+    name = b"Base002"
+    database_definition = stru[0]
+    assert database_definition is not None
+    stru[0] = database_definition + bytes([len(name)]) + name + struct.pack("<L", len(base002) | 0x80000000) + base002
+    write_datafile(directory, "Stru", stru)
+
+    fields_one = [b""] * TEST_TABLE_FIELD_COUNT
+    fields_one[1] = b"one"
+    fields_two = [b""] * TEST_TABLE_FIELD_COUNT
+    fields_two[1] = b"two"
+    write_datafile(directory, "Bank", [bank_record(TEST_TABLE_ID, fields_one), bank_record(2, fields_two)])
+    return str(directory)
+
+
+def test_csv_export_writes_tables_with_the_same_name_to_different_files(tmp_path: Path) -> None:
+    dbdir = duplicate_table_name_database(tmp_path / "db")
+    outdir = tmp_path / "out"
+
+    result = run_croconvert(["--csv", "-o", str(outdir), dbdir])
+
+    assert result.returncode == 0, result.stderr
+    tables = {}
+    for path in outdir.glob("*.csv"):
+        with path.open(encoding="utf-8", newline="") as csvfile:
+            tables[path.name] = [row[2] for row in list(csv.reader(csvfile))[1:]]
+    assert tables == {"erdgeist.csv": ["one"], "erdgeist-2.csv": ["two"]}

@@ -112,8 +112,12 @@ def csv_output(kod, args):
     filereferences = []
 
     # first dump all non-file tables
+    table_names = {}
     for table in db.enumerate_tables(files=False):
-        tablesafename = safepathname(table.tablename) + ".csv"
+        tablesafename = unique_file_name(table.tablename, "csv", table.tableid, table_names)
+        if tablesafename is None:
+            # a table with this name and table id is already written, and would hold the same records
+            continue
 
         with open(tablesafename, "w", encoding="utf-8") as csvfile:
             writer = csv.writer(csvfile, delimiter=args.delimiter, escapechar="\\")
