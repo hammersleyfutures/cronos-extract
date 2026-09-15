@@ -179,6 +179,33 @@ def test_strucrack_text_plaintext_may_contain_colons(tmp_path: Path, capsys: pyt
     assert "00000 a:b" in capsys.readouterr().out
 
 
+def suggested_switches(output: str, found: str) -> list[str]:
+    """Return the -f values strucrack suggests after the line that starts with `found`."""
+    lines = output.splitlines()
+    start = next(n for n, line in enumerate(lines) if line.startswith(found))
+    return lines[start + 2].split()[1::2]
+
+
+@pytest.mark.parametrize(
+    ("record", "found", "switch_count"),
+    [
+        # "Version" is suggested from one byte before the match, which lies before the record.
+        (b"Versiox" + bytes(20), "Found Versiox", 7),
+        # "Системный номер" is suggested from 7 bytes before to 5 bytes after the match, past the record's end.
+        (bytes(10) + "Системный номеж".encode("cp1251"), "Found Системный", 25 - 3),
+    ],
+    ids=["match-at-record-start", "match-at-record-end"],
+)
+def test_strucrack_suggests_switches_only_for_bytes_inside_the_record(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], record: bytes, found: str, switch_count: int
+) -> None:
+    write_datafile(tmp_path / "db", "Stru", [*[bytes(256)] * 8, record], KOD)
+
+    derive_from_stru(str(tmp_path / "db"))
+
+    assert len(suggested_switches(capsys.readouterr().out, found)) == switch_count
+
+
 def test_strucrack_applies_a_fix_given_as_a_character(encrypted_db: str) -> None:
     # Force KOD[5] to its true value, so that encrypted byte 05 decodes to "A" at this shift.
     shift = (KOD[5] - ord("A")) % 256

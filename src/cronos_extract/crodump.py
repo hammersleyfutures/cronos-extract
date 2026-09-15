@@ -289,10 +289,11 @@ def derive_kod_from_stru(db, args):
                 print(f"Found {asasc(candidate[do : do + len(s)])} which looks a lot like {asasc(s)} ")
                 print("Add the following switches to your command line to fix the decoder box:\n    ", end="")
                 for o, c in enumerate(deststring):
-                    print(
-                        f"-f {data[do + o + destoffset]:02x}{(do + i + 1 + o + destoffset) % 256:02x}{c:02x} ",
-                        end="",
-                    )
+                    # the known string can reach before or past this record, where there is no byte to fix
+                    pos = do + o + destoffset
+                    if not 0 <= pos < len(data):
+                        continue
+                    print(f"-f {data[pos]:02x}{(pos + i + 1) % 256:02x}{c:02x} ", end="")
                 print("\n")
 
         candidate_chunks = [candidate[j : j + w] for j in range(0, len(candidate), w)]
