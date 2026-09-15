@@ -279,6 +279,32 @@ def test_strucrack_rejects_an_invalid_fix(encrypted_db: str, fix: str, message: 
     assert message in result.stderr
 
 
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        ("0:0:0", "invalid text '0:0:0'"),
+        ("0:0:x:abc", "invalid text '0:0:x:abc'"),
+        ("-1:0:0:a", "invalid text '-1:0:0:a'"),
+        ("0:0:0:中", "can't be encoded as CP-1251"),
+        ("99:0:0:a", "record 99 doesn't exist"),
+        ("8:0:0:a", "record 8 is deleted or empty"),
+        ("9:0:0:a", "record 9 is deleted or empty"),
+        ("0:250:0:abcdefgh", "runs past the end of record 0"),
+    ],
+    ids=["no-plaintext", "not-a-number", "negative", "not-cp1251", "no-such-record", "deleted", "empty", "too-long"],
+)
+def test_strucrack_rejects_text_that_does_not_fit_the_database(tmp_path: Path, text: str, message: str) -> None:
+    # Records 0..7 hold 256 zero bytes each, record 8 is deleted and record 9 is empty.
+    write_datafile(tmp_path / "db", "Stru", [*[bytes(256)] * 8, None, b""], KOD)
+
+    # --text=value, so that argparse takes a value starting with "-" as the value, not as an option
+    result = run_command("crodump", ["strucrack", f"--text={text}", str(tmp_path / "db")])
+
+    assert result.returncode != 0
+    assert "Traceback" not in result.stderr
+    assert message in result.stderr
+
+
 @pytest.mark.parametrize("width", ["0", "-3"])
 def test_strucrack_rejects_a_width_that_is_not_positive(encrypted_db: str, width: str) -> None:
     result = run_command("crodump", ["strucrack", "--width", width, encrypted_db])

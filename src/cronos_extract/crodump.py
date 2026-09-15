@@ -165,6 +165,34 @@ def positive_int(value):
     return number
 
 
+TEXT_FORMAT = "use record:line:offset:plaintext, with the record, line and offset that the strucrack dump shows"
+
+
+def parse_text(value):
+    """
+    Parse a strucrack --text value into (record number, offset in the record, CP-1251 plaintext bytes).
+
+    Raises argparse.ArgumentTypeError with the reason when the value can't be parsed.
+    """
+    parts = value.split(":", 3)
+    try:
+        if len(parts) != 4:
+            raise ValueError("expected four parts separated by ':'")
+        record, line, offset = [int(part) for part in parts[:3]]
+        if min(record, line, offset) < 0:
+            raise ValueError("record, line and offset can't be negative")
+        plaintext = as1251(parts[3])
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(f"invalid text {value!r}: {e}; {TEXT_FORMAT}") from e
+    return record, line + offset, plaintext
+
+
+class CrackInputError(Exception):
+    """
+    A strucrack option that doesn't fit the database being cracked.
+    """
+
+
 def strucrack(kod, args):
     """
     This function derives the KOD key from the assumption that most bytes in
@@ -240,14 +268,23 @@ def derive_kod_from_stru(db, args):
         # print("%02x %02x %02x" % ((c + o) % 256, i, o))
 
     # For chunks of text where record and offset is known, set the KOD
-    for fix in args.text or []:
-        record, line, offset, text = fix.split(":", 3)
-        data = table.readrec(int(record) + 1)
-        dataoff = int(line) + int(offset)
-        o = int(record) + 1 + int(line) + int(offset)
+    for record, dataoff, text in args.text or []:
+        if record >= table.nrofrecords:
+            raise CrackInputError(
+                f"--text: record {record:d} doesn't exist, the file has records 0 to {table.nrofrecords - 1:d}"
+            )
+        data = table.readrec(record + 1)
+        if not data:
+            raise CrackInputError(f"--text: record {record:d} is deleted or empty")
+        if dataoff + len(text) > len(data):
+            raise CrackInputError(
+                f"--text: {len(text):d} bytes at offset {dataoff:d} runs past the end of record {record:d}, "
+                f"which has {len(data):d} bytes"
+            )
+        o = record + 1 + dataoff
         for i, c in enumerate(text):
             d = data[dataoff + i]
-            KOD[d] = (int.from_bytes(as1251(c), "little") + o + i) % 256
+            KOD[d] = (c + o + i) % 256
             KOD_CONFIDENCE[d] = 255
             KOD_FORCED[d] = True
 
@@ -540,6 +577,7 @@ def build_parser():
         "-t",
         action="append",
         dest="text",
+        type=parse_text,
         help="add fixed bytes to decoder box by providing whole strings for a position in a record, "
         "format is record:line:offset:plaintext",
     )
@@ -599,7 +637,10 @@ def main():
         kod = koddecoder.new()
 
     if args.handler:
-        result = args.handler(kod, args)
+        try:
+            result = args.handler(kod, args)
+        except CrackInputError as e:
+            sys.exit(str(e))
         # strucrack --noninteractive stops with status 1 when it can't derive the KOD
         if result is None and getattr(args, "noninteractive", False):
             sys.exit(1)
