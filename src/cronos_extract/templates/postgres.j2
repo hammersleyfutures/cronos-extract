@@ -1,8 +1,11 @@
 {#- ABOUTME: Jinja2 template that renders CronosPro tables as PostgreSQL CREATE TABLE statements and one INSERT per record. -#}
-{#- ABOUTME: Quotes identifiers and doubles single quotes in values. -#}
-{% for table in db.enumerate_tables(files=False) %}
+{#- ABOUTME: Gives every table a unique quoted name and writes values as SQL literals, with NULL for empty non-text values. -#}
+{% set sql_table_names = {} %}
+{%- for table in db.enumerate_tables(files=False) %}
+{%- set tablename = unique_sql_table_name(table, sql_table_names) %}
+{%- if tablename is not none %}
 
-CREATE TABLE "{{ table.tablename | replace('"', '_') }}" (
+CREATE TABLE "{{ tablename }}" (
     {%- for field in table.fields %}
         "{{ field.name | replace('"', '_') }}" {{ field.sqltype() -}}
         {{- ", " if not loop.last else "" -}}
@@ -10,10 +13,11 @@ CREATE TABLE "{{ table.tablename | replace('"', '_') }}" (
 );
 
 {% for record in db.enumerate_records( table ) -%}
-INSERT INTO "{{ table.tablename | replace('"', '_') }}" VALUES (
+INSERT INTO "{{ tablename }}" VALUES (
     {%- for field in record.fields -%}
-        '{{ field.content | replace("'", "''") }}' {{- ", " if not loop.last else "" -}}
+        {{ sql_value(table.fields[loop.index0], field) }} {{- ", " if not loop.last else "" -}}
     {%- endfor -%}
 );
 {% endfor %}
+{%- endif %}
 {% endfor %}

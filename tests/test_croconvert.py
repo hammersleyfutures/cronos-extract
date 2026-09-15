@@ -396,3 +396,30 @@ def test_csv_export_writes_tables_with_the_same_name_to_different_files(tmp_path
         with path.open(encoding="utf-8", newline="") as csvfile:
             tables[path.name] = [row[2] for row in list(csv.reader(csvfile))[1:]]
     assert tables == {"erdgeist.csv": ["one"], "erdgeist-2.csv": ["two"]}
+
+
+def test_postgres_output_gives_tables_with_the_same_name_different_names(tmp_path: Path) -> None:
+    dbdir = duplicate_table_name_database(tmp_path / "db")
+
+    result = run_croconvert(["-t", "postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    creates = [line for line in result.stdout.splitlines() if line.startswith("CREATE TABLE")]
+    assert creates == ['CREATE TABLE "erdgeist" (', 'CREATE TABLE "erdgeist-2" (']
+    inserts = insert_statements(result.stdout)
+    assert len(inserts) == 2
+    assert inserts[0].startswith('INSERT INTO "erdgeist" VALUES (') and "'one'" in inserts[0]
+    assert inserts[1].startswith('INSERT INTO "erdgeist-2" VALUES (') and "'two'" in inserts[1]
+
+
+def test_postgres_output_writes_null_for_empty_values_in_columns_that_are_not_text(tmp_path: Path) -> None:
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[1] = b"text"
+    dbdir = write_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, fields)])
+
+    result = run_croconvert(["-t", "postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert insert_statements(result.stdout) == [
+        "INSERT INTO \"erdgeist\" VALUES ('1', NULL, 'text', '', NULL, NULL, '', '', '', '', '', '');"
+    ]

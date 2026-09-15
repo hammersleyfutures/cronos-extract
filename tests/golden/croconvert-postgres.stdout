@@ -6,7 +6,7 @@ CREATE TABLE "erdgeist" (
         "Entry #2" VARCHAR(100000), 
         "Entry #3" TEXT, 
         "Entry #4" DATE, 
-        "Entry #5" TIMESTAMP, 
+        "Entry #5" TIME, 
         "Entry #6" TEXT, 
         "Entry #7" TEXT, 
         "Entry #8" TEXT, 

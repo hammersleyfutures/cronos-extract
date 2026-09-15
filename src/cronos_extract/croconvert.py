@@ -69,7 +69,15 @@ def template_convert(kod, args):
     # Only HTML output is escaped; SQL output quotes its values itself and must not contain HTML entities.
     j2_env = Environment(loader=FileSystemLoader(template_dir), autoescape=lambda name: name == "html.j2")
     j2_templ = j2_env.get_template(args.template + ".j2")
-    stdout.writelines(j2_templ.generate(db=db, base64=base64, referenced_file=referenced_file))
+    stdout.writelines(
+        j2_templ.generate(
+            db=db,
+            base64=base64,
+            referenced_file=referenced_file,
+            unique_sql_table_name=unique_sql_table_name,
+            sql_value=sql_value,
+        )
+    )
     report_incomplete_records(db)
 
 
@@ -78,19 +86,13 @@ def safepathname(name):
     return re.sub(r'[\x00-\x1f<>:"/\\|?*]', "_", name)
 
 
-def unique_file_name(stem, extension, number, used_names):
+def unique_name(stem, extension, number, used_names):
     """
-    Return a file name made from `stem` and `extension` that no other output file uses, or None when
-    the thing numbered `number` already has a file.
-
-    `stem` and `extension` are made safe with safepathname. A stem that is empty or only dots is replaced
-    by `number`, and a name that is already used by something else gets "-<number>" appended to its stem.
-    `used_names` maps each file name given so far, compared case-insensitively, to its number.
+    Return `stem` followed by `extension` when no other output uses that name, or None when the thing
+    numbered `number` already has it. A name already used by something else gets "-<number>" appended
+    to its stem, and a counter after that if needed.
+    `used_names` maps each name given so far, compared case-insensitively, to its number.
     """
-    stem = safepathname(stem)
-    if not stem.strip("."):
-        stem = str(number)
-    extension = "." + safepathname(extension) if extension else ""
     for candidate in chain([stem, f"{stem}-{number}"], (f"{stem}-{number}-{n}" for n in count(2))):
         name = candidate + extension
         key = name.casefold()
@@ -99,6 +101,42 @@ def unique_file_name(stem, extension, number, used_names):
             return name
         if used_names[key] == number:
             return None
+
+
+def unique_file_name(stem, extension, number, used_names):
+    """
+    Return a file name made from `stem` and `extension` that no other output file uses, or None when
+    the thing numbered `number` already has a file.
+
+    `stem` and `extension` are made safe with safepathname, and a stem that is empty or only dots is
+    replaced by `number`. See unique_name for how names are kept unique.
+    """
+    stem = safepathname(stem)
+    if not stem.strip("."):
+        stem = str(number)
+    extension = "." + safepathname(extension) if extension else ""
+    return unique_name(stem, extension, number, used_names)
+
+
+def unique_sql_table_name(table, used_names):
+    """
+    Return the name to give `table` in SQL output, or None when a table with the same name and table id
+    is already written. Double quotes become underscores and an empty name becomes the table id.
+    See unique_name for how names are kept unique.
+    """
+    name = table.tablename.replace('"', "_") or str(table.tableid)
+    return unique_name(name, "", table.tableid, used_names)
+
+
+def sql_value(fielddef, field):
+    """
+    Return the content of `field` as a PostgreSQL literal for a column defined by `fielddef`.
+    An empty value is NULL in a column that is not text, where '' is not a valid value.
+    Single quotes are doubled, which is correct with standard_conforming_strings on.
+    """
+    if not field.content and not fielddef.sqltype().startswith(("TEXT", "VARCHAR")):
+        return "NULL"
+    return "'" + field.content.replace("'", "''") + "'"
 
 
 def csv_output(kod, args):

@@ -25,6 +25,10 @@ def test_fielddef_decodes_type_name_and_limits() -> None:
     assert fielddef.sqltype() == "VARCHAR(20)"
 
 
+def test_time_field_has_the_sql_type_time() -> None:
+    assert make_fielddef(5).sqltype() == "TIME"
+
+
 def test_system_number_field_is_shown_as_given() -> None:
     assert Field(make_fielddef(0), "7").content == "7"
 
