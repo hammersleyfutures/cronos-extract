@@ -274,10 +274,10 @@ class KODcoding:
         self.kod = [_ for _ in initial]
         self.confidence = confidence
 
-        # calculate the inverse table.
+        # calculate the inverse table, from the entries whose value is known.
         self.inv = [0 for _ in initial]
         for i, x in enumerate(self.kod):
-            if confidence[i]:
+            if confidence[i] > 0:
                 self.inv[x] = i
 
     def decode(self, o, data):
@@ -293,7 +293,7 @@ class KODcoding:
             b[i] = KOD[a[i]]- (i+shift)
         """
         return (
-            [(self.kod[b] - i - o) % 256 if self.confidence[b] != 0 else 0 for i, b in enumerate(data)],
+            [(self.kod[b] - i - o) % 256 if self.confidence[b] > 0 else 0 for i, b in enumerate(data)],
             [self.confidence[b] for b in data],
         )
 
