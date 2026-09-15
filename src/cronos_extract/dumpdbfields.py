@@ -1,10 +1,14 @@
+# ABOUTME: Example script that prints table definitions and the first records of one or more databases.
+# ABOUTME: Shows how to enumerate tables and records with the Database API.
 """
 `dumpdbfields` demonstrates how to enumerate tables and records.
 """
+
 import os
 import os.path
+
+from .crodump import dbcrack, strucrack
 from .Database import Database
-from .crodump import strucrack, dbcrack
 from .hexdump import unhex
 
 
@@ -30,20 +34,24 @@ def main():
     parser.add_argument("--maxrecs", "-m", type=int, default=100)
     parser.add_argument("--recurse", "-r", action="store_true")
     parser.add_argument("--verbose", "-v", action="store_true")
-    parser.add_argument("dbdirs", type=str, nargs='*')
+    parser.add_argument("dbdirs", type=str, nargs="*")
     args = parser.parse_args()
 
     for path in processargs(args):
         try:
-            import crodump.koddecoder
+            from . import koddecoder
+
             if args.kod:
-                if len(args.kod)!=512:
+                if len(args.kod) != 512:
                     raise Exception("--kod should have a 512 hex digit argument")
-                kod = crodump.koddecoder.new(list(unhex(args.kod)))
+                kod = koddecoder.new(list(unhex(args.kod)))
             elif args.nokod:
                 kod = None
             elif args.strucrack:
-                class Cls: pass
+
+                class Cls:
+                    pass
+
                 cargs = Cls()
                 cargs.dbdir = path
                 cargs.sys = False
@@ -51,9 +59,12 @@ def main():
                 cracked = strucrack(None, cargs)
                 if not cracked:
                     return
-                kod = crodump.koddecoder.new(cracked)
+                kod = koddecoder.new(cracked)
             elif args.dbcrack:
-                class Cls: pass
+
+                class Cls:
+                    pass
+
                 cargs = Cls()
                 cargs.dbdir = path
                 cargs.sys = False
@@ -61,23 +72,21 @@ def main():
                 cracked = dbcrack(None, cargs)
                 if not cracked:
                     return
-                kod = crodump.koddecoder.new(cracked)
+                kod = koddecoder.new(cracked)
             else:
-                kod = crodump.koddecoder.new()
+                kod = koddecoder.new()
 
             db = Database(path, kod)
             for tab in db.enumerate_tables():
                 tab.dump(args)
-                print("nr of records: %d" % db.bank.nrofrecords)
-                i = 0
-                for rec in db.enumerate_records(tab):
-                    for field, fielddef in zip(rec.fields, tab.fields):
-                        print(">> %s -- %s" % (fielddef, field.content))
-                    i += 1
+                print(f"nr of records: {db.bank.nrofrecords:d}")
+                for i, rec in enumerate(db.enumerate_records(tab), start=1):
+                    for field, fielddef in zip(rec.fields, tab.fields, strict=True):
+                        print(f">> {fielddef} -- {field.content}")
                     if i > args.maxrecs:
                         break
         except Exception as e:
-            print("ERROR: %s" % e)
+            print(f"ERROR: {e}")
 
 
 if __name__ == "__main__":

@@ -1,25 +1,23 @@
-from __future__ import print_function, division
+# ABOUTME: Database: opens the Cro*.dat/.tad file pairs found in a CronosPro database directory.
+# ABOUTME: Decodes the database and table definitions from CroStru and enumerates tables, records and files.
+import base64
 import os
 import re
-from sys import stderr
-from binascii import b2a_hex
-from .readers import ByteReader
-from .hexdump import strescape, toout, ashex
-from .Datamodel import TableDefinition, Record
-from .Datafile import Datafile
-import base64
 import struct
-import crodump.koddecoder
+from binascii import b2a_hex
+from sys import stderr
 
-import sys
-if sys.version_info[0] == 2:
-    sys.exit("cronodump needs python3")
+from . import koddecoder
+from .Datafile import Datafile
+from .Datamodel import Record, TableDefinition
+from .hexdump import ashex, strescape, toout
+from .readers import ByteReader
 
 
 class Database:
     """represent the entire database, consisting of Stru, Index and Bank files"""
 
-    def __init__(self, dbdir, compact, kod=crodump.koddecoder.new()):
+    def __init__(self, dbdir, compact, kod=koddecoder.new()):
         """
         `dbdir` is the directory containing the Cro*.dat and Cro*.tad files.
         `compact` if set, the .tad file is not cached in memory, making dumps 15 % slower
@@ -52,7 +50,7 @@ class Database:
             tadname = self.getname(name, "tad")
             if datname and tadname:
                 return Datafile(name, open(datname, "rb"), open(tadname, "rb"), self.compact, self.kod)
-        except IOError:
+        except OSError:
             return
 
     def getname(self, name, ext):
@@ -60,7 +58,7 @@ class Database:
         Get a case-insensitive filename match for 'name.ext'.
         Returns None when no matching file was not found.
         """
-        basename = "Cro%s.%s" % (name, ext)
+        basename = f"Cro{name}.{ext}"
         for fn in os.listdir(self.dbdir):
             if basename.lower() == fn.lower():
                 return os.path.join(self.dbdir, fn)
@@ -97,7 +95,7 @@ class Database:
         while not rd.eof():
             keyname = rd.readname()
             if keyname in d:
-                print("WARN: duplicate key: %s" % keyname)
+                print(f"WARN: duplicate key: {keyname}")
 
             index_or_length = rd.readdword()
             if index_or_length >> 31:
@@ -115,9 +113,9 @@ class Database:
         """
         for k, v in dbdict.items():
             if re.search(b"[^\x0d\x0a\x09\x20-\x7e\xc0-\xff]", v):
-                print("%-20s - %s" % (k, toout(args, v)))
+                print(f"{k:<20} - {toout(args, v)}")
             else:
-                print('%-20s - "%s"' % (k, strescape(v)))
+                print(f'{k:<20} - "{strescape(v)}"')
 
     def dump_db_table_defs(self, args):
         """
@@ -135,30 +133,37 @@ class Database:
 
         for k, v in dbdef.items():
             if k.startswith("Base") and k[4:].isnumeric():
-                print("== %s ==" % k)
-                tbdef = TableDefinition(v, dbdef.get("BaseImage" + k[4:], b''))
+                print(f"== {k} ==")
+                tbdef = TableDefinition(v, dbdef.get("BaseImage" + k[4:], b""))
                 tbdef.dump(args)
             elif k == "NS1":
                 self.dump_ns1(v)
 
     def dump_ns1(self, data):
-        if len(data)<2:
+        if len(data) < 2:
             print("NS1 is unexpectedly short")
             return
-        unk1, sh, = struct.unpack_from("<BB", data, 0)
+        (
+            unk1,
+            sh,
+        ) = struct.unpack_from("<BB", data, 0)
 
         # NS1 is encoded with the default KOD table,
         # so we are not using stru.kod here.
-        ns1kod = crodump.koddecoder.new()
+        ns1kod = koddecoder.new()
         decoded_data = ns1kod.decode(sh, data[2:])
 
         if len(decoded_data) < 12:
             print("NS1 is unexpectedly short")
             return
-        serial, unk2, pwlen, = struct.unpack_from("<LLL", decoded_data, 0)
-        password = decoded_data[12:12+pwlen].decode('cp1251')
+        (
+            serial,
+            unk2,
+            pwlen,
+        ) = struct.unpack_from("<LLL", decoded_data, 0)
+        password = decoded_data[12 : 12 + pwlen].decode("cp1251")
 
-        print("== NS1: (%02x,%02x) -> %6d, %d, %d:'%s'" % (unk1, sh, serial, unk2, pwlen, password))
+        print(f"== NS1: ({unk1:02x},{sh:02x}) -> {serial:6d}, {unk2:d}, {pwlen:d}:'{password}'")
 
     def enumerate_tables(self, files=False):
         """
@@ -170,8 +175,11 @@ class Database:
         try:
             dbdef = self.decode_db_definition(dbinfo[1:])
         except Exception as e:
-            print("ERROR decoding db definition: %s" % e)
-            print("This could possibly mean that you need to try with the --strucrack option")
+            print(f"ERROR decoding db definition: {e}")
+            print(
+                "This could possibly mean that you need to try     crodump strucrack     "
+                "to deduct the database key first"
+            )
             return
 
         for k, v in dbdef.items():
@@ -179,7 +187,7 @@ class Database:
                 if files and k[4:] == "000":
                     yield TableDefinition(v)
                 if not files and k[4:] != "000":
-                    yield TableDefinition(v, dbdef.get("BaseImage" + k[4:], b''))
+                    yield TableDefinition(v, dbdef.get("BaseImage" + k[4:], b""))
 
     def enumerate_records(self, table):
         """
@@ -197,9 +205,10 @@ class Database:
                 try:
                     yield Record(i + 1, table.fields, data[1:])
                 except EOFError:
-                    print("Record %d too short: -- %s" % (i+1, ashex(data)), file=stderr)
+                    print(f"Record {i + 1:d} too short: -- {ashex(data)}", file=stderr)
                 except Exception as e:
-                    print("Record %d broken: ERROR '%s' -- %s" % (i+1, e, ashex(data)), file=stderr)
+                    print(f"Record {i + 1:d} broken: ERROR '{e}' -- {ashex(data)}", file=stderr)
+            del data
 
     def enumerate_files(self, table):
         """
@@ -217,7 +226,7 @@ class Database:
         """
         data = self.bank.readrec(int(index))
         if asbase64:
-            return base64.b64encode(data[1:]).decode('utf-8')
+            return base64.b64encode(data[1:]).decode("utf-8")
         else:
             return data[1:]
 
@@ -249,14 +258,14 @@ class Database:
                 data = dbfile.readrec(i)
                 if args.find1d:
                     if data and (data.find(b"\x1d") > 0 or data.find(b"\x1b") > 0):
-                        print("record with '1d': %d -> %s" % (i, b2a_hex(data)))
+                        print(f"record with '1d': {i:d} -> {b2a_hex(data)}")
                         break
 
                 elif not args.stats:
                     if data is None:
-                        print("%5d: <deleted>" % i)
+                        print(f"{i:5d}: <deleted>")
                     else:
-                        print("%5d: %s" % (i, toout(args, data)))
+                        print(f"{i:5d}: {toout(args, data)}")
                 else:
                     if data is None:
                         nr_recnone += 1
@@ -270,7 +279,7 @@ class Database:
             except IndexError:
                 break
             except Exception as e:
-                print("%5d: <%s>" % (i, e))
+                print(f"{i:5d}: <{e}>")
                 if args.debug:
                     raise
                 nerr += 1
@@ -278,11 +287,11 @@ class Database:
                     break
 
         if args.stats:
-            print("-- table-id stats --, %d * none, %d * empty" % (nr_recnone, nr_recempty))
+            print(f"-- table-id stats --, {nr_recnone:d} * none, {nr_recempty:d} * empty")
             for k, v in enumerate(tabidxref):
                 if v:
-                    print("%5d * %02x" % (v, k))
+                    print(f"{v:5d} * {k:02x}")
             print("-- byte stats --")
             for k, v in enumerate(bytexref):
                 if v:
-                    print("%5d * %02x" % (v, k))
+                    print(f"{v:5d} * {k:02x}")

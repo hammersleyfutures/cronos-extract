@@ -1,9 +1,13 @@
+# ABOUTME: kodump subcommand: KOD-decodes and hexdumps a byte range from a file or stdin.
+# ABOUTME: Can try every shift value, which helps find the right one when reverse-engineering.
 """
 This module has the functions for the 'kodump' subcommand from the 'crodump' script.
 """
-from .hexdump import unhex, toout, hexdump
+
 import io
 import struct
+
+from .hexdump import hexdump, toout, unhex
 
 
 def decode_kod(kod, args, data):
@@ -31,15 +35,12 @@ def decode_kod(kod, args, data):
         # explicitly specified shift.
         for s in range(256):
             enc = incdata(data, s)
-            print("%02x: %s" % (s, toout(args, enc)))
+            print(f"{s:02x}: {toout(args, enc)}")
     else:
         # output with all possible 'shift' values.
         for s in range(256):
-            if args.invkod:
-                enc = kod.encode(s, data)
-            else:
-                enc = kod.decode(s, data)
-            print("%02x: %s" % (s, toout(args, enc)))
+            enc = kod.encode(s, data) if args.invkod else kod.decode(s, data)
+            print(f"{s:02x}: {toout(args, enc)}")
 
 
 def kod_hexdump(kod, args):
@@ -77,5 +78,3 @@ def kod_hexdump(kod, args):
         if args.unhex:
             data = unhex(data)
         decode_kod(kod, args, data)
-
-

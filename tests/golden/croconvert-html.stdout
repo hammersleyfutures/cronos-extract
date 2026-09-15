@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Cronos Database Dump</title>
+  </head>
+  <body>
+  Warning: FieldDefinition Section 2 not marked with a 2
+
+    <table>
+      <caption>Файлы</caption>
+      <thead>
+        <tr>
+          <th>Системный номер</th>
+          <th>Data</th>
+        </tr>
+      </thead>
+      <tbody>
+      
+      </tbody>
+    </table>
+  
+  Warning: FieldDefinition Section 2 not marked with a 2
+<img src="data:image;base64,"/><table>
+      <caption>erdgeist</caption>
+      <thead>
+        <tr>
+          <th>Системный номер</th>
+          <th>Entry #1</th>
+          <th>Entry #2</th>
+          <th>Entry #3</th>
+          <th>Entry #4</th>
+          <th>Entry #5</th>
+          <th>Entry #6</th>
+          <th>Entry #7</th>
+          <th>Entry #8</th>
+          <th>Entry #9</th>
+          <th>Entry #10</th>
+          <th>Entry #11</th>
+        </tr>
+      </thead>
+      <tbody>
+      </tbody>
+    </table>
+    
+  </body>
+</html>

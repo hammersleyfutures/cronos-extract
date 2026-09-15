@@ -1,5 +1,9 @@
+# ABOUTME: Decodes CronosPro table definitions, field definitions and records.
+# ABOUTME: Turns raw field bytes into presentable content such as dates, times, file references and text.
 # -*- coding: utf-8 -*-
-from .hexdump import tohex, ashex
+from typing import override
+
+from .hexdump import ashex, tohex
 from .readers import ByteReader
 
 
@@ -7,6 +11,7 @@ class FieldDefinition:
     """
     Contains the properties for a single field in a record.
     """
+
     def __init__(self, data):
         self.decode(data)
 
@@ -28,24 +33,27 @@ class FieldDefinition:
             self.maxval = self.unk4 = None
         self.remaining = rd.readbytes()
 
+    @override
     def __str__(self):
         if self.typ:
-            return "Type: %2d (%2d/%2d) %04x,(%d-%4d),%04x - %-40s -- %s" % (
-                    self.typ, self.idx1, self.idx2,
-                    self.flags, self.minval, self.maxval, self.unk4,
-                    "'%s'" % self.name, tohex(self.remaining))
+            quoted_name = f"'{self.name}'"
+            return (
+                f"Type: {self.typ:2d} ({self.idx1:2d}/{self.idx2:2d}) "
+                f"{self.flags:04x},({self.minval:d}-{self.maxval:4d}),"
+                f"{self.unk4:04x} - {quoted_name:<40} -- {tohex(self.remaining)}"
+            )
         else:
-            return "Type: %2d %2d    %d,%d       - '%s'" % (
-                    self.typ, self.idx1, self.flags, self.minval, self.name)
+            return f"Type: {self.typ:2d} {self.idx1:2d}    {self.flags:d},{self.minval:d}       - '{self.name}'"
 
     def sqltype(self):
-        return { 0: "INTEGER PRIMARY KEY",
-                 1: "INTEGER",
-                 2: "VARCHAR(" + str(self.maxval) + ")",
-                 3: "TEXT",          # dictionaray
-                 4: "DATE",
-                 5: "TIMESTAMP",
-                 6: "TEXT",          # file reference
+        return {
+            0: "INTEGER PRIMARY KEY",
+            1: "INTEGER",
+            2: "VARCHAR(" + str(self.maxval) + ")",
+            3: "TEXT",  # dictionaray
+            4: "DATE",
+            5: "TIMESTAMP",
+            6: "TEXT",  # file reference
         }.get(self.typ, "TEXT")
 
 
@@ -56,21 +64,21 @@ class TableImage:
     def decode(self, data):
         if not len(data):
             self.filename = "none"
-            self.data = b''
+            self.data = b""
             return
 
         rd = ByteReader(data)
 
         _ = rd.readbyte()
         namelen = rd.readdword()
-        self.filename = rd.readbytes(namelen).decode("cp1251", 'ignore')
+        self.filename = rd.readbytes(namelen).decode("cp1251", "ignore")
 
         imagelen = rd.readdword()
         self.data = rd.readbytes(imagelen)
 
 
 class TableDefinition:
-    def __init__(self, data, image=''):
+    def __init__(self, data, image=""):
         self.decode(data, image)
 
     def decode(self, data, image):
@@ -114,7 +122,7 @@ class TableDefinition:
 
         for _ in range(self.extraunkdatastrings):
             datalen = rd.readword()
-            skip = rd.readbytes(datalen)
+            rd.readbytes(datalen)
 
         try:
             # Then there's another unknow dword and then (probably section indicator) 02 byte
@@ -131,14 +139,14 @@ class TableDefinition:
                 fielddef = rd.readbytes(deflen)
                 self.fields.append(FieldDefinition(fielddef))
         except Exception as e:
-            print("Warning: Error '%s' parsing FieldDefinitions" % e)
+            print(f"Warning: Error '{e}' parsing FieldDefinitions")
 
         try:
             self.terminator = rd.readdword()
         except EOFError:
             print("Warning: FieldDefinition section not terminated")
         except Exception as e:
-            print("Warning: Error '%s' parsing Tabledefinition" % e)
+            print(f"Warning: Error '{e}' parsing Tabledefinition")
 
         self.fields.sort(key=lambda field: field.idx2)
 
@@ -146,31 +154,33 @@ class TableDefinition:
 
         self.tableimage = TableImage(image)
 
+    @override
     def __str__(self):
-        return "%d,%d<%d,%d,%d>%d  %d,%d '%s'  '%s'  [TableImage(%d bytes): %s]" % (
-                self.unk1, self.version, self.unk2, self.unk3, self.unk4, self.tableid,
-                self.unk7, len(self.fields),
-                self.tablename, self.abbrev, len(self.tableimage.data), self.tableimage.filename)
+        return (
+            f"{self.unk1:d},{self.version:d}<{self.unk2:d},{self.unk3:d},{self.unk4:d}>{self.tableid:d}  "
+            f"{self.unk7:d},{len(self.fields):d} '{self.tablename}'  '{self.abbrev}'  "
+            f"[TableImage({len(self.tableimage.data):d} bytes): {self.tableimage.filename}]"
+        )
 
     def dump(self, args):
         if args.verbose:
-            print("table: %s" % tohex(self.headerdata))
+            print(f"table: {tohex(self.headerdata)}")
 
         print(str(self))
 
         for i, field in enumerate(self.fields):
             if args.verbose:
-                print("field#%2d: %04x - %s" % (
-                    i, len(field.defdata), tohex(field.defdata)))
+                print(f"field#{i:2d}: {len(field.defdata):04x} - {tohex(field.defdata)}")
             print(str(field))
         if args.verbose:
-            print("remaining: %s" % tohex(self.remainingdata))
+            print(f"remaining: {tohex(self.remainingdata)}")
 
 
 class Field:
     """
     Contains a single fully decoded value.
     """
+
     def __init__(self, fielddef, data):
         self.decode(fielddef, data)
 
@@ -190,8 +200,8 @@ class Field:
             # typ 4 is DATE, formatted like: <year-1900:signedNumber><month:2digits><day:2digits>
             try:
                 data = data.rstrip(b"\x00")
-                y, m, d = 1900+int(data[:-4]), int(data[-4:-2]), int(data[-2:])
-                self.content = "%04d-%02d-%02d" % (y, m, d)
+                y, m, d = 1900 + int(data[:-4]), int(data[-4:-2]), int(data[-2:])
+                self.content = f"{y:04d}-{m:02d}-{d:02d}"
             except ValueError:
                 self.content = str(data)
 
@@ -200,7 +210,7 @@ class Field:
             try:
                 data = data.rstrip(b"\x00")
                 h, m = int(data[-4:-2]), int(data[-2:])
-                self.content = "%02d:%02d" % (h, m)
+                self.content = f"{h:02d}:{m:02d}"
             except ValueError:
                 self.content = str(data)
 
@@ -209,9 +219,9 @@ class Field:
             rd = ByteReader(data)
             self.flag = rd.readdword()
             self.remlen = rd.readdword()
-            self.filename = rd.readtoseperator(b"\x1e").decode("cp1251", 'ignore')
-            self.extname = rd.readtoseperator(b"\x1e").decode("cp1251", 'ignore')
-            self.filedatarecord = rd.readtoseperator(b"\x1e").decode("cp1251", 'ignore')
+            self.filename = rd.readtoseperator(b"\x1e").decode("cp1251", "ignore")
+            self.extname = rd.readtoseperator(b"\x1e").decode("cp1251", "ignore")
+            self.filedatarecord = rd.readtoseperator(b"\x1e").decode("cp1251", "ignore")
             self.content = " ".join([self.filename, self.extname, self.filedatarecord])
 
         elif self.typ == 7 or self.typ == 8 or self.typ == 9:
@@ -220,13 +230,14 @@ class Field:
 
         else:
             # currently assuming everything else to be strings, which is wrong
-            self.content = data.rstrip(b"\x00").decode("cp1251", 'ignore')
+            self.content = data.rstrip(b"\x00").decode("cp1251", "ignore")
 
 
 class Record:
     """
     Contains a single fully decoded record.
     """
+
     def __init__(self, recno, tabledef, data):
         self.decode(recno, tabledef, data)
 
@@ -240,11 +251,11 @@ class Record:
 
         # start with the record number, or as Cronos calls this:
         # the system number, in russian: Системный номер.
-        self.fields = [ Field(tabledef[0], str(recno)) ]
+        self.fields = [Field(tabledef[0], str(recno))]
 
         rd = ByteReader(data)
         for fielddef in tabledef[1:]:
-            if not rd.eof() and rd.testbyte(0x1b):
+            if not rd.eof() and rd.testbyte(0x1B):
                 # read complex record indicated by b"\x1b"
                 rd.readbyte()
                 size = rd.readdword()
