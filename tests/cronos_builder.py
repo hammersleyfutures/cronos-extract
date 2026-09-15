@@ -16,6 +16,8 @@ TEST_TABLE_ID = 1
 TEST_TABLE_FIELD_COUNT = 11
 TEST_TABLE_FILE_FIELD_INDEX = 5
 FILES_TABLE_ID = 0
+# A table id that no table in TEST_DB uses, for records that only exist to feed dbcrack.
+UNUSED_TABLE_ID = 0xFE
 
 DAT_HEADER = struct.Struct("<8sH5sHH")
 DAT_HEADER_PADDING = 0xE9
@@ -97,8 +99,37 @@ def bank_record(tableid: int, fields: Sequence[bytes]) -> bytes:
     return bytes(record)
 
 
-def write_database(directory: Path, bank_records: Sequence[bytes | None], kod: Sequence[int] | None = None) -> str:
-    """Write a database with TEST_DB's table definitions and `bank_records`, returning its directory path."""
-    write_datafile(directory, "Stru", stru_records_from_test_db(), kod)
+def write_database(
+    directory: Path,
+    bank_records: Sequence[bytes | None],
+    kod: Sequence[int] | None = None,
+    *,
+    extra_stru_records: Sequence[bytes] = (),
+    index_records: Sequence[bytes | None] | None = None,
+) -> str:
+    """Write a database with TEST_DB's table definitions and `bank_records`, returning its directory path.
+
+    `extra_stru_records` are appended to the CroStru records; `index_records`, when given, are written to CroIndex.
+    """
+    write_datafile(directory, "Stru", [*stru_records_from_test_db(), *extra_stru_records], kod)
     write_datafile(directory, "Bank", bank_records, kod)
+    if index_records is not None:
+        write_datafile(directory, "Index", index_records, kod)
     return str(directory)
+
+
+def crackable_database(directory: Path, bank_records: Sequence[bytes | None], kod: Sequence[int]) -> str:
+    """Write a database encrypted with `kod` that holds enough known zero bytes for strucrack and dbcrack.
+
+    strucrack counts, for every shift, which encrypted byte is most common in CroStru, so all-zero records give
+    every shift the right answer. dbcrack reads the fourth byte of CroBank and CroIndex records longer than
+    11 bytes, which decodes to zero, so 300 such records cover every shift in both files.
+    """
+    zero_byte_records = [bytes([UNUSED_TABLE_ID]) + bytes(11)] * 300
+    return write_database(
+        directory,
+        [*bank_records, *zero_byte_records],
+        kod,
+        extra_stru_records=[bytes(256)] * 8,
+        index_records=zero_byte_records,
+    )

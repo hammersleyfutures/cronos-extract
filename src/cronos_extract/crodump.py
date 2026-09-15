@@ -1,5 +1,8 @@
 # ABOUTME: crodump command: subcommands for inspecting CronosPro databases and recovering KOD tables.
 # ABOUTME: Includes strucrack and dbcrack, which derive the KOD substitution table statistically.
+import argparse
+import sys
+
 from .Database import Database
 from .Datamodel import TableDefinition
 from .hexdump import as1251, asambigoushex, asasc, tohex, unhex
@@ -133,7 +136,14 @@ def strucrack(kod, args):
     """
 
     # start without 'KOD' table, so we will get the encrypted records
-    db = Database(args.dbdir, args.compact, None)
+    with Database(args.dbdir, args.compact, None) as db:
+        return derive_kod_from_stru(db, args)
+
+
+def derive_kod_from_stru(db, args):
+    """
+    Derive the KOD table from the encrypted CroStru or CroSys records of `db`, as strucrack describes.
+    """
     if args.sys:
         table = db.sys
         if not db.sys:
@@ -328,7 +338,14 @@ def dbcrack(kod, args):
 
     """
     # start without 'KOD' table, so we will get the encrypted records
-    db = Database(args.dbdir, args.compact, None)
+    with Database(args.dbdir, args.compact, None) as db:
+        return derive_kod_from_bank_and_index(db, args)
+
+
+def derive_kod_from_bank_and_index(db, args):
+    """
+    Derive the KOD table from the encrypted CroBank and CroIndex records of `db`, as dbcrack describes.
+    """
     xref = [[0] * 256 for _ in range(256)]
 
     for dbfile in db.bank, db.index:
@@ -351,9 +368,10 @@ def dbcrack(kod, args):
     return KOD
 
 
-def main():
-    import argparse
-
+def build_parser():
+    """
+    Build the argument parser for the crodump command and its subcommands.
+    """
     parser = argparse.ArgumentParser(description="CRO hexdumper")
     subparsers = parser.add_subparsers(
         title="commands", help="Use the --help option for the individual sub commands for more details"
@@ -457,7 +475,32 @@ def main():
     p.add_argument("dbdir", type=str)
     p.set_defaults(handler=dbcrack)
 
-    args = parser.parse_args()
+    return parser
+
+
+CRACK_FAILED_MESSAGE = (
+    "Can't automatically crack the database password. Try using   crodump strucrack   "
+    "and pass the database key (KOD) using --kod"
+)
+
+
+def crack_kod(method, dbdir, compact):
+    """
+    Derive the KOD table of the database in `dbdir` with the `strucrack` or `dbcrack` method, without output.
+
+    The options are parsed by the method's own subcommand parser, so every option has its default value.
+    Returns None when the table can't be derived automatically.
+    """
+    argv = ["--compact"] if compact else []
+    argv += [method, "--silent"]
+    if method == "strucrack":
+        argv.append("--noninteractive")
+    args = build_parser().parse_args([*argv, dbdir])
+    return args.handler(None, args)
+
+
+def main():
+    args = build_parser().parse_args()
 
     from . import koddecoder
 
@@ -467,37 +510,12 @@ def main():
         kod = koddecoder.new(list(unhex(args.kod)))
     elif args.nokod:
         kod = None
-    elif args.strucrack:
-
-        class Cls:
-            pass
-
-        cargs = Cls()
-        cargs.dbdir = args.dbdir
-        cargs.sys = False
-        cargs.silent = True
-        cargs.noninteractive = False
-        # add all keys we forgot to add
-        for k, v in args.__dict__.items():
-            if not cargs.__dict__.get(k):
-                cargs.__dict__.update({k: v})
-        cracked = strucrack(None, cargs)
+    elif args.strucrack or args.dbcrack:
+        if not hasattr(args, "dbdir"):
+            sys.exit("--strucrack and --dbcrack need a subcommand that reads a database directory")
+        cracked = crack_kod("strucrack" if args.strucrack else "dbcrack", args.dbdir, args.compact)
         if not cracked:
-            return
-        kod = koddecoder.new(cracked)
-    elif args.dbcrack:
-
-        class Cls:
-            pass
-
-        cargs = Cls()
-        cargs.dbdir = args.dbdir
-        cargs.sys = False
-        cargs.silent = True
-        cargs.noninteractive = False
-        cracked = dbcrack(None, cargs)
-        if not cracked:
-            return
+            sys.exit(CRACK_FAILED_MESSAGE)
         kod = koddecoder.new(cracked)
     else:
         kod = koddecoder.new()

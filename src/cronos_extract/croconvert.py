@@ -13,7 +13,7 @@ from os import chdir, mkdir
 from os.path import abspath, dirname, join
 from sys import exit, stdout
 
-from .crodump import dbcrack, strucrack
+from .crodump import CRACK_FAILED_MESSAGE, crack_kod
 from .Database import Database
 from .hexdump import unhex
 
@@ -116,24 +116,9 @@ def main():
     elif args.nokod:
         kod = None
     elif args.strucrack or args.dbcrack:
-
-        class Cls:
-            pass
-
-        cargs = Cls()
-        cargs.dbdir = args.dbdir
-        cargs.sys = False
-        cargs.silent = True
-        cargs.fix = []
-        cargs.color = False
-        cargs.width = 24
-        cargs.noninteractive = True
-        cracked = strucrack(None, cargs) if args.strucrack else dbcrack(None, cargs)
+        cracked = crack_kod("strucrack" if args.strucrack else "dbcrack", args.dbdir, args.compact)
         if not cracked:
-            exit(
-                "Can't automatically crack the database password. Try using   crodump strucrack   "
-                "and pass the database key (KOD) using --kod"
-            )
+            exit(CRACK_FAILED_MESSAGE)
         kod = koddecoder.new(cracked)
     else:
         kod = koddecoder.new()
