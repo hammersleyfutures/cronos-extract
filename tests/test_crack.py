@@ -1,10 +1,9 @@
 # ABOUTME: Tests for recovering a database's KOD table with strucrack and dbcrack, directly and through the commands.
 # ABOUTME: Uses encrypted databases from tests/cronos_builder.py whose KOD table is known.
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+from cli import run_command
 from cronos_builder import TEST_TABLE_ID, bank_record, crackable_database, random_kod
 
 from cronos_extract.crodump import crack_kod
@@ -17,16 +16,6 @@ CRACK_FLAGS = ["--strucrack", "--dbcrack"]
 @pytest.fixture
 def encrypted_db(tmp_path: Path) -> str:
     return crackable_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, PERSON_FIELDS)], KOD)
-
-
-def run_command(module: str, args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, "-m", f"cronos_extract.{module}", *args],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
 
 
 @pytest.mark.parametrize("method", ["strucrack", "dbcrack"])
