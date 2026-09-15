@@ -2,9 +2,20 @@
 # ABOUTME: They run the real command as a subprocess and check its stdout, stderr and output files.
 import subprocess
 import sys
+from html.parser import HTMLParser
 from pathlib import Path
+from typing import override
 
-from cronos_builder import TEST_DB
+from cronos_builder import (
+    TEST_DB,
+    TEST_TABLE_FIELD_COUNT,
+    TEST_TABLE_FILE_FIELD_INDEX,
+    TEST_TABLE_ID,
+    bank_record,
+    file_record,
+    file_reference_field,
+    write_database,
+)
 
 
 def run_croconvert(args: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
@@ -16,6 +27,32 @@ def run_croconvert(args: list[str], cwd: Path | None = None) -> subprocess.Compl
         encoding="utf-8",
         check=False,
     )
+
+
+def record_with_file_field(file_field: bytes) -> bytes:
+    """Build a record of the test table whose fields are empty except for the file reference `file_field`."""
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[TEST_TABLE_FILE_FIELD_INDEX] = file_field
+    return bank_record(TEST_TABLE_ID, fields)
+
+
+class TagCollector(HTMLParser):
+    """Collects the name and attributes of every start tag in an HTML document."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.tags: list[tuple[str, list[tuple[str, str | None]]]] = []
+
+    @override
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.tags.append((tag, attrs))
+
+
+def start_tags(html: str, name: str) -> list[list[tuple[str, str | None]]]:
+    collector = TagCollector()
+    collector.feed(html)
+    collector.close()
+    return [attrs for tag, attrs in collector.tags if tag == name]
 
 
 def test_table_definition_warnings_go_to_stderr_not_into_the_sql() -> None:
@@ -33,3 +70,29 @@ def test_db_definition_errors_go_to_stderr_not_into_the_sql() -> None:
     assert result.stdout == ""
     assert "WARN: expected dbinfo to start with 0x03" in result.stderr
     assert "ERROR decoding db definition" in result.stderr
+
+
+def test_html_escapes_a_hostile_file_name_in_the_download_attribute(tmp_path: Path) -> None:
+    hostile_name = 'x" onmouseover="alert(1)'
+    dbdir = write_database(
+        tmp_path / "db", [file_record(b"DATA"), record_with_file_field(file_reference_field(hostile_name, "pdf", 1))]
+    )
+
+    result = run_croconvert([dbdir])
+
+    assert result.returncode == 0, result.stderr
+    (link,) = start_tags(result.stdout, "a")[1:]
+    assert [name for name, _ in link] == ["download", "href"]
+    assert dict(link)["download"] == hostile_name + ".pdf"
+    assert dict(link)["href"] == "data:application/x-binary;base64,REFUQQ=="
+
+
+def test_postgres_output_is_not_html_escaped(tmp_path: Path) -> None:
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[1] = b'<b>&"O\'Brien"</b>'
+    dbdir = write_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, fields)])
+
+    result = run_croconvert(["-t", "postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert "'<b>&\"O''Brien\"</b>'" in result.stdout

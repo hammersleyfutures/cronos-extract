@@ -28,7 +28,8 @@ def template_convert(kod, args):
     db = Database(args.dbdir, args.compact, kod)
 
     template_dir = join(dirname(abspath(__file__)), "templates")
-    j2_env = Environment(loader=FileSystemLoader(template_dir))
+    # Only HTML output is escaped; SQL output quotes its values itself and must not contain HTML entities.
+    j2_env = Environment(loader=FileSystemLoader(template_dir), autoescape=lambda name: name == "html.j2")
     j2_templ = j2_env.get_template(args.template + ".j2")
     stdout.writelines(j2_templ.generate(db=db, base64=base64))
 
