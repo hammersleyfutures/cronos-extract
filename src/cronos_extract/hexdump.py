@@ -35,15 +35,14 @@ def asambigoushex(line, confidence):
 
 def as1251(b):
     """
-    convert a unicode character to a CP-1251 byte
+    convert unicode text to CP-1251 bytes
     This will help parse cyrillic user entries from command line.
+    Raises ValueError naming the text when it contains characters CP-1251 can't encode.
     """
     try:
-        c = str(b).encode("cp1251")
-        return bytes(c)
-    except:
-        pass
-    return bytes(".")
+        return str(b).encode("cp1251")
+    except UnicodeEncodeError as e:
+        raise ValueError(f"{b!r} can't be encoded as CP-1251: {e.reason} at position {e.start}") from e
 
 
 def aschr(b):

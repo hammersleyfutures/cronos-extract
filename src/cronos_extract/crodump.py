@@ -110,22 +110,87 @@ def destruct(kod, args):
         destruct_sys_definition(args, data)
 
 
-def color_code(c, confidence, force):
+def color_code(c, confidence, forced, force):
     from sys import stdout
 
     is_a_tty = hasattr(stdout, "isatty") and stdout.isatty()
     if not force and not is_a_tty:
         return c
 
+    if forced:
+        return "\033[32m" + c + "\033[0m"
     if confidence < 0:
         return "\033[96m" + c + "\033[0m"
     if confidence == 0:
         return "\033[31m" + c + "\033[0m"
-    if confidence == 255:
-        return "\033[32m" + c + "\033[0m"
     if confidence > 3:
         return "\033[93m" + c + "\033[0m"
     return "\033[94m" + c + "\033[0m"
+
+
+FIX_FORMAT = "use xxyy=C or xxyycc, with the encrypted byte xx, the shift yy and the plaintext C or cc"
+
+
+def parse_fix(value):
+    """
+    Parse a strucrack --fix switch into (encrypted byte, shift, plaintext byte).
+
+    Raises argparse.ArgumentTypeError with the reason when the switch can't be parsed.
+    """
+    try:
+        if len(value) != 6:
+            raise ValueError(f"expected 6 characters, got {len(value):d}")
+        if value[4] == "=":
+            i, o = unhex(value[0:4])
+            (c,) = as1251(value[5:])
+        else:
+            i, o, c = unhex(value)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(f"invalid fix {value!r}: {e}; {FIX_FORMAT}") from e
+    return i, o, c
+
+
+def positive_int(value):
+    """
+    Parse a command line option that must be a positive whole number.
+
+    Raises argparse.ArgumentTypeError when `value` is not one.
+    """
+    try:
+        number = int(value)
+    except ValueError:
+        number = 0
+    if number <= 0:
+        raise argparse.ArgumentTypeError(f"{value!r} must be a positive number")
+    return number
+
+
+TEXT_FORMAT = "use record:line:offset:plaintext, with the record, line and offset that the strucrack dump shows"
+
+
+def parse_text(value):
+    """
+    Parse a strucrack --text value into (record number, offset in the record, CP-1251 plaintext bytes).
+
+    Raises argparse.ArgumentTypeError with the reason when the value can't be parsed.
+    """
+    parts = value.split(":", 3)
+    try:
+        if len(parts) != 4:
+            raise ValueError("expected four parts separated by ':'")
+        record, line, offset = [int(part) for part in parts[:3]]
+        if min(record, line, offset) < 0:
+            raise ValueError("record, line and offset can't be negative")
+        plaintext = as1251(parts[3])
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(f"invalid text {value!r}: {e}; {TEXT_FORMAT}") from e
+    return record, line + offset, plaintext
+
+
+class CrackInputError(Exception):
+    """
+    A strucrack option that doesn't fit the database being cracked.
+    """
 
 
 def strucrack(kod, args):
@@ -140,6 +205,29 @@ def strucrack(kod, args):
         return derive_kod_from_stru(db, args)
 
 
+def kod_from_xref(xref):
+    """
+    Build a KOD table and its confidence from `xref`, where xref[shift][encrypted byte] counts how often that
+    encrypted byte was seen at that shift where the plaintext is assumed to be zero.
+
+    Each shift claims the encrypted byte it saw most, with that count as the confidence. When two shifts claim
+    the same byte, the higher count keeps it, and on an equal count the first claim stays. Shifts that saw
+    no data claim nothing, so their entries keep confidence 0.
+    """
+    KOD = [0] * 256
+    KOD_CONFIDENCE = [0] * 256
+    for i, xx in enumerate(xref):
+        k, v = max(enumerate(xx), key=lambda kv: kv[1])
+        if v <= KOD_CONFIDENCE[k]:
+            continue
+
+        #       Display the confidence, matches under 3 usually are unreliable
+        #       print("%02x :: %02x :: %d" % (i, k, v))
+        KOD[k] = i
+        KOD_CONFIDENCE[k] = v
+    return KOD, KOD_CONFIDENCE
+
+
 def derive_kod_from_stru(db, args):
     """
     Derive the KOD table from the encrypted CroStru or CroSys records of `db`, as strucrack describes.
@@ -147,12 +235,14 @@ def derive_kod_from_stru(db, args):
     if args.sys:
         table = db.sys
         if not db.sys:
-            print(f"no CroSys.dat file found in {args.dbdir}")
+            if not args.silent:
+                print(f"no CroSys.dat file found in {args.dbdir}")
             return
     else:
         table = db.stru
         if not db.stru:
-            print(f"no CroStru.dat file found in {args.dbdir}")
+            if not args.silent:
+                print(f"no CroStru.dat file found in {args.dbdir}")
             return
 
     xref = [[0] * 256 for _ in range(256)]
@@ -162,46 +252,41 @@ def derive_kod_from_stru(db, args):
         for ofs, byte in enumerate(data):
             xref[(ofs + i + 1) % 256][byte] += 1
 
-    KOD = [0] * 256
-    KOD_CONFIDENCE = [0] * 256
-    for i, xx in enumerate(xref):
-        k, v = max(enumerate(xx), key=lambda kv: kv[1])
-
-        #       Display the confidence, matches under 3 usually are unreliable
-        #       print("%02x :: %02x :: %d" % (i, k, v))
-        KOD[k] = i
-        KOD_CONFIDENCE[k] = v
+    KOD, KOD_CONFIDENCE = kod_from_xref(xref)
 
     #       Test deducted KOD against the default one, for debugging purposes
     #        if KOD[k] != INITIAL_KOD[k]:
     #            print("# KOD[%02x] == %02x, should be %02x" % (i, KOD[i], INITIAL_KOD[i]))
     #            KOD[k] = -1
 
-    for fix in args.fix or []:
-        if len(fix) != 6:
-            print("Invalid Fix format. Use xxyy=C or xxyycc")
-            continue
-
-        if fix[4] != "=":
-            i, o, c = unhex(fix)
-        else:
-            i, o = unhex(fix[0:4])
-            (c,) = as1251(fix[5:])
-
+    # Entries the user forced with --fix or --text keep their value when they duplicate another entry
+    KOD_FORCED = [False] * 256
+    for i, o, c in args.fix or []:
         KOD[i] = (c + o) % 256
         KOD_CONFIDENCE[i] = 255
+        KOD_FORCED[i] = True
         # print("%02x %02x %02x" % ((c + o) % 256, i, o))
 
     # For chunks of text where record and offset is known, set the KOD
-    for fix in args.text or []:
-        record, line, offset, text = fix.split(":", 4)
-        data = table.readrec(int(record) + 1)
-        dataoff = int(line) + int(offset)
-        o = int(record) + 1 + int(line) + int(offset)
+    for record, dataoff, text in args.text or []:
+        if record >= table.nrofrecords:
+            raise CrackInputError(
+                f"--text: record {record:d} doesn't exist, the file has records 0 to {table.nrofrecords - 1:d}"
+            )
+        data = table.readrec(record + 1)
+        if not data:
+            raise CrackInputError(f"--text: record {record:d} is deleted or empty")
+        if dataoff + len(text) > len(data):
+            raise CrackInputError(
+                f"--text: {len(text):d} bytes at offset {dataoff:d} runs past the end of record {record:d}, "
+                f"which has {len(data):d} bytes"
+            )
+        o = record + 1 + dataoff
         for i, c in enumerate(text):
             d = data[dataoff + i]
-            KOD[d] = (int.from_bytes(as1251(c), "little") + o + i) % 256
+            KOD[d] = (c + o + i) % 256
             KOD_CONFIDENCE[d] = 255
+            KOD_FORCED[d] = True
 
     kod_set = set([v for o, v in enumerate(KOD) if KOD_CONFIDENCE[o] > 0])
     unset_entries = [o for o, v in enumerate(KOD) if KOD_CONFIDENCE[o] == 0]
@@ -220,7 +305,7 @@ def derive_kod_from_stru(db, args):
     duplicates = sorted(duplicates, key=lambda x: x[1])
 
     for o, _v in duplicates:
-        if KOD_CONFIDENCE[o] < 255:
+        if not KOD_FORCED[o]:
             KOD_CONFIDENCE[o] = -1
 
     from . import koddecoder
@@ -239,11 +324,25 @@ def derive_kod_from_stru(db, args):
         ),
     ]
 
+    # The KOD is resolved when every entry has a positive confidence and it is a permutation of 0..255,
+    # because a KOD with duplicate values can't decode the database.
+    unset_count = len([o for o in KOD_CONFIDENCE if o <= 0])
+    is_resolved = unset_count == 0 and sorted(KOD) == list(range(256))
+    if not is_resolved and args.noninteractive:
+        if not args.silent:
+            print(
+                f"Automatic cracking failed: {unset_count:d} entries unsolved. "
+                "Run strucrack without --noninteractive to resolve them.",
+                file=sys.stderr,
+            )
+        return None
+
     force_color = args.color
 
     # Dump partially decoded stru records for the user to try to spot patterns
     w = args.width
-    for i, data in enumerate(table.enumrecords()):
+    records = [] if args.silent else table.enumrecords()
+    for i, data in enumerate(records):
         if not data:
             continue
 
@@ -251,18 +350,19 @@ def derive_kod_from_stru(db, args):
 
         candidate, candidate_confidence = kod.try_decode(i + 1, data)
 
-        for s, maxsubs, deststring, destoffset in known_strings:
-            incomplete_matches = match_with_mismatches(candidate, candidate_confidence, s, maxsubs)
+        for s, min_matching, deststring, destoffset in known_strings:
+            incomplete_matches = match_with_mismatches(candidate, candidate_confidence, s, min_matching)
             # print(sisnm)
             for ofix in incomplete_matches:
                 do = ofix[0]
                 print(f"Found {asasc(candidate[do : do + len(s)])} which looks a lot like {asasc(s)} ")
                 print("Add the following switches to your command line to fix the decoder box:\n    ", end="")
                 for o, c in enumerate(deststring):
-                    print(
-                        f"-f {data[do + o + destoffset]:02x}{(do + i + 1 + o + destoffset) % 256:02x}{c:02x} ",
-                        end="",
-                    )
+                    # the known string can reach before or past this record, where there is no byte to fix
+                    pos = do + o + destoffset
+                    if not 0 <= pos < len(data):
+                        continue
+                    print(f"-f {data[pos]:02x}{(pos + i + 1) % 256:02x}{c:02x} ", end="")
                 print("\n")
 
         candidate_chunks = [candidate[j : j + w] for j in range(0, len(candidate), w)]
@@ -271,10 +371,14 @@ def derive_kod_from_stru(db, args):
             text = asasc(chunk, confidence)
             hexed = asambigoushex(chunk, confidence)
 
-            colored = "".join(color_code(c, confidence[o], force_color) for o, c in enumerate(text))
-            colored_hexed = "".join(color_code(c, confidence[o >> 1], force_color) for o, c in enumerate(hexed))
+            forced = [KOD_FORCED[b] for b in data[ofs * w : ofs * w + w]]
+
+            colored = "".join(color_code(c, confidence[o], forced[o], force_color) for o, c in enumerate(text))
+            colored_hexed = "".join(
+                color_code(c, confidence[o >> 1], forced[o >> 1], force_color) for o, c in enumerate(hexed)
+            )
             fix_helper = " ".join(
-                f"{b:02x}{(w * ofs + i + 1 + o) % 256:02x}={color_code(text[o], confidence[o], force_color)}"
+                f"{b:02x}{(w * ofs + i + 1 + o) % 256:02x}={color_code(text[o], confidence[o], forced[o], force_color)}"
                 for o, b in enumerate(data[ofs * w : ofs * w + w])
             )
 
@@ -285,36 +389,39 @@ def derive_kod_from_stru(db, args):
             print(f"{w * ofs:05d} {colored + padding} : {colored_hexed + padding * 2} : {fix_helper}")
         print()
 
-    if len(duplicates):
+    if len(duplicates) and not args.silent:
         print(
             "\nDuplicates found:\n"
             + ", ".join(
-                color_code(f"[{o:02x}=>{v:02x} ({KOD_CONFIDENCE[o]:d})]", KOD_CONFIDENCE[o], force_color)
+                color_code(f"[{o:02x}=>{v:02x} ({KOD_CONFIDENCE[o]:d})]", KOD_CONFIDENCE[o], KOD_FORCED[o], force_color)
                 for o, v in duplicates
             )
         )
 
-    # If the KOD is not completely resolved, show the missing mappings
-    unset_count = KOD_CONFIDENCE.count(0)
-    if unset_count > 0:
-        if args.noninteractive:
-            return
+    # If the KOD is not completely resolved, show the missing mappings. Entries with a duplicate value
+    # count as unresolved.
+    if not is_resolved:
         if not args.silent:
-            unset_entries = ", ".join([f"{o:02x}" for o, v in enumerate(KOD) if KOD_CONFIDENCE[o] == 0])
-            unused_values = ", ".join([f"{v:02x}" for v in sorted(set(range(0, 256)).difference(set(kod_set)))])
+            kod_set = set([v for o, v in enumerate(KOD) if KOD_CONFIDENCE[o] > 0])
+            unset_entries = ", ".join([f"{o:02x}" for o, v in enumerate(KOD) if KOD_CONFIDENCE[o] <= 0])
+            unused_values = ", ".join([f"{v:02x}" for v in sorted(set(range(0, 256)).difference(kod_set))])
             print(f"\nAmbigous result when cracking. {unset_count:d} entries unsolved. Missing mappings:")
             print(f"[{unset_entries}] => [{unused_values}]\n")
+            if unset_count == 0:
+                print("The forced KOD entries map several entries to the same value, see the duplicates above.\n")
             print("KOD estimate:")
             print(
                 "".join(
-                    color_code(f"{c:02x}" if KOD_CONFIDENCE[o] > 0 else "??", KOD_CONFIDENCE[o], force_color)
+                    color_code(
+                        f"{c:02x}" if KOD_CONFIDENCE[o] > 0 else "??", KOD_CONFIDENCE[o], KOD_FORCED[o], force_color
+                    )
                     for o, c in enumerate(KOD)
                 )
             )
 
             print("\nIf you can provide clues for unresolved KOD entries by looking at the output, pass them via")
             print("crodump strucrack -f f103=B  -f f10342")
-        return [0 if KOD_CONFIDENCE[o] == 0 else _ for o, _ in enumerate(KOD)]
+        return None
 
     if not args.silent:
         print(
@@ -350,17 +457,23 @@ def derive_kod_from_bank_and_index(db, args):
 
     for dbfile in db.bank, db.index:
         if not dbfile:
-            print(f"no data file found in {args.dbdir}")
+            if not args.silent:
+                print(f"no data file found in {args.dbdir}")
             return
-        for i in range(1, min(10000, dbfile.nrofrecords)):
+        # records are numbered from 1 to nrofrecords; read at most the first 10000
+        for i in range(1, min(10000, dbfile.nrofrecords) + 1):
             rec = dbfile.readrec(i)
             if rec and len(rec) > 11:
                 xref[(i + 3) % 256][rec[3]] += 1
 
-    KOD = [0] * 256
-    for i, xx in enumerate(xref):
-        k, _count = max(enumerate(xx), key=lambda kv: kv[1])
-        KOD[k] = i
+    KOD, KOD_CONFIDENCE = kod_from_xref(xref)
+
+    # Rows that found no data, or lost their byte to another row, leave entries unresolved.
+    unset_count = len([o for o in KOD_CONFIDENCE if o <= 0])
+    if unset_count > 0 or sorted(KOD) != list(range(256)):
+        if not args.silent:
+            print(f"Ambigous result when cracking. {unset_count:d} entries unsolved: too few CroBank/CroIndex records")
+        return None
 
     if not args.silent:
         print(tohex(bytes(KOD)))
@@ -457,16 +570,19 @@ def build_parser():
     p.add_argument("--silent", action="store_true", help="no output")
     p.add_argument("--noninteractive", action="store_true", help="Stop if automatic cracking fails")
     p.add_argument("--color", action="store_true", help="force color output even on non-ttys")
-    p.add_argument("--fix", "-f", action="append", dest="fix", help="force KOD entries after identification")
+    p.add_argument(
+        "--fix", "-f", action="append", dest="fix", type=parse_fix, help="force KOD entries after identification"
+    )
     p.add_argument(
         "--text",
         "-t",
         action="append",
         dest="text",
+        type=parse_text,
         help="add fixed bytes to decoder box by providing whole strings for a position in a record, "
         "format is record:line:offset:plaintext",
     )
-    p.add_argument("--width", "-w", type=int, help="max number of decoded characters on screen", default=24)
+    p.add_argument("--width", "-w", type=positive_int, help="max number of decoded characters on screen", default=24)
 
     p.add_argument("dbdir", type=str)
     p.set_defaults(handler=strucrack)
@@ -522,7 +638,13 @@ def main():
         kod = koddecoder.new()
 
     if args.handler:
-        args.handler(kod, args)
+        try:
+            result = args.handler(kod, args)
+        except CrackInputError as e:
+            sys.exit(str(e))
+        # strucrack --noninteractive stops with status 1 when it can't derive the KOD
+        if result is None and getattr(args, "noninteractive", False):
+            sys.exit(1)
 
 
 if __name__ == "__main__":
