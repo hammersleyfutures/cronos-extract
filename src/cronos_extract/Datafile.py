@@ -258,7 +258,7 @@ class Datafile:
                 else:
                     extofs, extlen = struct.unpack("<LL", dat[:8])
                     o = 8
-                infostr = "%08x;%08x" % (extofs, extlen)
+                infostr = "{:08x};{:08x}".format(extofs, extlen)
                 encdat = dat[o:]
                 while len(encdat) < extlen:
                     dat = self.readdata(extofs, self.blocksize)
@@ -269,7 +269,7 @@ class Datafile:
                     else:
                         (extofs,) = struct.unpack("<L", dat[:4])
                         o = 4
-                    infostr += ";%08x" % (extofs)
+                    infostr += ";{:08x}".format(extofs)
                     encdat += dat[o:]
                 tail = encdat[extlen:]
                 encdat = encdat[:extlen]
@@ -299,7 +299,7 @@ class Datafile:
             # output parts not referenced in the .tad file.
             for o, l in self.enumunreferenced(ranges, self.datsize):
                 dat = self.readdata(o, l)
-                print("%08x-%08x: %s" % (o, o + l, toout(args, dat)))
+                print("{:08x}-{:08x}: {}".format(o, o + l, toout(args, dat)))
 
     def iscompressed(self, data):
         """

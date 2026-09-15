@@ -41,7 +41,7 @@ class FieldDefinition:
                 self.minval,
                 self.maxval,
                 self.unk4,
-                "'%s'" % self.name,
+                "'{}'".format(self.name),
                 tohex(self.remaining),
             )
         else:
@@ -141,14 +141,14 @@ class TableDefinition:
                 fielddef = rd.readbytes(deflen)
                 self.fields.append(FieldDefinition(fielddef))
         except Exception as e:
-            print("Warning: Error '%s' parsing FieldDefinitions" % e)
+            print("Warning: Error '{}' parsing FieldDefinitions".format(e))
 
         try:
             self.terminator = rd.readdword()
         except EOFError:
             print("Warning: FieldDefinition section not terminated")
         except Exception as e:
-            print("Warning: Error '%s' parsing Tabledefinition" % e)
+            print("Warning: Error '{}' parsing Tabledefinition".format(e))
 
         self.fields.sort(key=lambda field: field.idx2)
 
@@ -174,7 +174,7 @@ class TableDefinition:
 
     def dump(self, args):
         if args.verbose:
-            print("table: %s" % tohex(self.headerdata))
+            print("table: {}".format(tohex(self.headerdata)))
 
         print(str(self))
 
@@ -183,7 +183,7 @@ class TableDefinition:
                 print("field#%2d: %04x - %s" % (i, len(field.defdata), tohex(field.defdata)))
             print(str(field))
         if args.verbose:
-            print("remaining: %s" % tohex(self.remainingdata))
+            print("remaining: {}".format(tohex(self.remainingdata)))
 
 
 class Field:

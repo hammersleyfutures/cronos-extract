@@ -23,14 +23,14 @@ def ashex(line):
     """
     convert a byte-array to a space separated list of 2-digit hex values.
     """
-    return " ".join("%02x" % _ for _ in line)
+    return " ".join("{:02x}".format(_) for _ in line)
 
 
 def asambigoushex(line, confidence):
     """
     convert an array to a list of 2-digit hex values with potentially unset values of -1
     """
-    return "".join("%02x" % _ if confidence[o] > 0 else "??" for o, _ in enumerate(line))
+    return "".join("{:02x}".format(_) if confidence[o] > 0 else "??" for o, _ in enumerate(line))
 
 
 def as1251(b):
