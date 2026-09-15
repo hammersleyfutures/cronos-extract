@@ -20,6 +20,7 @@ uv run pytest --update-golden             # rewrite tests/golden/ after a delibe
 uv run croconvert --csv -o out test_data/all_field_types
 uv run croconvert -t postgres test_data/all_field_types
 uv run crodump strudump -v -a test_data/all_field_types
+uv run cronos-extract survey test_data    # report each database's format version
 uv run python -m cronos_extract.dumpdbfields test_data/all_field_types   # example script, no console entry point
 ```
 

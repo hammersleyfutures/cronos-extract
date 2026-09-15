@@ -26,6 +26,30 @@ By default it creates a `cronodump-YYYY-mm-DD-HH-MM-SS-ffffff/` directory contai
 When you get an error message, or just unreadable data, chances are your database is protected. You may need to look into the `--dbcrack` or `--strucrack` options, explained below.
 
 
+# Surveying databases
+
+Before exporting anything, `cronos-extract survey` reports which CronosPro version each database uses. It reads only
+the 19-byte header of every `Cro*.dat` file: no records, no file contents.
+
+```bash
+cronos-extract survey /path/to/databases            # a block per database
+cronos-extract survey --counts /path/to/databases   # counts per version, naming no directories
+cronos-extract survey --jsonl /path/to/databases    # one JSON object per database, for scripts
+```
+
+To survey databases kept in several places, name them in a text file, one path per line, and survey them as one
+group. Blank lines and lines starting with `#` are ignored, and a relative path is taken from the current
+directory. A path that is no longer a directory is reported on stderr and skipped, and a database found under two
+of the paths is reported once.
+
+```bash
+cronos-extract survey --list /path/to/list.txt --counts
+```
+
+Versions `01.02`–`01.05` are v3, `01.11`, `01.13` and `01.14` are v4, and `01.19` is v7. cronos-extract reads v3 and
+v4; v7 is not supported yet.
+
+
 # Templates
 
 The croconvert command uses the [jinja templating framework](https://jinja.palletsprojects.com/) to render more file formats like PostgreSQL and HTML.
