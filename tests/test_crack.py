@@ -99,6 +99,29 @@ def test_crodump_decodes_with_a_cracked_kod(encrypted_db: str, flag: str) -> Non
     assert "'erdgeist'" in result.stdout
 
 
+def test_strucrack_applies_a_fix_given_as_a_character(encrypted_db: str) -> None:
+    # Force KOD[5] to its true value, so that encrypted byte 05 decodes to "A" at this shift.
+    shift = (KOD[5] - ord("A")) % 256
+
+    assert derive_from_stru(encrypted_db, "-f", f"05{shift:02x}=A") == KOD
+
+
+@pytest.mark.parametrize(
+    ("fix", "message"),
+    [
+        ("0000=中", "can't be encoded as CP-1251"),
+        ("0000zz", "Non-hexadecimal digit"),
+        ("00000", "expected 6 characters"),
+    ],
+)
+def test_strucrack_rejects_an_invalid_fix(encrypted_db: str, fix: str, message: str) -> None:
+    result = run_command("crodump", ["strucrack", "-f", fix, encrypted_db])
+
+    assert result.returncode != 0
+    assert "Traceback" not in result.stderr
+    assert message in result.stderr
+
+
 def test_crodump_crack_flag_needs_a_database_subcommand() -> None:
     result = run_command("crodump", ["--strucrack", "kodump", "--help"])
 

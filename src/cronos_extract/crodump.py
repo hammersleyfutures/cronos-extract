@@ -128,6 +128,28 @@ def color_code(c, confidence, force):
     return "\033[94m" + c + "\033[0m"
 
 
+FIX_FORMAT = "use xxyy=C or xxyycc, with the encrypted byte xx, the shift yy and the plaintext C or cc"
+
+
+def parse_fix(value):
+    """
+    Parse a strucrack --fix switch into (encrypted byte, shift, plaintext byte).
+
+    Raises argparse.ArgumentTypeError with the reason when the switch can't be parsed.
+    """
+    try:
+        if len(value) != 6:
+            raise ValueError(f"expected 6 characters, got {len(value):d}")
+        if value[4] == "=":
+            i, o = unhex(value[0:4])
+            (c,) = as1251(value[5:])
+        else:
+            i, o, c = unhex(value)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(f"invalid fix {value!r}: {e}; {FIX_FORMAT}") from e
+    return i, o, c
+
+
 def strucrack(kod, args):
     """
     This function derives the KOD key from the assumption that most bytes in
@@ -177,17 +199,7 @@ def derive_kod_from_stru(db, args):
     #            print("# KOD[%02x] == %02x, should be %02x" % (i, KOD[i], INITIAL_KOD[i]))
     #            KOD[k] = -1
 
-    for fix in args.fix or []:
-        if len(fix) != 6:
-            print("Invalid Fix format. Use xxyy=C or xxyycc")
-            continue
-
-        if fix[4] != "=":
-            i, o, c = unhex(fix)
-        else:
-            i, o = unhex(fix[0:4])
-            (c,) = as1251(fix[5:])
-
+    for i, o, c in args.fix or []:
         KOD[i] = (c + o) % 256
         KOD_CONFIDENCE[i] = 255
         # print("%02x %02x %02x" % ((c + o) % 256, i, o))
@@ -467,7 +479,9 @@ def build_parser():
     p.add_argument("--silent", action="store_true", help="no output")
     p.add_argument("--noninteractive", action="store_true", help="Stop if automatic cracking fails")
     p.add_argument("--color", action="store_true", help="force color output even on non-ttys")
-    p.add_argument("--fix", "-f", action="append", dest="fix", help="force KOD entries after identification")
+    p.add_argument(
+        "--fix", "-f", action="append", dest="fix", type=parse_fix, help="force KOD entries after identification"
+    )
     p.add_argument(
         "--text",
         "-t",
