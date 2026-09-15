@@ -423,3 +423,41 @@ def test_postgres_output_writes_null_for_empty_values_in_columns_that_are_not_te
     assert insert_statements(result.stdout) == [
         "INSERT INTO \"erdgeist\" VALUES ('1', NULL, 'text', '', NULL, NULL, '', '', '', '', '', '');"
     ]
+
+
+def corrupt_bank_record_database(directory: Path) -> str:
+    """Write a database whose CroBank record 2 is corrupt, with records referring to a good and to the corrupt file.
+
+    Record 2's index entry has no inline flag, so the reader expects an extended record header, which is longer
+    than the 4 bytes stored.
+    """
+    dbdir = write_database(
+        directory,
+        [
+            file_record(b"GOOD"),
+            b"\x00abc",
+            record_with_file_field(file_reference_field("good", "pdf", 1)),
+            record_with_file_field(file_reference_field("broken", "pdf", 2)),
+        ],
+    )
+    tad_path = Path(dbdir) / "CroBank.tad"
+    tad = bytearray(tad_path.read_bytes())
+    entry_offset = 8 + 12
+    offset, length, checksum = struct.unpack_from("<LLL", tad, entry_offset)
+    struct.pack_into("<LLL", tad, entry_offset, offset, length & 0xFFFFFF, checksum)
+    tad_path.write_bytes(tad)
+    return dbdir
+
+
+def test_csv_export_skips_a_corrupt_bank_record(tmp_path: Path) -> None:
+    dbdir = corrupt_bank_record_database(tmp_path / "db")
+    outdir = tmp_path / "out"
+
+    result = run_croconvert(["--csv", "-o", str(outdir), dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert any("Warning" in line and "record 2" in line for line in result.stderr.splitlines()), result.stderr
+    with (outdir / "erdgeist.csv").open(encoding="utf-8", newline="") as csvfile:
+        assert [row[0] for row in list(csv.reader(csvfile))[1:]] == ["3", "4"]
+    assert [path.name for path in (outdir / "Files-FL").iterdir()] == ["1"]
+    assert [path.name for path in (outdir / "Files-Referenced").iterdir()] == ["good.pdf"]

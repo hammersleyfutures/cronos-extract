@@ -10,7 +10,7 @@ from contextlib import ExitStack
 
 from . import koddecoder
 from .Datafile import Datafile
-from .Datamodel import Record, TableDefinition
+from .Datamodel import Record, TableDefinition, describe_error
 from .hexdump import ashex, strescape, toout
 from .readers import ByteReader
 
@@ -237,7 +237,7 @@ class Database:
                 print(sqlformatter(tab, rec))
         """
         for i in range(self.bank.nrofrecords):
-            data = self.bank.readrec(i + 1)
+            data = self.readbankrec(i + 1)
             if data and data[0] == table.tableid:
                 record = Record(i + 1, table.fields, data[1:])
                 if record.errors:
@@ -257,9 +257,20 @@ class Database:
         This is most likely the table with id 0.
         """
         for i in range(self.bank.nrofrecords):
-            data = self.bank.readrec(i + 1)
+            data = self.readbankrec(i + 1)
             if data and data[0] == table.tableid:
                 yield i + 1, data[1:]
+
+    def readbankrec(self, recno):
+        """
+        Read record `recno` from CroBank.
+        Returns None when the record is deleted, or when it is corrupt, after printing a warning.
+        """
+        try:
+            return self.bank.readrec(recno)
+        except (ValueError, struct.error) as e:
+            print(f"Warning: skipping CroBank record {recno:d}, which is corrupt: {describe_error(e)}", file=sys.stderr)
+            return None
 
     def get_record(self, index, asbase64=False):
         """
@@ -272,7 +283,7 @@ class Database:
             return None
         if not 1 <= recno <= self.bank.nrofrecords:
             return None
-        data = self.bank.readrec(recno)
+        data = self.readbankrec(recno)
         if data is None:
             return None
         if asbase64:
