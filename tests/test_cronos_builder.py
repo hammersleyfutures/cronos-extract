@@ -7,6 +7,7 @@ from cronos_builder import (
     TEST_TABLE_FILE_FIELD_INDEX,
     TEST_TABLE_ID,
     bank_record,
+    compressed_record,
     file_record,
     file_reference_field,
     random_kod,
@@ -54,6 +55,17 @@ def test_records_round_trip_through_the_reader(tmp_path: Path) -> None:
     ]
     assert (file_field.filename, file_field.extname, file_field.filedatarecord) == ("отчёт", "pdf", "1")
     assert stored_file == b"PDFDATA"
+
+
+def test_compressed_record_round_trips_through_the_reader(tmp_path: Path) -> None:
+    plain = person_record(b"")
+    dbdir = write_database(tmp_path, [compressed_record(plain)])
+
+    with Database(dbdir, False, KODcoding(INITIAL_KOD)) as db:
+        (table,) = db.enumerate_tables()
+        (record,) = db.enumerate_records(table)
+
+    assert [field.content for field in record.fields][1:3] == ["42", "text"]
 
 
 def test_encrypted_database_decodes_only_with_its_kod(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

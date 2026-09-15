@@ -17,6 +17,7 @@ from cronos_builder import (
     TEST_TABLE_ID,
     bank_record,
     complex_field,
+    corrupt_compressed_record,
     file_record,
     file_reference_field,
     stru_records_from_test_db,
@@ -492,6 +493,34 @@ def test_csv_export_skips_a_corrupt_bank_record(tmp_path: Path) -> None:
         assert [row[0] for row in list(csv.reader(csvfile))[1:]] == ["3", "4"]
     assert [path.name for path in (outdir / "Files-FL").iterdir()] == ["1"]
     assert [path.name for path in (outdir / "Files-Referenced").iterdir()] == ["good.pdf"]
+
+
+def corrupt_compressed_bank_record_database(directory: Path) -> str:
+    """Write a database whose CroBank record 2 passes iscompressed() but is not valid deflate data."""
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[0] = b"good"
+    return write_database(
+        directory,
+        [
+            bank_record(TEST_TABLE_ID, fields),
+            corrupt_compressed_record(),
+        ],
+    )
+
+
+def test_csv_export_skips_a_corrupt_compressed_bank_record(tmp_path: Path) -> None:
+    dbdir = corrupt_compressed_bank_record_database(tmp_path / "db")
+    outdir = tmp_path / "out"
+
+    result = run_command("croconvert", ["--csv", "-o", str(outdir), dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert any("Warning" in line and "record 2" in line and "corrupt" in line for line in result.stderr.splitlines()), (
+        result.stderr
+    )
+    with (outdir / "erdgeist.csv").open(encoding="utf-8", newline="") as csvfile:
+        rows = list(csv.reader(csvfile))[1:]
+    assert rows == [["1", "good", "", "", "", "", "", "", "", "", "", ""]]
 
 
 def test_exports_close_the_database_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

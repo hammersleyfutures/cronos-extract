@@ -366,7 +366,10 @@ class Datafile:
             size, _ = struct.unpack_from(">HH", data, o)
 
             C = zlib.decompressobj(-15)
-            result += C.decompress(data[o + 8 : o + 8 + size - 6])
+            try:
+                result += C.decompress(data[o + 8 : o + 8 + size - 6])
+            except zlib.error as e:
+                raise ValueError(f"corrupt compressed data: {e}") from e
             # note that we are not verifying the crc!
 
             o += size + 2

@@ -2,6 +2,7 @@
 # ABOUTME: Record layouts follow docs/cronos-research.md as the reader parses them, so tests can craft any database.
 import random
 import struct
+import zlib
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -111,6 +112,25 @@ def bank_record(tableid: int, fields: Sequence[bytes]) -> bytes:
     for field in fields:
         record += field if field.startswith(COMPLEX_FIELD_MARKER) else field + FIELD_SEPARATOR
     return bytes(record)
+
+
+def compressed_chunk(compdata: bytes) -> bytes:
+    """Encode `compdata` as one chunk of Datafile's compressed record format: size, flag, crc, then the data.
+
+    A compressed record is one or more of these chunks followed by the final marker b"\\x00\\x00\\x02".
+    """
+    return struct.pack(">HH", 6 + len(compdata), 0x800) + struct.pack("<L", 0) + compdata
+
+
+def compressed_record(payload: bytes) -> bytes:
+    """Compress `payload` into Datafile's compressed record format, as a single chunk."""
+    coder = zlib.compressobj(9, zlib.DEFLATED, -15)
+    return compressed_chunk(coder.compress(payload) + coder.flush()) + b"\x00\x00\x02"
+
+
+def corrupt_compressed_record() -> bytes:
+    """Return record bytes that pass Datafile.iscompressed() but whose data is not valid deflate output."""
+    return compressed_chunk(b"\xff\xff\xff\xff") + b"\x00\x00\x02"
 
 
 def write_database(

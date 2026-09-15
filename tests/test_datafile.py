@@ -7,7 +7,13 @@ from pathlib import Path
 
 import pytest
 from cli import run_command
-from cronos_builder import BLOCKSIZE, DAT_PREFIX_SIZE, INLINE_RECORD_FLAGS, write_raw_datafile
+from cronos_builder import (
+    BLOCKSIZE,
+    DAT_PREFIX_SIZE,
+    INLINE_RECORD_FLAGS,
+    corrupt_compressed_record,
+    write_raw_datafile,
+)
 
 from cronos_extract.Datafile import Datafile
 
@@ -81,6 +87,14 @@ def test_extension_block_past_the_end_of_the_file_is_reported(tmp_path: Path) ->
     write_bank_with_extended_record(tmp_path, extended_header(10_000, 100) + bytes(20))
 
     with open_bank(tmp_path) as bank, pytest.raises(ValueError, match="past the end of the file"):
+        bank.readrec(1)
+
+
+def test_corrupt_compressed_record_is_reported_as_a_value_error(tmp_path: Path) -> None:
+    data = corrupt_compressed_record()
+    write_raw_datafile(tmp_path, "Bank", data, [(FIRST_BLOCK, len(data) | INLINE_RECORD_FLAGS << 24)])
+
+    with open_bank(tmp_path) as bank, pytest.raises(ValueError, match="corrupt compressed data"):
         bank.readrec(1)
 
 
