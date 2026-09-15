@@ -474,7 +474,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 
 **Interfaces:**
 - Consumes: `survey_databases`, `SurveyedDatabase` from Task 2.
-- Produces: `survey.format_text(databases) -> Iterator[str]`, `survey.format_counts(databases) -> Iterator[str]`, `survey.format_jsonl(databases) -> Iterator[str]`; `cli.main(argv: list[str] | None = None) -> int`.
+- Produces: `survey.format_text(databases) -> Iterator[str]`, `survey.format_counts(databases) -> Iterator[str]`, `survey.format_jsonl(databases) -> Iterator[str]`, `survey.read_path_list(path: Path) -> list[Path]`, `survey.survey_roots(roots: Iterable[Path]) -> list[SurveyedDatabase]`; `cli.build_parser() -> argparse.ArgumentParser`, `cli.collect_roots(args, parser) -> list[Path]`, `cli.main(argv: list[str] | None = None) -> int`.
 
 - [ ] **Step 1: Write the failing command tests** in `tests/test_survey.py`:
 
@@ -547,6 +547,75 @@ def test_survey_command_rejects_a_missing_directory(tmp_path: Path) -> None:
     assert result.returncode == 2
     assert "Traceback" not in result.stderr
     assert "nowhere" in result.stderr
+
+
+def test_survey_command_surveys_the_directories_named_in_a_list_file(tmp_path: Path) -> None:
+    write_database(tmp_path / "first" / "db", [])
+    write_header_only_datafile(tmp_path / "second" / "v7", "Bank", version=b"01.19")
+    list_file = tmp_path / "databases.txt"
+    list_file.write_text(
+        f"# databases to survey\n\n{tmp_path / 'first'}\n  {tmp_path / 'second'}  \n", encoding="utf-8"
+    )
+
+    result = run_command("cli", ["survey", "--list", str(list_file)])
+
+    assert result.returncode == 0, result.stderr
+    assert str(tmp_path / "first" / "db") in result.stdout
+    assert str(tmp_path / "second" / "v7") in result.stdout
+
+
+def test_survey_command_counts_a_list_file_as_one_group(tmp_path: Path) -> None:
+    write_database(tmp_path / "first" / "db", [])
+    write_header_only_datafile(tmp_path / "second" / "v7", "Bank", version=b"01.19")
+    list_file = tmp_path / "databases.txt"
+    list_file.write_text(f"{tmp_path / 'first'}\n{tmp_path / 'second'}\n", encoding="utf-8")
+
+    result = run_command("cli", ["survey", "--list", str(list_file), "--counts"])
+
+    assert result.returncode == 0, result.stderr
+    assert str(tmp_path) not in result.stdout
+    assert "01.04  v3  2" in result.stdout
+    assert "01.19  v7  1" in result.stdout
+
+
+def test_survey_command_warns_about_a_list_entry_that_is_not_a_directory(tmp_path: Path) -> None:
+    write_database(tmp_path / "db", [])
+    list_file = tmp_path / "databases.txt"
+    list_file.write_text(f"{tmp_path / 'db'}\n{tmp_path / 'gone'}\n", encoding="utf-8")
+
+    result = run_command("cli", ["survey", "--list", str(list_file)])
+
+    assert result.returncode == 0, result.stderr
+    assert str(tmp_path / "db") in result.stdout
+    assert f"warning: {tmp_path / 'gone'} is not a directory; skipping it" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_survey_command_reports_a_database_once_when_the_roots_overlap(tmp_path: Path) -> None:
+    write_database(tmp_path / "outer" / "db", [])
+    list_file = tmp_path / "databases.txt"
+    list_file.write_text(f"{tmp_path / 'outer'}\n{tmp_path / 'outer' / 'db'}\n", encoding="utf-8")
+
+    result = run_command("cli", ["survey", "--list", str(list_file), str(tmp_path / "outer")])
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.count(str(tmp_path / "outer" / "db")) == 1
+
+
+def test_survey_command_rejects_a_missing_list_file(tmp_path: Path) -> None:
+    result = run_command("cli", ["survey", "--list", str(tmp_path / "nowhere.txt")])
+
+    assert result.returncode == 2
+    assert "Traceback" not in result.stderr
+    assert "nowhere.txt" in result.stderr
+
+
+def test_survey_command_needs_a_directory_or_a_list() -> None:
+    result = run_command("cli", ["survey"])
+
+    assert result.returncode == 2
+    assert "Traceback" not in result.stderr
+    assert "--list" in result.stderr
 ```
 
 Run the exact text assertions against the real output once the code exists: keep the columns as written here, and if the formatter produces different spacing, change the formatter, not the test.
@@ -624,6 +693,37 @@ def format_jsonl(databases: Iterable[SurveyedDatabase]) -> Iterator[str]:
 
 Note the columns in `describe_file`: the tests above pin `"Stru  01.04  v3  32-bit  kod-encoded  own-kod"`, so keep `name` padded to 6 and `generation` padded to 8. Adjust the code until the test's text matches exactly.
 
+Add these two functions to `src/cronos_extract/survey.py` as well. They let one run survey several directories as one group, named on the command line or in a `--list` file:
+
+```python
+def read_path_list(path: Path) -> list[Path]:
+    """
+    Return the directories named in `path`, one per line.
+
+    Blank lines and lines starting with # are ignored, surrounding whitespace is stripped, and a relative
+    path is taken from the current directory. Raises OSError when the list itself cannot be read.
+    """
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return [Path(entry) for line in lines if (entry := line.strip()) and not entry.startswith("#")]
+
+
+def survey_roots(roots: Iterable[Path]) -> list[SurveyedDatabase]:
+    """
+    Survey every directory in `roots` in order, returning the databases found.
+
+    A database found under more than one root, because the roots overlap or repeat, is returned once.
+    """
+    seen: set[Path] = set()
+    databases: list[SurveyedDatabase] = []
+    for root in roots:
+        for database in survey_databases(root):
+            resolved = database.directory.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                databases.append(database)
+    return databases
+```
+
 - [ ] **Step 4: Write `src/cronos_extract/cli.py`**
 
 ```python
@@ -644,16 +744,47 @@ def build_parser() -> argparse.ArgumentParser:
     output = survey_parser.add_mutually_exclusive_group()
     output.add_argument("--counts", action="store_true", help="print only counts per version, naming no directories")
     output.add_argument("--jsonl", action="store_true", help="print one JSON object per database")
-    survey_parser.add_argument("directories", nargs="+", type=Path, help="directories to search")
+    survey_parser.add_argument(
+        "--list",
+        dest="list_file",
+        type=Path,
+        help="a text file naming directories to survey, one per line; blank lines and lines starting with # are "
+        "ignored, and relative paths are taken from the current directory",
+    )
+    survey_parser.add_argument("directories", nargs="*", type=Path, help="directories to search")
     return parser
 
 
-def run_survey(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
-    """Survey every directory in `args.directories`, printing the format the options ask for."""
+def collect_roots(args: argparse.Namespace, parser: argparse.ArgumentParser) -> list[Path]:
+    """
+    Return the directories to survey, from the arguments and from any --list file, in the order given.
+
+    An argument that is not a directory is a usage error. A line of the list file that is not a directory is
+    reported on stderr and skipped: the file is data, which may name a database that has since moved.
+    """
+    roots: list[Path] = []
     for directory in args.directories:
         if not directory.is_dir():
             parser.error(f"{directory} is not a directory")
-    databases = [database for directory in args.directories for database in survey.survey_databases(directory)]
+        roots.append(directory)
+    if args.list_file is not None:
+        try:
+            listed = survey.read_path_list(args.list_file)
+        except OSError as e:
+            parser.error(f"cannot read {args.list_file}: {e}")
+        for directory in listed:
+            if directory.is_dir():
+                roots.append(directory)
+            else:
+                print(f"warning: {directory} is not a directory; skipping it", file=sys.stderr)
+    if not roots:
+        parser.error("give at least one directory, or --list with a file naming them")
+    return roots
+
+
+def run_survey(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    """Survey every directory given, printing the format the options ask for."""
+    databases = survey.survey_roots(collect_roots(args, parser))
     if args.counts:
         lines = survey.format_counts(databases)
     elif args.jsonl:
@@ -698,8 +829,9 @@ Add the cronos-extract command with a survey subcommand
 
 cronos-extract survey reports the CronosPro version, generation and
 encoding flags of every database under a directory, reading only file
-headers. --counts names no directories, for sensitive paths, and
---jsonl prints one object per database for scripts.
+headers. --list surveys the directories named in a text file as one
+group, --counts names no directories, for sensitive paths, and --jsonl
+prints one object per database for scripts.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 ```
@@ -722,6 +854,15 @@ the 19-byte header of every `Cro*.dat` file: no records, no file contents.
 cronos-extract survey /path/to/databases            # a block per database
 cronos-extract survey --counts /path/to/databases   # counts per version, naming no directories
 cronos-extract survey --jsonl /path/to/databases    # one JSON object per database, for scripts
+```
+
+To survey databases kept in several places, name them in a text file, one path per line, and survey them as one
+group. Blank lines and lines starting with `#` are ignored, and a relative path is taken from the current
+directory. A path that is no longer a directory is reported on stderr and skipped, and a database found under two
+of the paths is reported once.
+
+```bash
+cronos-extract survey --list /path/to/list.txt --counts
 ```
 
 Versions `01.02`–`01.05` are v3, `01.11`–`01.14` are v4 and `01.19` is v7. cronos-extract reads v3 and v4; v7 is not
