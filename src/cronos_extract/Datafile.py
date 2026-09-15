@@ -86,8 +86,7 @@ class Datafile:
         ) = struct.unpack("<8sH5sHH", hdrdata)
 
         if magic != b"CroFile\x00":
-            print("unknown magic: ", magic)
-            raise Exception("not a Crofile")
+            raise ValueError(f"Cro{self.name}.dat is not a Cronos file: unknown magic {magic!r}")
         self.use64bit = self.version in (b"01.03", b"01.05", b"01.11")
 
         # blocksize

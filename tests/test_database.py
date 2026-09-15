@@ -18,11 +18,21 @@ def test_database_closes_its_files_on_exit() -> None:
     assert all(file.closed for file in files)
 
 
+def test_file_without_cronos_magic_is_reported_in_the_error(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (tmp_path / "CroStru.dat").write_bytes(b"NotACronosFile" + bytes(20))
+    (tmp_path / "CroStru.tad").write_bytes(bytes(8))
+
+    with pytest.raises(ValueError, match=r"CroStru\.dat is not a Cronos file: unknown magic b'NotACron'"):
+        Database(str(tmp_path), False, KODcoding(INITIAL_KOD))
+
+    assert capsys.readouterr().out == ""
+
+
 def test_unreadable_datafile_leaves_no_open_files(tmp_path: Path) -> None:
     (tmp_path / "CroStru.dat").write_bytes(b"NotACronosFile" + bytes(20))
     (tmp_path / "CroStru.tad").write_bytes(bytes(8))
 
-    with pytest.raises(Exception, match="not a Crofile"):
+    with pytest.raises(ValueError, match="is not a Cronos file"):
         Database(str(tmp_path), False, KODcoding(INITIAL_KOD))
 
 
