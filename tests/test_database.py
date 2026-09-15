@@ -1,5 +1,5 @@
-# ABOUTME: Tests for cronos_extract.Database: opening and closing the files of a database directory.
-# ABOUTME: Uses the sample database in test_data and small hand-written files.
+# ABOUTME: Tests for cronos_extract.Database: opening and closing a database's files and decoding its definition.
+# ABOUTME: Uses the sample database in test_data, small hand-written files and databases from tests/cronos_builder.py.
 from pathlib import Path
 
 import pytest
