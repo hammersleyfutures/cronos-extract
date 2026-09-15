@@ -73,7 +73,7 @@ def describe_file(file: SurveyedFile) -> str:
     ]
     if header.own_kod:
         flags.append("own-kod")
-    return f"{file.name:<6}{header.version_text}  {header.generation}  " + "  ".join(flags)
+    return f"{file.name:<6}{header.version_text}  {header.generation:<7}  " + "  ".join(flags)
 
 
 def format_text(databases: Iterable[SurveyedDatabase]) -> Iterator[str]:
@@ -96,7 +96,7 @@ def format_counts(databases: Iterable[SurveyedDatabase]) -> Iterator[str]:
             else:
                 counts[(file.header.version_text, file.header.generation)] += 1
     for (version, generation), count in sorted(counts.items()):
-        yield f"{version}  {generation}  {count}"
+        yield f"{version}  {generation:<7}  {count}"
     if problems:
         yield f"unreadable files: {problems}"
 

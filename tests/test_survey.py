@@ -92,7 +92,7 @@ def test_survey_command_prints_a_line_for_each_file(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert str(tmp_path / "db") in result.stdout
-    assert "Stru  01.04  v3  32-bit  plain  uncompressed  own-kod" in result.stdout
+    assert "Stru  01.04  v3       32-bit  plain  uncompressed  own-kod" in result.stdout
 
 
 def test_survey_command_counts_without_naming_directories(tmp_path: Path) -> None:
@@ -103,8 +103,8 @@ def test_survey_command_counts_without_naming_directories(tmp_path: Path) -> Non
 
     assert result.returncode == 0, result.stderr
     assert str(tmp_path) not in result.stdout
-    assert "01.04  v3  2" in result.stdout
-    assert "01.19  v7  1" in result.stdout
+    assert "01.04  v3       2" in result.stdout
+    assert "01.19  v7       1" in result.stdout
 
 
 def test_survey_command_writes_one_json_object_per_database(tmp_path: Path) -> None:
@@ -192,8 +192,8 @@ def test_survey_command_counts_a_list_file_as_one_group(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert str(tmp_path) not in result.stdout
-    assert "01.04  v3  2" in result.stdout
-    assert "01.19  v7  1" in result.stdout
+    assert "01.04  v3       2" in result.stdout
+    assert "01.19  v7       1" in result.stdout
 
 
 def test_survey_command_warns_about_a_list_entry_that_is_not_a_directory(tmp_path: Path) -> None:
@@ -234,3 +234,42 @@ def test_survey_command_needs_a_directory_or_a_list() -> None:
     assert result.returncode == 2
     assert "Traceback" not in result.stderr
     assert "--list" in result.stderr
+
+
+def test_survey_command_lines_up_the_columns_of_a_known_and_an_unknown_generation(tmp_path: Path) -> None:
+    write_header_only_datafile(tmp_path / "db", "Bank", version=b"01.19")
+    write_header_only_datafile(tmp_path / "db", "Stru", version=b"09.99")
+
+    result = run_command("cli", ["survey", str(tmp_path)])
+
+    assert result.returncode == 0, result.stderr
+    bank, stru = (line for line in result.stdout.splitlines() if line.startswith("  "))
+    assert "  v7" in bank
+    assert "  unknown" in stru
+    assert bank.index("01.19") == stru.index("09.99")
+    assert bank.index("32-bit") == stru.index("32-bit")
+
+
+def test_survey_command_takes_a_relative_list_entry_from_the_current_directory(tmp_path: Path) -> None:
+    write_database(tmp_path / "db", [])
+    (tmp_path / "lists").mkdir()
+    (tmp_path / "lists" / "databases.txt").write_text("db\n", encoding="utf-8")
+
+    result = run_command("cli", ["survey", "--list", "lists/databases.txt"], cwd=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines()[0] == "db"
+    assert "Stru" in result.stdout
+
+
+def test_survey_command_counts_the_files_it_could_not_read(tmp_path: Path) -> None:
+    (tmp_path / "broken").mkdir()
+    (tmp_path / "broken" / "CroStru.dat").write_bytes(b"NotACronosFile" + bytes(20))
+    (tmp_path / "broken" / "CroBank.dat").write_bytes(b"short")
+    write_header_only_datafile(tmp_path / "v7", "Bank", version=b"01.19")
+
+    result = run_command("cli", ["survey", "--counts", str(tmp_path)])
+
+    assert result.returncode == 0, result.stderr
+    assert "unreadable files: 2" in result.stdout
+    assert len(result.stdout.splitlines()) == 2
