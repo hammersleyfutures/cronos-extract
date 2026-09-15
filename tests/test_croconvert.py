@@ -141,3 +141,35 @@ def test_html_export_skips_unreadable_file_references(tmp_path: Path) -> None:
     assert_skipped_file_warnings(result.stderr)
     assert [dict(link).get("download") for link in start_tags(result.stdout, "a")[1:]] == ["good.pdf"]
     assert "</html>" in result.stdout
+
+
+def test_csv_export_gives_referenced_files_safe_unique_names(tmp_path: Path) -> None:
+    dbdir = write_database(
+        tmp_path / "db",
+        [
+            file_record(b"one"),
+            file_record(b"two"),
+            file_record(b"three"),
+            file_record(b"four"),
+            file_record(b"five"),
+            record_with_file_field(file_reference_field("", "", 1)),
+            record_with_file_field(file_reference_field("..", "", 2)),
+            record_with_file_field(file_reference_field("same", "txt", 3)),
+            record_with_file_field(file_reference_field("same", "txt", 4)),
+            record_with_file_field(file_reference_field("same", "txt", 3)),
+            record_with_file_field(file_reference_field("nul\x00byte", "bin", 5)),
+        ],
+    )
+    outdir = tmp_path / "out"
+
+    result = run_croconvert(["--csv", "-o", str(outdir), dbdir])
+
+    assert result.returncode == 0, result.stderr
+    referenced = outdir / "Files-Referenced"
+    assert {path.name: path.read_bytes() for path in referenced.iterdir()} == {
+        "1": b"one",
+        "2": b"two",
+        "same.txt": b"three",
+        "same-4.txt": b"four",
+        "nul_byte.bin": b"five",
+    }

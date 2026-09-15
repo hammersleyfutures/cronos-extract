@@ -8,8 +8,10 @@ python3 croconvert.py -t html chechnya_proverki_ul_2012/
 
 import base64
 import csv
+import re
 import sys
 from datetime import datetime
+from itertools import chain, count
 from os import chdir, mkdir
 from os.path import abspath, dirname, join
 from sys import exit, stdout
@@ -51,7 +53,31 @@ def template_convert(kod, args):
 
 
 def safepathname(name):
-    return name.replace(":", "_").replace("/", "_").replace("\\", "_")
+    """Replace the characters that can't appear in a file name on Linux, macOS or Windows with underscores."""
+    return re.sub(r'[\x00-\x1f<>:"/\\|?*]', "_", name)
+
+
+def unique_file_name(stem, extension, number, used_names):
+    """
+    Return a file name made from `stem` and `extension` that no other output file uses, or None when
+    the thing numbered `number` already has a file.
+
+    `stem` and `extension` are made safe with safepathname. A stem that is empty or only dots is replaced
+    by `number`, and a name that is already used by something else gets "-<number>" appended to its stem.
+    `used_names` maps each file name given so far, compared case-insensitively, to its number.
+    """
+    stem = safepathname(stem)
+    if not stem.strip("."):
+        stem = str(number)
+    extension = "." + safepathname(extension) if extension else ""
+    for candidate in chain([stem, f"{stem}-{number}"], (f"{stem}-{number}-{n}" for n in count(2))):
+        name = candidate + extension
+        key = name.casefold()
+        if key not in used_names:
+            used_names[key] = number
+            return name
+        if used_names[key] == number:
+            return None
 
 
 def csv_output(kod, args):
@@ -85,7 +111,7 @@ def csv_output(kod, args):
 
     # Write all files from the file table. This is useful for unreferenced files
     for table in db.enumerate_tables(files=True):
-        filedir = "Files-" + table.abbrev
+        filedir = "Files-" + safepathname(table.abbrev)
         mkdir(filedir)
 
         for system_number, content in db.enumerate_files(table):
@@ -96,13 +122,18 @@ def csv_output(kod, args):
         filedir = "Files-Referenced"
         mkdir(filedir)
 
-    # Write all referenced files with their filename and extension intact
+    # Write all referenced files with their filename and extension intact, as far as that is safe and unique
+    referenced_names = {}
     for tablename, recno, reffile in filereferences:
         if reffile.content:  # only print when file is not NULL
             content = referenced_file(db, tablename, recno, reffile)
             if content is None:
                 continue
-            filesafename = safepathname(reffile.filename) + "." + safepathname(reffile.extname)
+            filesafename = unique_file_name(
+                reffile.filename, reffile.extname, int(reffile.filedatarecord), referenced_names
+            )
+            if filesafename is None:
+                continue
             with open(join("Files-Referenced", filesafename), "wb") as binfile:
                 binfile.write(content)
 
