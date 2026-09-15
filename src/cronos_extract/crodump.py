@@ -167,14 +167,15 @@ def kod_from_xref(xref):
     Build a KOD table and its confidence from `xref`, where xref[shift][encrypted byte] counts how often that
     encrypted byte was seen at that shift where the plaintext is assumed to be zero.
 
-    Each shift claims the encrypted byte it saw most, with that count as the confidence. Shifts that saw
+    Each shift claims the encrypted byte it saw most, with that count as the confidence. When two shifts claim
+    the same byte, the higher count keeps it, and on an equal count the first claim stays. Shifts that saw
     no data claim nothing, so their entries keep confidence 0.
     """
     KOD = [0] * 256
     KOD_CONFIDENCE = [0] * 256
     for i, xx in enumerate(xref):
         k, v = max(enumerate(xx), key=lambda kv: kv[1])
-        if v == 0:
+        if v <= KOD_CONFIDENCE[k]:
             continue
 
         #       Display the confidence, matches under 3 usually are unreliable

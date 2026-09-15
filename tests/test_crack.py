@@ -85,6 +85,20 @@ def test_strucrack_keeps_entries_that_shift_rows_without_data_do_not_claim(
     assert kod_estimate(capsys.readouterr().out)[0:2] == f"{KOD[0]:02x}"
 
 
+def test_strucrack_keeps_the_stronger_of_two_shift_rows_claiming_one_entry(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    strong_shift, weak_shift = 100, 230
+    entry = KOD.index(strong_shift)
+    # Records 1..8 hold 200 zero bytes, so shift 100 sees `entry` 8 times. Record 9 puts one byte on shift 230
+    # that also encrypts to `entry`, so shift 230's most common byte is `entry` with a count of 1.
+    weak_claim = bytes(weak_shift - 9) + bytes([(strong_shift - weak_shift) % 256])
+    write_datafile(tmp_path / "db", "Stru", [*[bytes(200)] * 8, weak_claim], KOD)
+
+    assert derive_from_stru(str(tmp_path / "db")) is None
+    assert kod_estimate(capsys.readouterr().out)[2 * entry : 2 * entry + 2] == f"{strong_shift:02x}"
+
+
 def test_dbcrack_returns_none_when_the_kod_is_not_a_permutation(
     uncrackable_db: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
