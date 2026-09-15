@@ -25,6 +25,13 @@ class Datafile:
 
         self.kod = kod if not kod or self.isencrypted() else koddecoder.new()
 
+    def close(self):
+        """
+        Close the .dat and .tad files.
+        """
+        self.dat.close()
+        self.tad.close()
+
     def isencrypted(self):
         return self.version in (b"01.04", b"01.05") or self.isv4()
 

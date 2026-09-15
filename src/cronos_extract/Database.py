@@ -5,6 +5,7 @@ import os
 import re
 import struct
 from binascii import b2a_hex
+from contextlib import ExitStack
 from sys import stderr
 
 from . import koddecoder
@@ -37,6 +38,20 @@ class Database:
         # contains an index of all known databases.
         self.sys = self.getfile("Sys")
 
+    def close(self):
+        """
+        Close the files of every component of the database.
+        """
+        for datafile in (self.stru, self.index, self.bank, self.sys):
+            if datafile:
+                datafile.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        self.close()
+
     def getfile(self, name):
         """
         Returns a Datafile object for `name`.
@@ -49,9 +64,20 @@ class Database:
             datname = self.getname(name, "dat")
             tadname = self.getname(name, "tad")
             if datname and tadname:
-                return Datafile(name, open(datname, "rb"), open(tadname, "rb"), self.compact, self.kod)
+                return self.opendatafile(name, datname, tadname)
         except OSError:
             return
+
+    def opendatafile(self, name, datname, tadname):
+        """
+        Open a .dat/.tad pair as a Datafile, closing both files again if it can't be read.
+        """
+        with ExitStack() as stack:
+            dat = stack.enter_context(open(datname, "rb"))
+            tad = stack.enter_context(open(tadname, "rb"))
+            datafile = Datafile(name, dat, tad, self.compact, self.kod)
+            stack.pop_all()
+        return datafile
 
     def getname(self, name, ext):
         """
