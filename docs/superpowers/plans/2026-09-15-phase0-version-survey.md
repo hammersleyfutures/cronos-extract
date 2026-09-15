@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Address the user as "Ben". Ben's global rules in `~/.claude/CLAUDE.md` override skills. The repository's own rules are in `CLAUDE.md`.
-- Repository `/data/Development/Code/cronodump`, GitHub `hammersleyfutures/cronos-extract` (a fork). Always pass `-R hammersleyfutures/cronos-extract` to `gh pr` commands. Never push to `master`. Never open anything against `alephdata/cronodump`.
+- Work in the repository root, `<repo-root>` below; GitHub `hammersleyfutures/cronos-extract` (a fork). Always pass `-R hammersleyfutures/cronos-extract` to `gh pr` commands. Never push to `master`. Never open anything against `alephdata/cronodump`.
 - Merge with a merge commit only (`gh pr merge --merge`): `.git-blame-ignore-revs` lists exact commit hashes.
 - Every change is test-first: write the test, run it, confirm it fails for the stated reason, write the code, run it green. Real crafted databases (`tests/cronos_builder.py`) and real files only, never mocks.
 - One logical change per commit. Subject in imperative mood, ≤ 72 characters. Body says what and why. Every commit message ends with exactly `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>` — subagents use this line verbatim, not their own model name.
@@ -53,7 +53,7 @@
 - [ ] **Step 1: Create the branch**
 
 ```bash
-cd /data/Development/Code/cronodump
+cd <repo-root>
 git fetch origin --prune
 git switch master && git merge --ff-only origin/master
 git switch -c phase0-survey
