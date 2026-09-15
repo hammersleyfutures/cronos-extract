@@ -3,6 +3,7 @@
 """
 This module has the functions for the 'kodump' subcommand from the 'crodump' script.
 """
+
 from .hexdump import unhex, toout, hexdump
 import io
 import struct
@@ -79,5 +80,3 @@ def kod_hexdump(kod, args):
         if args.unhex:
             data = unhex(data)
         decode_kod(kod, args, data)
-
-

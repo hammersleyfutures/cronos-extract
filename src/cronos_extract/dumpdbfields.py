@@ -3,6 +3,7 @@
 """
 `dumpdbfields` demonstrates how to enumerate tables and records.
 """
+
 import os
 import os.path
 from .Database import Database
@@ -32,20 +33,24 @@ def main():
     parser.add_argument("--maxrecs", "-m", type=int, default=100)
     parser.add_argument("--recurse", "-r", action="store_true")
     parser.add_argument("--verbose", "-v", action="store_true")
-    parser.add_argument("dbdirs", type=str, nargs='*')
+    parser.add_argument("dbdirs", type=str, nargs="*")
     args = parser.parse_args()
 
     for path in processargs(args):
         try:
             from . import koddecoder
+
             if args.kod:
-                if len(args.kod)!=512:
+                if len(args.kod) != 512:
                     raise Exception("--kod should have a 512 hex digit argument")
                 kod = koddecoder.new(list(unhex(args.kod)))
             elif args.nokod:
                 kod = None
             elif args.strucrack:
-                class Cls: pass
+
+                class Cls:
+                    pass
+
                 cargs = Cls()
                 cargs.dbdir = path
                 cargs.sys = False
@@ -55,7 +60,10 @@ def main():
                     return
                 kod = koddecoder.new(cracked)
             elif args.dbcrack:
-                class Cls: pass
+
+                class Cls:
+                    pass
+
                 cargs = Cls()
                 cargs.dbdir = path
                 cargs.sys = False

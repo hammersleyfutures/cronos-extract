@@ -3,6 +3,7 @@
 """
 Several functions for converting bytes to readable text or hex bytes.
 """
+
 import struct
 from binascii import b2a_hex, a2b_hex
 
@@ -24,11 +25,13 @@ def ashex(line):
     """
     return " ".join("%02x" % _ for _ in line)
 
+
 def asambigoushex(line, confidence):
     """
     convert an array to a list of 2-digit hex values with potentially unset values of -1
     """
     return "".join("%02x" % _ if confidence[o] > 0 else "??" for o, _ in enumerate(line))
+
 
 def as1251(b):
     """
@@ -41,6 +44,7 @@ def as1251(b):
     except:
         pass
     return bytes(".")
+
 
 def aschr(b):
     """
@@ -69,6 +73,7 @@ def asasc(line, confidence=None):
     else:
         return "".join(aschr(_) if confidence[o] > 0 else "?" for o, _ in enumerate(line))
 
+
 def hexdump(ofs, data, args):
     """
     Output offset prefixed lines of hex + ascii characters.
@@ -80,9 +85,9 @@ def hexdump(ofs, data, args):
         fmt = "%%08x: %%-%ds  %%s" % (3 * w - 1)
     for o in range(0, len(data), w):
         if args.ascdump:
-            print(fmt % (o + ofs, asasc(data[o:o+w])))
+            print(fmt % (o + ofs, asasc(data[o : o + w])))
         else:
-            print(fmt % (o + ofs, ashex(data[o:o+w]), asasc(data[o:o+w])))
+            print(fmt % (o + ofs, ashex(data[o : o + w]), asasc(data[o : o + w])))
 
 
 def tohex(data):

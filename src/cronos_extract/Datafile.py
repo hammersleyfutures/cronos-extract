@@ -6,6 +6,7 @@ import zlib
 from .hexdump import tohex, toout
 from . import koddecoder
 
+
 class Datafile:
     """Represent a single .dat with it's .tad index file"""
 
@@ -24,24 +25,24 @@ class Datafile:
         self.kod = kod if not kod or self.isencrypted() else koddecoder.new()
 
     def isencrypted(self):
-        return self.version in (b'01.04', b'01.05') or self.isv4()
+        return self.version in (b"01.04", b"01.05") or self.isv4()
 
     def isv3(self):
         #  01.02: 32 bit file offsets
         #  01.03: 64 bit file offsets
         #  01.04:  encrypted?, 32bit
         #  01.05:  encrypted?, 64bit
-        return self.version in (b'01.02', b'01.03', b'01.04', b'01.05')
+        return self.version in (b"01.02", b"01.03", b"01.04", b"01.05")
 
     def isv4(self):
         #  01.11  v4 ( 64bit )
         #  01.14  v4 ( 64bit ), encrypted?
         #  01.13  ?? I have not seen this version anywhere yet.
-        return self.version in (b'01.11', b'01.13', b'01.14')
+        return self.version in (b"01.11", b"01.13", b"01.14")
 
     def isv7(self):
         #  01.19  ?? I have not seen this version anywhere yet.
-        return self.version in (b'01.19',)
+        return self.version in (b"01.19",)
 
     def readdathdr(self):
         """
@@ -53,11 +54,11 @@ class Datafile:
         hdrdata = self.dat.read(19)
 
         (
-            magic,            # +00  8 bytes
-            self.hdrunk,      # +08  uint16
-            self.version,     # +0a  5 bytes
-            self.encoding,    # +0f  uint16
-            self.blocksize,   # +11  uint16
+            magic,  # +00  8 bytes
+            self.hdrunk,  # +08  uint16
+            self.version,  # +0a  5 bytes
+            self.encoding,  # +0f  uint16
+            self.blocksize,  # +11  uint16
         ) = struct.unpack("<8sH5sHH", hdrdata)
 
         if magic != b"CroFile\x00":
@@ -111,12 +112,11 @@ class Datafile:
             return struct.unpack_from("<QLL", self.idxdata, idx * self.tadentrysize)
         else:
             # 01.02  and 01.04  have 32 bit offsets.
-           return struct.unpack_from("<LLL", self.idxdata, idx * self.tadentrysize)
-
+            return struct.unpack_from("<LLL", self.idxdata, idx * self.tadentrysize)
 
     def tadidx_seek(self, idx):
         """
-            Memory saving version without caching the .tad
+        Memory saving version without caching the .tad
         """
         self.tad.seek(self.tadhdrlen + idx * self.tadentrysize)
         idxdata = self.tad.read(self.tadentrysize)
@@ -126,7 +126,7 @@ class Datafile:
             return struct.unpack("<QLL", idxdata)
         else:
             # 01.02  and 01.04  have 32 bit offsets.
-           return struct.unpack("<LLL", idxdata)
+            return struct.unpack("<LLL", idxdata)
 
     def readdata(self, ofs, size):
         """
@@ -151,7 +151,7 @@ class Datafile:
             ln &= 0xFFFFFFF
         elif self.isv4():
             flags = ofs >> 56
-            ofs &= (1<<56)-1
+            ofs &= (1 << 56) - 1
 
         dat = self.readdata(ofs, ln)
 
@@ -192,7 +192,7 @@ class Datafile:
 
     def enumrecords(self):
         for i in range(self.nrofrecords):
-            yield self.readrec(i+1)
+            yield self.readrec(i + 1)
 
     def enumunreferenced(self, ranges, filesize):
         """
@@ -215,17 +215,17 @@ class Datafile:
 
         the `args` object controls how data is decoded.
         """
-        print("hdr: %-6s dat: %04x %s enc:%04x bs:%04x, tad: %08x %08x" % (
-                self.name, self.hdrunk, self.version,
-                self.encoding, self.blocksize,
-                self.nrdeleted, self.firstdeleted))
+        print(
+            "hdr: %-6s dat: %04x %s enc:%04x bs:%04x, tad: %08x %08x"
+            % (self.name, self.hdrunk, self.version, self.encoding, self.blocksize, self.nrdeleted, self.firstdeleted)
+        )
 
         ranges = []  # keep track of used bytes in the .dat file.
 
         for i in range(self.nrofrecords):
             (ofs, ln, chk) = self.tadidx(i)
             idx = i + 1
-            if args.maxrecs and i==args.maxrecs:
+            if args.maxrecs and i == args.maxrecs:
                 break
             if ln == 0xFFFFFFFF:
                 print("%5d: %08x %08x %08x" % (idx, ofs, ln, chk))
@@ -239,7 +239,7 @@ class Datafile:
                 # 04 --> data, v3compdata
                 # 02,03 --> deleted
                 # 00 --> extrec
-                ofs &= (1<<56)-1
+                ofs &= (1 << 56) - 1
 
             dat = self.readdata(ofs, ln)
             ranges.append((ofs, ofs + ln, "item #%d" % i))
@@ -289,9 +289,10 @@ class Datafile:
                     decflags[1] = "@"
 
             # TODO: separate handling for v4
-            print("%5d: %08x-%08x: (%02x:%08x) %s %s%s %s" % (
-                    i+1, ofs, ofs + ln, flags, chk,
-                    infostr, "".join(decflags), toout(args, encdat), tohex(tail)))
+            print(
+                "%5d: %08x-%08x: (%02x:%08x) %s %s%s %s"
+                % (i + 1, ofs, ofs + ln, flags, chk, infostr, "".join(decflags), toout(args, encdat), tohex(tail))
+            )
 
         if args.verbose:
             # output parts not referenced in the .tad file.
@@ -336,10 +337,10 @@ class Datafile:
         while o < len(data) - 3:
             # note the mix of bigendian and little endian numbers here.
             size, flag = struct.unpack_from(">HH", data, o)
-            storedcrc, = struct.unpack_from("<L", data, o+4)
+            (storedcrc,) = struct.unpack_from("<L", data, o + 4)
 
             C = zlib.decompressobj(-15)
-            result += C.decompress(data[o+8:o+8+size-6])
+            result += C.decompress(data[o + 8 : o + 8 + size - 6])
             # note that we are not verifying the crc!
 
             o += size + 2

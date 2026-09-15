@@ -5,6 +5,7 @@ Commandline tool which convert a cronos database to .csv, .sql or .html.
 
 python3 croconvert.py -t html chechnya_proverki_ul_2012/
 """
+
 from .Database import Database
 from .crodump import strucrack, dbcrack
 from .hexdump import unhex
@@ -21,9 +22,7 @@ def template_convert(kod, args):
     try:
         from jinja2 import Environment, FileSystemLoader
     except ImportError:
-        exit(
-            "Fatal: Jinja templating engine not found. Install using pip install jinja2"
-        )
+        exit("Fatal: Jinja templating engine not found. Install using pip install jinja2")
 
     db = Database(args.dbdir, args.compact, kod)
 
@@ -34,12 +33,12 @@ def template_convert(kod, args):
 
 
 def safepathname(name):
-    return name.replace(':', '_').replace('/', '_').replace('\\', '_')
+    return name.replace(":", "_").replace("/", "_").replace("\\", "_")
 
 
 def csv_output(kod, args):
     """creates a directory with the current timestamp and in it a set of CSV or TSV
-       files with all the tables found and an extra directory with all the files"""
+    files with all the tables found and an extra directory with all the files"""
     db = Database(args.dbdir, args.compact, kod)
 
     mkdir(args.outputdir)
@@ -51,8 +50,8 @@ def csv_output(kod, args):
     for table in db.enumerate_tables(files=False):
         tablesafename = safepathname(table.tablename) + ".csv"
 
-        with open(tablesafename, 'w', encoding='utf-8') as csvfile:
-            writer = csv.writer(csvfile, delimiter=args.delimiter, escapechar='\\')
+        with open(tablesafename, "w", encoding="utf-8") as csvfile:
+            writer = csv.writer(csvfile, delimiter=args.delimiter, escapechar="\\")
             writer.writerow([field.name for field in table.fields])
 
             # Record should be iterable over its fields, so we could use writerows
@@ -79,7 +78,7 @@ def csv_output(kod, args):
 
     # Write all referenced files with their filename and extension intact
     for reffile in filereferences:
-        if reffile.content:             # only print when file is not NULL
+        if reffile.content:  # only print when file is not NULL
             filesafename = safepathname(reffile.filename) + "." + safepathname(reffile.extname)
             content = db.get_record(reffile.filedatarecord)
             with open(join("Files-Referenced", filesafename), "wb") as binfile:
@@ -90,13 +89,16 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="CRONOS database converter")
-    parser.add_argument("--template", "-t", type=str, default="html",
-                        help="output template to use for conversion")
-    parser.add_argument("--csv", "-c", action='store_true', help="create output in .csv format")
+    parser.add_argument("--template", "-t", type=str, default="html", help="output template to use for conversion")
+    parser.add_argument("--csv", "-c", action="store_true", help="create output in .csv format")
     parser.add_argument("--delimiter", "-d", default=",", help="delimiter used in csv output")
     parser.add_argument("--outputdir", "-o", type=str, help="directory to create the dump in")
     parser.add_argument("--kod", type=str, help="specify custom KOD table")
-    parser.add_argument("--compact", action="store_true", help="save memory by not caching the index, note: increases convert time by factor 1.15")
+    parser.add_argument(
+        "--compact",
+        action="store_true",
+        help="save memory by not caching the index, note: increases convert time by factor 1.15",
+    )
     parser.add_argument("--strucrack", action="store_true", help="infer the KOD sbox from CroStru.dat")
     parser.add_argument("--dbcrack", action="store_true", help="infer the KOD sbox from CroIndex.dat+CroBank.dat")
     parser.add_argument("--nokod", "-n", action="store_true", help="don't KOD decode")
@@ -105,14 +107,18 @@ def main():
     args = parser.parse_args()
 
     from . import koddecoder
+
     if args.kod:
-        if len(args.kod)!=512:
+        if len(args.kod) != 512:
             raise Exception("--kod should have a 512 hex digit argument")
         kod = koddecoder.new(list(unhex(args.kod)))
     elif args.nokod:
         kod = None
     elif args.strucrack or args.dbcrack:
-        class Cls: pass
+
+        class Cls:
+            pass
+
         cargs = Cls()
         cargs.dbdir = args.dbdir
         cargs.sys = False
@@ -124,7 +130,7 @@ def main():
         cracked = strucrack(None, cargs) if args.strucrack else dbcrack(None, cargs)
         if not cracked:
             exit(
-            "Can't automatically crack the database password. Try using   crodump strucrack   and pass the database key (KOD) using --kod"
+                "Can't automatically crack the database password. Try using   crodump strucrack   and pass the database key (KOD) using --kod"
             )
         kod = koddecoder.new(cracked)
     else:
@@ -132,7 +138,7 @@ def main():
 
     if args.csv:
         if not args.outputdir:
-            args.outputdir = "cronodump"+datetime.now().strftime("-%Y-%m-%d-%H-%M-%S-%f")
+            args.outputdir = "cronodump" + datetime.now().strftime("-%Y-%m-%d-%H-%M-%S-%f")
         csv_output(kod, args)
     else:
         template_convert(kod, args)
