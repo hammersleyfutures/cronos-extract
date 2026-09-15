@@ -223,7 +223,7 @@ def derive_kod_from_stru(db, args):
 
     # For chunks of text where record and offset is known, set the KOD
     for fix in args.text or []:
-        record, line, offset, text = fix.split(":", 4)
+        record, line, offset, text = fix.split(":", 3)
         data = table.readrec(int(record) + 1)
         dataoff = int(line) + int(offset)
         o = int(record) + 1 + int(line) + int(offset)

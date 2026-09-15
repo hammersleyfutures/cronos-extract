@@ -171,6 +171,14 @@ def test_crodump_decodes_with_a_cracked_kod(encrypted_db: str, flag: str) -> Non
     assert "'erdgeist'" in result.stdout
 
 
+def test_strucrack_text_plaintext_may_contain_colons(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    write_datafile(tmp_path / "db", "Stru", [bytes(256)] * 8, KOD)
+
+    derive_from_stru(str(tmp_path / "db"), "-t", "0:0:0:a:b")
+
+    assert "00000 a:b" in capsys.readouterr().out
+
+
 def test_strucrack_applies_a_fix_given_as_a_character(encrypted_db: str) -> None:
     # Force KOD[5] to its true value, so that encrypted byte 05 decodes to "A" at this shift.
     shift = (KOD[5] - ord("A")) % 256
