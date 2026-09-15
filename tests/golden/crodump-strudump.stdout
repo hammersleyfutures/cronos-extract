@@ -10,14 +10,12 @@ NS1                  - ..ЉЉ.J2Б¦.ѕ$§Ћ.“ф.И?.х
 NS2                  - V...
 Version              - "-14"
 == Base000 ==
-Warning: FieldDefinition Section 2 not marked with a 2
 table: 00000300090102000000000000000000000005d4e0e9ebfb02464c0100000001000000
 0,3<9,1,0>0  1,1 'Файлы'  'FL'  [TableImage(0 bytes): none]
 field# 0: 001b - 0000000000000fd1e8f1f2e5ecedfbe920edeeece5f00100000000
 Type:  0  0    1,0       - 'Системный номер'
 remaining: ffffffffffffffffffffffffffffffff1700000003ffffffffffffffffffffffff06000000010000000000
 == Base001 ==
-Warning: FieldDefinition Section 2 not marked with a 2
 table: 000003000901030000000000000001000000086572646765697374024552010000000c000000
 0,3<9,1,0>1  1,12 'erdgeist'  'ER'  [TableImage(0 bytes): none]
 field# 0: 001b - 0000000000000fd1e8f1f2e5ecedfbe920edeeece5f00100000000

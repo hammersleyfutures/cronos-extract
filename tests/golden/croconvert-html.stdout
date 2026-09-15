@@ -5,8 +5,7 @@
     <title>Cronos Database Dump</title>
   </head>
   <body>
-  Warning: FieldDefinition Section 2 not marked with a 2
-
+  
     <table>
       <caption>Файлы</caption>
       <thead>
@@ -20,8 +19,7 @@
       </tbody>
     </table>
   
-  Warning: FieldDefinition Section 2 not marked with a 2
-<img src="data:image;base64,"/><table>
+  <table>
       <caption>erdgeist</caption>
       <thead>
         <tr>

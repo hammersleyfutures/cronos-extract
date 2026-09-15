@@ -270,14 +270,14 @@ class KODcoding:
     with a user specified KOD table.
     """
 
-    def __init__(self, initial=INITIAL_KOD, confidence=[255] * 256):
+    def __init__(self, initial=INITIAL_KOD, confidence=None):
         self.kod = [_ for _ in initial]
-        self.confidence = confidence
+        self.confidence = confidence if confidence is not None else [255] * len(self.kod)
 
-        # calculate the inverse table.
+        # calculate the inverse table, from the entries whose value is known.
         self.inv = [0 for _ in initial]
         for i, x in enumerate(self.kod):
-            if confidence[i]:
+            if self.confidence[i] > 0:
                 self.inv[x] = i
 
     def decode(self, o, data):
@@ -293,7 +293,7 @@ class KODcoding:
             b[i] = KOD[a[i]]- (i+shift)
         """
         return (
-            [(self.kod[b] - i - o) % 256 if self.confidence[b] != 0 else 0 for i, b in enumerate(data)],
+            [(self.kod[b] - i - o) % 256 if self.confidence[b] > 0 else 0 for i, b in enumerate(data)],
             [self.confidence[b] for b in data],
         )
 
@@ -312,27 +312,28 @@ def new(*args):
     return KODcoding(*args)
 
 
-def match_with_mismatches(data, confidence, string, maxsubs=None):
+def match_with_mismatches(data, confidence, string, min_matching=None):
     """
-    find all occurences of string in data with at least one and allowing a
-    maximum of maxsubs substitutions
+    find all occurences of string in data with at least one substitution and
+    at least min_matching characters matching bytes whose KOD entry is known.
+    Returns (offset, number of matching characters) pairs.
     """
 
-    # default for maximum of substitutions is to have at least two matching chars
-    maxsubs = maxsubs if maxsubs is not None else max(2, len(string) - 2)
+    # default is to allow two substitutions, but have at least two matching chars
+    min_matching = min_matching if min_matching is not None else max(2, len(string) - 2)
 
     # if string cant fit into data, return no matches
     if len(string) > len(data):
         return []
 
     matches = []
-    for offs in range(0, len(data) - len(string)):
+    for offs in range(0, len(data) - len(string) + 1):
         matching = 0
         for o, c in enumerate(string):
             if data[offs + o] == c and confidence[offs + o] > 0:
                 matching += 1
 
-        if matching != len(string) and matching >= maxsubs:
+        if matching != len(string) and matching >= min_matching:
             matches.append((offs, matching))
 
     return sorted(matches, key=lambda x: x[1])

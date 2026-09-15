@@ -7,7 +7,7 @@
 import os
 import os.path
 
-from .crodump import dbcrack, strucrack
+from .crodump import crack_kod
 from .Database import Database
 from .hexdump import unhex
 
@@ -47,44 +47,23 @@ def main():
                 kod = koddecoder.new(list(unhex(args.kod)))
             elif args.nokod:
                 kod = None
-            elif args.strucrack:
-
-                class Cls:
-                    pass
-
-                cargs = Cls()
-                cargs.dbdir = path
-                cargs.sys = False
-                cargs.silent = True
-                cracked = strucrack(None, cargs)
-                if not cracked:
-                    return
-                kod = koddecoder.new(cracked)
-            elif args.dbcrack:
-
-                class Cls:
-                    pass
-
-                cargs = Cls()
-                cargs.dbdir = path
-                cargs.sys = False
-                cargs.silent = True
-                cracked = dbcrack(None, cargs)
+            elif args.strucrack or args.dbcrack:
+                cracked = crack_kod("strucrack" if args.strucrack else "dbcrack", path, False)
                 if not cracked:
                     return
                 kod = koddecoder.new(cracked)
             else:
                 kod = koddecoder.new()
 
-            db = Database(path, kod)
+            db = Database(path, False, kod)
             for tab in db.enumerate_tables():
                 tab.dump(args)
                 print(f"nr of records: {db.bank.nrofrecords:d}")
                 for i, rec in enumerate(db.enumerate_records(tab), start=1):
-                    for field, fielddef in zip(rec.fields, tab.fields, strict=True):
-                        print(f">> {fielddef} -- {field.content}")
                     if i > args.maxrecs:
                         break
+                    for field, fielddef in zip(rec.fields, tab.fields, strict=True):
+                        print(f">> {fielddef} -- {field.content}")
         except Exception as e:
             print(f"ERROR: {e}")
 

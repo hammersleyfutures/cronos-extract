@@ -2,10 +2,26 @@
 # ABOUTME: Handles v3/v4 headers, extension blocks, KOD decoding and zlib decompression.
 import io
 import struct
+import sys
 import zlib
+from typing import NamedTuple
 
 from . import koddecoder
 from .hexdump import tohex, toout
+
+
+class ExtendedRecord(NamedTuple):
+    """
+    A record reassembled from extension blocks.
+
+    `tail` holds the bytes read past the record's end; `chain` holds the first block offset from the record
+    header followed by the next-block offset read from each extension block.
+    """
+
+    data: bytes
+    tail: bytes
+    length: int
+    chain: list[int]
 
 
 class Datafile:
@@ -24,6 +40,13 @@ class Datafile:
         self.datsize = self.dat.tell()
 
         self.kod = kod if not kod or self.isencrypted() else koddecoder.new()
+
+    def close(self):
+        """
+        Close the .dat and .tad files.
+        """
+        self.dat.close()
+        self.tad.close()
 
     def isencrypted(self):
         return self.version in (b"01.04", b"01.05") or self.isv4()
@@ -63,8 +86,7 @@ class Datafile:
         ) = struct.unpack("<8sH5sHH", hdrdata)
 
         if magic != b"CroFile\x00":
-            print("unknown magic: ", magic)
-            raise Exception("not a Crofile")
+            raise ValueError(f"Cro{self.name}.dat is not a Cronos file: unknown magic {magic!r}")
         self.use64bit = self.version in (b"01.03", b"01.05", b"01.11")
 
         # blocksize
@@ -86,7 +108,7 @@ class Datafile:
             self.nrdeleted, self.firstdeleted = struct.unpack("<2L", hdrdata)
         elif self.isv4():
             hdrdata = self.tad.read(4 * 4)
-            _unk1, self.nrdeleted, self.firstdeleted, _unk2 = struct.unpack("<4L", hdrdata)
+            _, self.nrdeleted, self.firstdeleted, _ = struct.unpack("<4L", hdrdata)
         else:
             raise Exception("unsupported .tad version")
 
@@ -99,7 +121,7 @@ class Datafile:
         self.tadsize = self.tad.tell() - self.tadhdrlen
         self.nrofrecords = self.tadsize // self.tadentrysize
         if self.tadsize % self.tadentrysize:
-            print("WARN: leftover data in .tad")
+            print("WARN: leftover data in .tad", file=sys.stderr)
 
     def tadidx(self, idx):
         """
@@ -142,10 +164,10 @@ class Datafile:
         """
         if idx == 0:
             raise Exception("recnum must be a positive number")
-        ofs, ln, _chk = self.tadidx(idx - 1)
+        ofs, ln, _ = self.tadidx(idx - 1)
         if ln == 0xFFFFFFFF:
             # deleted record
-            return
+            return None
 
         if self.isv3():
             flags = ln >> 24
@@ -162,25 +184,7 @@ class Datafile:
             # empty record
             encdat = dat
         elif not flags:
-            if self.use64bit:
-                extofs, extlen = struct.unpack("<QL", dat[:12])
-                o = 12
-            else:
-                extofs, extlen = struct.unpack("<LL", dat[:8])
-                o = 8
-
-            encdat = dat[o:]
-            while len(encdat) < extlen:
-                dat = self.readdata(extofs, self.blocksize)
-                if self.use64bit:
-                    (extofs,) = struct.unpack("<Q", dat[:8])
-                    o = 8
-                else:
-                    (extofs,) = struct.unpack("<L", dat[:4])
-                    o = 4
-                encdat += dat[o:]
-
-            encdat = encdat[:extlen]
+            encdat = self.readextendedrecord(idx, dat).data
         else:
             encdat = dat
 
@@ -191,6 +195,35 @@ class Datafile:
             encdat = self.decompress(encdat)
 
         return encdat
+
+    def readextendedrecord(self, idx, dat):
+        """
+        Reassemble record `idx` from extension blocks, given `dat`, the record's first block.
+
+        The first block holds the offset of the first extension block, the record length, then data; each
+        extension block starts with the offset of the next one. Raises ValueError when the header is truncated,
+        the length exceeds the file, the blocks loop, or a block lies past the end of the file.
+        """
+        headersize, pointersize, pointerformat = (12, 8, "<Q") if self.use64bit else (8, 4, "<L")
+        where = f"record {idx} in Cro{self.name}.dat"
+        if len(dat) < headersize:
+            raise ValueError(f"{where} is shorter than its {headersize}-byte extended record header")
+        extofs, extlen = struct.unpack("<QL" if self.use64bit else "<LL", dat[:headersize])
+        if extlen > self.datsize:
+            raise ValueError(f"{where} claims {extlen} bytes, more than the file holds")
+
+        encdat = dat[headersize:]
+        chain = [extofs]
+        while len(encdat) < extlen:
+            if extofs in chain[:-1]:
+                raise ValueError(f"{where} has a loop in its extension blocks at offset {extofs:#x}")
+            block = self.readdata(extofs, self.blocksize)
+            if len(block) <= pointersize:
+                raise ValueError(f"{where} has an extension block past the end of the file at offset {extofs:#x}")
+            (extofs,) = struct.unpack(pointerformat, block[:pointersize])
+            chain.append(extofs)
+            encdat += block[pointersize:]
+        return ExtendedRecord(encdat[:extlen], encdat[extlen:], extlen, chain)
 
     def enumrecords(self):
         for i in range(self.nrofrecords):
@@ -256,27 +289,17 @@ class Datafile:
                 # empty record
                 encdat = dat
             elif not flags:
-                if self.use64bit:
-                    extofs, extlen = struct.unpack("<QL", dat[:12])
-                    o = 12
-                else:
-                    extofs, extlen = struct.unpack("<LL", dat[:8])
-                    o = 8
-                infostr = f"{extofs:08x};{extlen:08x}"
-                encdat = dat[o:]
-                while len(encdat) < extlen:
-                    dat = self.readdata(extofs, self.blocksize)
-                    ranges.append((extofs, extofs + self.blocksize, f"item #{i:d} ext"))
-                    if self.use64bit:
-                        (extofs,) = struct.unpack("<Q", dat[:8])
-                        o = 8
-                    else:
-                        (extofs,) = struct.unpack("<L", dat[:4])
-                        o = 4
-                    infostr += f";{extofs:08x}"
-                    encdat += dat[o:]
-                tail = encdat[extlen:]
-                encdat = encdat[:extlen]
+                try:
+                    extended = self.readextendedrecord(idx, dat)
+                except ValueError as e:
+                    print(f"{idx:5d}: {ofs:08x}-{ofs + ln:08x}: ({flags:02x}:{chk:08x}) <{e}>")
+                    continue
+                infostr = ";".join(
+                    f"{value:08x}" for value in [extended.chain[0], extended.length, *extended.chain[1:]]
+                )
+                for blockofs in extended.chain[:-1]:
+                    ranges.append((blockofs, blockofs + self.blocksize, f"item #{i:d} ext"))
+                encdat, tail = extended.data, extended.tail
                 decflags[0] = "+"
             else:
                 encdat = dat
@@ -289,7 +312,11 @@ class Datafile:
                 decflags[0] = " "
 
             if args.decompress and self.iscompressed(encdat):
-                encdat = self.decompress(encdat)
+                try:
+                    encdat = self.decompress(encdat)
+                except ValueError as e:
+                    print(f"{idx:5d}: {ofs:08x}-{ofs + ln:08x}: ({flags:02x}:{chk:08x}) <{e}>")
+                    continue
                 decflags[1] = "@"
 
             # TODO: separate handling for v4
@@ -309,14 +336,14 @@ class Datafile:
         Check if this record looks like a compressed record.
         """
         if len(data) < 11:
-            return
+            return False
         if data[-3:] != b"\x00\x00\x02":
-            return
+            return False
         o = 0
         while o < len(data) - 3:
             size, flag = struct.unpack_from(">HH", data, o)
             if flag != 0x800 and flag != 0x008:
-                return
+                return False
             o += size + 2
         return True
 
@@ -340,11 +367,13 @@ class Datafile:
         o = 0
         while o < len(data) - 3:
             # note the mix of bigendian and little endian numbers here.
-            size, _flag = struct.unpack_from(">HH", data, o)
-            (_storedcrc,) = struct.unpack_from("<L", data, o + 4)
+            size, _ = struct.unpack_from(">HH", data, o)
 
             C = zlib.decompressobj(-15)
-            result += C.decompress(data[o + 8 : o + 8 + size - 6])
+            try:
+                result += C.decompress(data[o + 8 : o + 8 + size - 6])
+            except zlib.error as e:
+                raise ValueError(f"corrupt compressed data: {e}") from e
             # note that we are not verifying the crc!
 
             o += size + 2

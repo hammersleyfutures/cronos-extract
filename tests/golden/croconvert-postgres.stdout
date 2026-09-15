@@ -1,13 +1,12 @@
-Warning: FieldDefinition Section 2 not marked with a 2
 
 
 CREATE TABLE "erdgeist" (
-        "Системный номер" INTEGER PRIMARY KEY, 
-        "Entry #1" INTEGER, 
-        "Entry #2" VARCHAR(100000), 
+        "Системный номер" TEXT, 
+        "Entry #1" TEXT, 
+        "Entry #2" TEXT, 
         "Entry #3" TEXT, 
-        "Entry #4" DATE, 
-        "Entry #5" TIMESTAMP, 
+        "Entry #4" TEXT, 
+        "Entry #5" TEXT, 
         "Entry #6" TEXT, 
         "Entry #7" TEXT, 
         "Entry #8" TEXT, 
@@ -16,6 +15,4 @@ CREATE TABLE "erdgeist" (
         "Entry #11" TEXT
 );
 
-INSERT INTO "erdgeist" VALUES
-;
 

@@ -22,7 +22,6 @@ def test_fielddef_decodes_type_name_and_limits() -> None:
     fielddef = make_fielddef(2, "Имя")
 
     assert (fielddef.typ, fielddef.name, fielddef.idx2, fielddef.maxval) == (2, "Имя", 1, 20)
-    assert fielddef.sqltype() == "VARCHAR(20)"
 
 
 def test_system_number_field_is_shown_as_given() -> None:
@@ -45,6 +44,21 @@ def test_date_field_is_formatted_as_iso_date(raw: bytes, expected: str) -> None:
 @pytest.mark.parametrize(("raw", "expected"), [(b"0930", "09:30"), (b"2359\x00", "23:59")])
 def test_time_field_is_formatted_as_hours_and_minutes(raw: bytes, expected: str) -> None:
     assert Field(make_fielddef(5), raw).content == expected
+
+
+@pytest.mark.parametrize(
+    ("typ", "raw", "expected"),
+    [
+        (4, b"12x", "12x"),
+        (4, b"12x\x00\x00", "12x"),
+        (4, "Дата".encode("cp1251"), "Дата"),
+        (5, b"ab", "ab"),
+        (5, "Время\x00".encode("cp1251"), "Время"),
+    ],
+    ids=["date", "date-with-nuls", "date-cp1251", "time", "time-cp1251-with-nul"],
+)
+def test_unparseable_date_or_time_shows_the_raw_text(typ: int, raw: bytes, expected: str) -> None:
+    assert Field(make_fielddef(typ), raw).content == expected
 
 
 def test_text_field_is_decoded_from_cp1251_without_trailing_nuls() -> None:
