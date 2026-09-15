@@ -10,8 +10,10 @@ from cronos_builder import (
     TEST_TABLE_ID,
     bank_record,
     corrupt_compressed_record,
+    database_with_missing_definition,
     database_with_wrong_kod_record_out_of_range,
     key_referencing_a_deleted_record,
+    stru_records_from_test_db,
     write_database,
 )
 
@@ -97,6 +99,31 @@ def test_strudump_with_a_wrong_kod_reports_a_record_out_of_range(tmp_path: Path)
         r'Error: key ".*" refers to CroStru record \d+, which CroStru does not hold \(4 records\)', lines[0]
     )
     assert lines[1] == KOD_HINT
+
+
+def test_strudump_stops_with_a_clear_message_for_a_deleted_definition_record(tmp_path: Path) -> None:
+    stru_records = [None, *stru_records_from_test_db()[1:]]
+    dbdir = database_with_missing_definition(tmp_path / "db", stru_records)
+
+    result = run_command("crodump", ["strudump", dbdir])
+
+    assert result.returncode == 1
+    assert result.stderr.splitlines() == [
+        "Error: CroStru record 1, which holds the database definition, is deleted",
+        KOD_HINT,
+    ]
+
+
+def test_strudump_stops_with_a_clear_message_for_no_definition_record(tmp_path: Path) -> None:
+    dbdir = database_with_missing_definition(tmp_path / "db", [])
+
+    result = run_command("crodump", ["strudump", dbdir])
+
+    assert result.returncode == 1
+    assert result.stderr.splitlines() == [
+        "Error: CroStru holds no records, so it has no database definition",
+        KOD_HINT,
+    ]
 
 
 def test_crodump_shows_a_corrupt_compressed_record_and_dumps_the_next(tmp_path: Path) -> None:

@@ -170,6 +170,17 @@ def write_database(
     return str(directory)
 
 
+def database_with_missing_definition(directory: Path, stru_records: Sequence[bytes | None]) -> str:
+    """Write a database whose CroStru holds `stru_records` in place of TEST_DB's own, and an empty CroBank.
+
+    Used to build databases whose CroStru record 1 (the database definition) is deleted or absent: pass
+    `[None, *stru_records_from_test_db()[1:]]` for a deleted record 1, or `[]` for no records at all.
+    """
+    write_datafile(directory, "Stru", stru_records)
+    write_datafile(directory, "Bank", [])
+    return str(directory)
+
+
 def database_with_wrong_kod_record_out_of_range(directory: Path) -> tuple[str, str]:
     """Write a database encrypted with `random_kod(seed=1)` and return it with a wrong KOD table's hex digits.
 

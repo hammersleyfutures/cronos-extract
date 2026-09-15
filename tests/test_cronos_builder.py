@@ -10,10 +10,12 @@ from cronos_builder import (
     TEST_TABLE_ID,
     bank_record,
     compressed_record,
+    database_with_missing_definition,
     file_record,
     file_reference_field,
     key_referencing_a_deleted_record,
     random_kod,
+    stru_records_from_test_db,
     write_database,
 )
 
@@ -83,6 +85,24 @@ def test_key_referencing_a_deleted_record_appends_a_dangling_key(tmp_path: Path)
         assert db.stru is not None
         assert db.stru.readrec(1) == original_dbinfo + bytes([11]) + b"DanglingKey" + struct.pack("<L", 5)
         assert db.stru.readrec(5) is None
+
+
+def test_database_with_missing_definition_deletes_record_1(tmp_path: Path) -> None:
+    stru_records = [None, *stru_records_from_test_db()[1:]]
+    dbdir = database_with_missing_definition(tmp_path / "db", stru_records)
+
+    with Database(dbdir, False, KODcoding(INITIAL_KOD)) as db:
+        assert db.stru is not None
+        assert db.stru.readrec(1) is None
+        assert db.stru.nrofrecords == len(stru_records)
+
+
+def test_database_with_missing_definition_holds_no_records(tmp_path: Path) -> None:
+    dbdir = database_with_missing_definition(tmp_path / "db", [])
+
+    with Database(dbdir, False, KODcoding(INITIAL_KOD)) as db:
+        assert db.stru is not None
+        assert db.stru.nrofrecords == 0
 
 
 def test_encrypted_database_decodes_only_with_its_kod(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

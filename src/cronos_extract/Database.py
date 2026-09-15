@@ -173,6 +173,20 @@ class Database:
             else:
                 print(f'{k:<20} - "{strescape(v)}"')
 
+    def read_db_definition(self):
+        """
+        Read and decode the database definition from CroStru record 1.
+        Raises ValueError when CroStru has no record 1, when it is deleted, or when it can't be decoded.
+        """
+        if self.stru.nrofrecords < 1:
+            raise ValueError("CroStru holds no records, so it has no database definition")
+        dbinfo = self.stru.readrec(1)
+        if dbinfo is None:
+            raise ValueError("CroStru record 1, which holds the database definition, is deleted")
+        if dbinfo[:1] != b"\x03":
+            print("WARN: expected dbinfo to start with 0x03", file=sys.stderr)
+        return self.decode_db_definition(dbinfo[1:])
+
     def dump_db_table_defs(self, args):
         """
         decode the table defs from recid #1, which always has table-id #3
@@ -181,10 +195,7 @@ class Database:
         other table-id's found in CroStru:
             #4  -> large values referenced from tableid#3
         """
-        dbinfo = self.stru.readrec(1)
-        if dbinfo[:1] != b"\x03":
-            print("WARN: expected dbinfo to start with 0x03", file=sys.stderr)
-        dbdef = self.decode_db_definition(dbinfo[1:])
+        dbdef = self.read_db_definition()
         self.dump_db_definition(args, dbdef)
 
         for k, v in dbdef.items():
@@ -227,11 +238,8 @@ class Database:
         """
         if not self.stru:
             raise FileNotFoundError(self.missing_stru_message())
-        dbinfo = self.stru.readrec(1)
-        if dbinfo[:1] != b"\x03":
-            print("WARN: expected dbinfo to start with 0x03", file=sys.stderr)
         try:
-            dbdef = self.decode_db_definition(dbinfo[1:])
+            dbdef = self.read_db_definition()
         except Exception as e:
             print(f"ERROR decoding db definition: {e}", file=sys.stderr)
             print(KOD_HINT, file=sys.stderr)

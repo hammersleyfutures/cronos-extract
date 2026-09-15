@@ -19,6 +19,7 @@ from cronos_builder import (
     bank_record,
     complex_field,
     corrupt_compressed_record,
+    database_with_missing_definition,
     database_with_wrong_kod_record_out_of_range,
     file_record,
     file_reference_field,
@@ -369,6 +370,31 @@ def test_croconvert_reports_a_record_out_of_range_with_a_wrong_kod(tmp_path: Pat
         lines[0],
     )
     assert lines[1] == KOD_HINT
+
+
+def test_croconvert_reports_a_deleted_definition_record(tmp_path: Path) -> None:
+    stru_records = [None, *stru_records_from_test_db()[1:]]
+    dbdir = database_with_missing_definition(tmp_path / "db", stru_records)
+
+    result = run_command("croconvert", ["-t", "postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.splitlines() == [
+        "ERROR decoding db definition: CroStru record 1, which holds the database definition, is deleted",
+        KOD_HINT,
+    ]
+
+
+def test_croconvert_reports_no_definition_record(tmp_path: Path) -> None:
+    dbdir = database_with_missing_definition(tmp_path / "db", [])
+
+    result = run_command("croconvert", ["-t", "postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.splitlines() == [
+        "ERROR decoding db definition: CroStru holds no records, so it has no database definition",
+        KOD_HINT,
+    ]
 
 
 def test_croconvert_stops_with_a_clear_message_without_crostru(tmp_path: Path) -> None:
