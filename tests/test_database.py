@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from cronos_builder import TEST_DB
+from cronos_builder import TEST_DB, random_kod, write_database
 
 from cronos_extract.Database import Database
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
@@ -43,3 +43,15 @@ def test_enumerate_tables_names_the_missing_crostru_files(tmp_path: Path) -> Non
 
     assert "CroStru.dat" in str(error.value)
     assert str(tmp_path) in str(error.value)
+
+
+def test_decode_db_definition_rejects_a_record_number_crostru_does_not_hold(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [], kod=random_kod(seed=1))
+
+    for seed in range(100, 150):
+        with Database(dbdir, False, KODcoding(random_kod(seed=seed))) as db:
+            assert db.stru is not None
+            dbinfo = db.stru.readrec(1)
+            assert dbinfo is not None
+            with pytest.raises(ValueError):
+                db.decode_db_definition(dbinfo[1:])

@@ -1,5 +1,6 @@
 # ABOUTME: Tests for the crodump command's subcommands and options, run as subprocesses.
 # ABOUTME: Uses the sample database in test_data and databases from tests/cronos_builder.py.
+import re
 from pathlib import Path
 
 from cli import run_command
@@ -9,6 +10,7 @@ from cronos_builder import (
     TEST_TABLE_ID,
     bank_record,
     corrupt_compressed_record,
+    database_with_wrong_kod_record_out_of_range,
     key_referencing_a_deleted_record,
     write_database,
 )
@@ -80,6 +82,21 @@ def test_strudump_without_the_database_kod_stops_with_a_message() -> None:
         "Error: the database definition is cut off after 0 keys",
         KOD_HINT,
     ]
+
+
+def test_strudump_with_a_wrong_kod_reports_a_record_out_of_range(tmp_path: Path) -> None:
+    dbdir, wrong_kod_hex = database_with_wrong_kod_record_out_of_range(tmp_path / "db")
+
+    result = run_command("crodump", ["--kod", wrong_kod_hex, "strudump", dbdir])
+
+    assert result.returncode == 1
+    assert "Traceback" not in result.stderr
+    lines = result.stderr.splitlines()
+    assert len(lines) == 2
+    assert re.fullmatch(
+        r'Error: key ".*" refers to CroStru record \d+, which CroStru does not hold \(4 records\)', lines[0]
+    )
+    assert lines[1] == KOD_HINT
 
 
 def test_crodump_shows_a_corrupt_compressed_record_and_dumps_the_next(tmp_path: Path) -> None:

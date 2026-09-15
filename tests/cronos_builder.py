@@ -170,6 +170,19 @@ def write_database(
     return str(directory)
 
 
+def database_with_wrong_kod_record_out_of_range(directory: Path) -> tuple[str, str]:
+    """Write a database encrypted with `random_kod(seed=1)` and return it with a wrong KOD table's hex digits.
+
+    The wrong KOD, `random_kod(seed=2622)`, decodes CroStru record 1 into a database definition whose one key
+    has a garbage record number that CroStru doesn't hold; 2622 is the smallest seed found whose garbage record
+    1 starts with 0x03 (so dump_db_table_defs/enumerate_tables print no "WARN: expected dbinfo" line) and whose
+    garbage key name holds no line-break characters (so the error is a single stderr line).
+    """
+    dbdir = write_database(directory, [], kod=random_kod(seed=1))
+    wrong_kod_hex = bytes(random_kod(seed=2622)).hex()
+    return dbdir, wrong_kod_hex
+
+
 def crackable_database(directory: Path, bank_records: Sequence[bytes | None], kod: Sequence[int]) -> str:
     """Write a database encrypted with `kod` that holds enough known zero bytes for strucrack and dbcrack.
 

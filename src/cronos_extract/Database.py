@@ -146,6 +146,11 @@ class Database:
                 if index_or_length >> 31:
                     d[keyname] = rd.readbytes(index_or_length & 0x7FFFFFFF)
                 else:
+                    if not 1 <= index_or_length <= self.stru.nrofrecords:
+                        raise ValueError(
+                            f'key "{keyname}" refers to CroStru record {index_or_length}, '
+                            f"which CroStru does not hold ({self.stru.nrofrecords} records)"
+                        )
                     refdata = self.stru.readrec(index_or_length)
                     if refdata is None:
                         raise ValueError(

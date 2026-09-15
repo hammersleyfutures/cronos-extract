@@ -2,6 +2,7 @@
 # ABOUTME: They run the real command as a subprocess and check its stdout, stderr and output files.
 import csv
 import gc
+import re
 import struct
 from argparse import Namespace
 from html.parser import HTMLParser
@@ -18,6 +19,7 @@ from cronos_builder import (
     bank_record,
     complex_field,
     corrupt_compressed_record,
+    database_with_wrong_kod_record_out_of_range,
     file_record,
     file_reference_field,
     key_referencing_a_deleted_record,
@@ -349,6 +351,24 @@ def test_croconvert_reports_a_key_referencing_a_deleted_record(tmp_path: Path) -
         'ERROR decoding db definition: key "DanglingKey" refers to CroStru record 5, which is deleted',
         KOD_HINT,
     ]
+
+
+def test_croconvert_reports_a_record_out_of_range_with_a_wrong_kod(tmp_path: Path) -> None:
+    dbdir, wrong_kod_hex = database_with_wrong_kod_record_out_of_range(tmp_path / "db")
+
+    result = run_command("croconvert", ["--kod", wrong_kod_hex, "-t", "postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert "Traceback" not in result.stderr
+    assert not any("ERROR" in line or "Warning" in line for line in result.stdout.splitlines())
+    lines = result.stderr.splitlines()
+    assert len(lines) == 2
+    assert re.fullmatch(
+        r'ERROR decoding db definition: key ".*" refers to CroStru record \d+, '
+        r"which CroStru does not hold \(4 records\)",
+        lines[0],
+    )
+    assert lines[1] == KOD_HINT
 
 
 def test_croconvert_stops_with_a_clear_message_without_crostru(tmp_path: Path) -> None:
