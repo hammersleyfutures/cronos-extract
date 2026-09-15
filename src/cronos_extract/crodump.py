@@ -398,7 +398,8 @@ def derive_kod_from_bank_and_index(db, args):
             if not args.silent:
                 print(f"no data file found in {args.dbdir}")
             return
-        for i in range(1, min(10000, dbfile.nrofrecords)):
+        # records are numbered from 1 to nrofrecords; read at most the first 10000
+        for i in range(1, min(10000, dbfile.nrofrecords) + 1):
             rec = dbfile.readrec(i)
             if rec and len(rec) > 11:
                 xref[(i + 3) % 256][rec[3]] += 1

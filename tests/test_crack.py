@@ -133,6 +133,14 @@ def test_dbcrack_returns_none_when_the_kod_is_not_a_permutation(
     assert "entries unsolved" in capsys.readouterr().out
 
 
+def test_dbcrack_reads_the_last_record_of_each_file(tmp_path: Path) -> None:
+    # dbcrack reads the fourth byte of record i for shift i + 3. CroBank records 1..253 cover shifts 4..255 and 0,
+    # and the last three CroIndex records, 254..256, cover shifts 1..3, so every shift is covered exactly once.
+    dbdir = write_database(tmp_path / "db", [bytes(12)] * 253, KOD, index_records=[None] * 253 + [bytes(12)] * 3)
+
+    assert derive_from_bank_and_index(dbdir, "--silent") == KOD
+
+
 @pytest.mark.parametrize("options", [[], ["-f", fix_switch(0, 0, KOD[1])]], ids=["cracked", "duplicate-fix"])
 def test_strucrack_prints_nothing_when_silent(
     encrypted_db: str, options: list[str], capsys: pytest.CaptureFixture[str]
