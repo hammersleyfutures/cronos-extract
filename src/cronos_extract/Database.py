@@ -110,9 +110,14 @@ class Database:
         prints all info found in the CroStru file.
         """
         if not self.stru:
-            print("missing CroStru file", file=sys.stderr)
-            return
+            sys.exit(f"Error: {self.missing_stru_message()}")
         self.dump_db_table_defs(args)
+
+    def missing_stru_message(self):
+        """
+        Returns the message that explains that the database directory has no CroStru files.
+        """
+        return f"no CroStru.dat and CroStru.tad found in {self.dbdir}, which hold the table definitions"
 
     def decode_db_definition(self, data):
         """
@@ -198,6 +203,8 @@ class Database:
         """
         yields a TableDefinition object for all `BaseNNN` entries found in CroStru
         """
+        if not self.stru:
+            raise FileNotFoundError(self.missing_stru_message())
         dbinfo = self.stru.readrec(1)
         if dbinfo[:1] != b"\x03":
             print("WARN: expected dbinfo to start with 0x03", file=sys.stderr)

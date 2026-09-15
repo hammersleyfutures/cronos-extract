@@ -36,6 +36,15 @@ def referenced_file(db, tablename, recno, field, asbase64=False):
     return content
 
 
+def open_database(kod, args):
+    """Open the database in args.dbdir, exiting with an error message when it has no CroStru files."""
+    db = Database(args.dbdir, args.compact, kod)
+    if not db.stru:
+        db.close()
+        exit(f"Error: {db.missing_stru_message()}")
+    return db
+
+
 def report_incomplete_records(db):
     """Print how many records had fields that could not be decoded, when there were any."""
     if db.incomplete_records:
@@ -54,7 +63,7 @@ def template_convert(kod, args):
     except ImportError:
         exit("Fatal: Jinja templating engine not found. Install using pip install jinja2")
 
-    db = Database(args.dbdir, args.compact, kod)
+    db = open_database(kod, args)
 
     template_dir = join(dirname(abspath(__file__)), "templates")
     # Only HTML output is escaped; SQL output quotes its values itself and must not contain HTML entities.
@@ -95,7 +104,7 @@ def unique_file_name(stem, extension, number, used_names):
 def csv_output(kod, args):
     """creates a directory with the current timestamp and in it a set of CSV or TSV
     files with all the tables found and an extra directory with all the files"""
-    db = Database(args.dbdir, args.compact, kod)
+    db = open_database(kod, args)
 
     mkdir(args.outputdir)
     chdir(args.outputdir)

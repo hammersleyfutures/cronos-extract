@@ -335,3 +335,17 @@ def test_html_tables_are_well_formed(tmp_path: Path) -> None:
     for rows in shapes.tables:
         assert len(rows) > 1
         assert len(set(rows)) == 1, f"rows of one table have different numbers of cells: {rows}"
+
+
+def test_croconvert_stops_with_a_clear_message_without_crostru(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [])
+    (Path(dbdir) / "CroStru.dat").unlink()
+    (Path(dbdir) / "CroStru.tad").unlink()
+
+    result = run_croconvert(["-t", "postgres", dbdir])
+
+    assert result.returncode != 0
+    assert "Traceback" not in result.stderr
+    assert "CroStru.dat" in result.stderr
+    assert dbdir in result.stderr
+    assert result.stdout == ""
