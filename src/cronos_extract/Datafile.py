@@ -167,7 +167,7 @@ class Datafile:
         ofs, ln, _chk = self.tadidx(idx - 1)
         if ln == 0xFFFFFFFF:
             # deleted record
-            return
+            return None
 
         if self.isv3():
             flags = ln >> 24
@@ -332,14 +332,14 @@ class Datafile:
         Check if this record looks like a compressed record.
         """
         if len(data) < 11:
-            return
+            return False
         if data[-3:] != b"\x00\x00\x02":
-            return
+            return False
         o = 0
         while o < len(data) - 3:
             size, flag = struct.unpack_from(">HH", data, o)
             if flag != 0x800 and flag != 0x008:
-                return
+                return False
             o += size + 2
         return True
 

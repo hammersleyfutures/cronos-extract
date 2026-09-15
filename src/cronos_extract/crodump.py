@@ -237,13 +237,13 @@ def derive_kod_from_stru(db, args):
         if not db.sys:
             if not args.silent:
                 print(f"no CroSys.dat file found in {args.dbdir}")
-            return
+            return None
     else:
         table = db.stru
         if not db.stru:
             if not args.silent:
                 print(f"no CroStru.dat file found in {args.dbdir}")
-            return
+            return None
 
     xref = [[0] * 256 for _ in range(256)]
     for i, data in enumerate(table.enumrecords()):
@@ -459,7 +459,7 @@ def derive_kod_from_bank_and_index(db, args):
         if not dbfile:
             if not args.silent:
                 print(f"no data file found in {args.dbdir}")
-            return
+            return None
         # records are numbered from 1 to nrofrecords; read at most the first 10000
         for i in range(1, min(10000, dbfile.nrofrecords) + 1):
             rec = dbfile.readrec(i)
