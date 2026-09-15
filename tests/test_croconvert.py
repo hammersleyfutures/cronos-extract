@@ -445,10 +445,14 @@ def test_postgres_output_declares_every_column_text_and_writes_values_as_decoded
     assert len(column_lines) == TEST_TABLE_FIELD_COUNT + 1
     assert all(line.endswith('" TEXT') for line in column_lines), column_lines
     assert insert_statements(result.stdout) == [
-        'INSERT INTO "erdgeist" VALUES '
-        "('1', '42', NULL, NULL, '2024-03-15', '09:30', NULL, NULL, NULL, NULL, NULL, NULL);",
-        'INSERT INTO "erdgeist" VALUES '
-        "('2', 'not a number', NULL, NULL, '12x', NULL, NULL, NULL, NULL, NULL, NULL, NULL);",
+        (
+            'INSERT INTO "erdgeist" VALUES '
+            "('1', '42', NULL, NULL, '2024-03-15', '09:30', NULL, NULL, NULL, NULL, NULL, NULL);"
+        ),
+        (
+            'INSERT INTO "erdgeist" VALUES '
+            "('2', 'not a number', NULL, NULL, '12x', NULL, NULL, NULL, NULL, NULL, NULL, NULL);"
+        ),
     ]
 
 
