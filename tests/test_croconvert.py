@@ -283,3 +283,55 @@ def test_postgres_output_has_one_insert_per_record(tmp_path: Path) -> None:
     assert all(line.startswith('INSERT INTO "erdgeist" VALUES (') and line.endswith(");") for line in inserts)
     assert "'one'" in inserts[0]
     assert "'two'" in inserts[1]
+
+
+class TableShapes(HTMLParser):
+    """Records, for every HTML table, the number of cells in each row, plus the tr and img tags seen."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.tables: list[list[int]] = []
+        self.tr_starts = 0
+        self.tr_ends = 0
+        self.images = 0
+
+    @override
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "table":
+            self.tables.append([])
+        elif tag == "tr":
+            self.tr_starts += 1
+            self.tables[-1].append(0)
+        elif tag in ("th", "td"):
+            self.tables[-1][-1] += 1
+        elif tag == "img":
+            self.images += 1
+
+    @override
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "tr":
+            self.tr_ends += 1
+
+
+def test_html_tables_are_well_formed(tmp_path: Path) -> None:
+    dbdir = write_database(
+        tmp_path / "db",
+        [
+            file_record(b"DATA"),
+            record_with_file_field(file_reference_field("report", "pdf", 1)),
+            record_with_file_field(b""),
+        ],
+    )
+
+    result = run_croconvert([dbdir])
+
+    assert result.returncode == 0, result.stderr
+    shapes = TableShapes()
+    shapes.feed(result.stdout)
+    shapes.close()
+    assert shapes.tr_starts == shapes.tr_ends
+    assert shapes.images == 0
+    assert len(shapes.tables) == 2
+    for rows in shapes.tables:
+        assert len(rows) > 1
+        assert len(set(rows)) == 1, f"rows of one table have different numbers of cells: {rows}"

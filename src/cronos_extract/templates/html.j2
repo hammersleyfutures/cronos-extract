@@ -23,13 +23,13 @@
         <tr>
           <td>{{ system_number | e }}</td>
           <td><a href="data:application/x-binary;base64,{{ base64.b64encode( file ).decode('utf-8') }}">File content</a></td>
-        <tr>
+        </tr>
       {% endfor %}
       </tbody>
     </table>
   {% endfor %}
   {% for table in db.enumerate_tables(files=False) %}
-    {%- if table.tableimage -%}
+    {%- if table.tableimage.data -%}
       <img src="data:image;base64,{{ base64.b64encode( table.tableimage.data ).decode('utf-8') }}"/>
     {%- endif -%}
     <table>
