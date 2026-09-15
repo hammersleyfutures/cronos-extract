@@ -71,6 +71,17 @@ def test_strudump_stops_with_a_clear_message_for_a_key_referencing_a_deleted_rec
     assert "deleted" in result.stderr
 
 
+def test_strudump_without_the_database_kod_stops_with_a_message() -> None:
+    result = run_command("crodump", ["--nokod", "strudump", str(TEST_DB)])
+
+    assert result.returncode == 1
+    assert "Traceback" not in result.stderr
+    assert result.stderr.splitlines() == [
+        "WARN: expected dbinfo to start with 0x03",
+        "Error: the database definition is cut off after 0 keys",
+    ]
+
+
 def test_crodump_shows_a_corrupt_compressed_record_and_dumps_the_next(tmp_path: Path) -> None:
     fields = [b""] * TEST_TABLE_FIELD_COUNT
     fields[0] = b"good"

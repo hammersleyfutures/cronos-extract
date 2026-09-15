@@ -130,21 +130,26 @@ class Database:
         rd = ByteReader(data)
 
         d = dict()
-        while not rd.eof():
-            keyname = rd.readname()
-            if keyname in d:
-                print(f"WARN: duplicate key: {keyname}", file=sys.stderr)
+        try:
+            while not rd.eof():
+                keyname = rd.readname()
+                if keyname in d:
+                    print(f"WARN: duplicate key: {keyname}", file=sys.stderr)
 
-            index_or_length = rd.readdword()
-            if index_or_length >> 31:
-                d[keyname] = rd.readbytes(index_or_length & 0x7FFFFFFF)
-            else:
-                refdata = self.stru.readrec(index_or_length)
-                if refdata is None:
-                    raise ValueError(f'key "{keyname}" refers to CroStru record {index_or_length}, which is deleted')
-                if refdata[:1] != b"\x04":
-                    print("WARN: expected refdata to start with 0x04", file=sys.stderr)
-                d[keyname] = refdata[1:]
+                index_or_length = rd.readdword()
+                if index_or_length >> 31:
+                    d[keyname] = rd.readbytes(index_or_length & 0x7FFFFFFF)
+                else:
+                    refdata = self.stru.readrec(index_or_length)
+                    if refdata is None:
+                        raise ValueError(
+                            f'key "{keyname}" refers to CroStru record {index_or_length}, which is deleted'
+                        )
+                    if refdata[:1] != b"\x04":
+                        print("WARN: expected refdata to start with 0x04", file=sys.stderr)
+                    d[keyname] = refdata[1:]
+        except EOFError as e:
+            raise ValueError(f"the database definition is cut off after {len(d)} keys") from e
         return d
 
     def dump_db_definition(self, args, dbdict):
