@@ -10,12 +10,14 @@ from cronos_builder import (
     compressed_record,
     file_record,
     file_reference_field,
+    key_referencing_a_deleted_record,
     random_kod,
     write_database,
 )
 
 from cronos_extract.Database import Database
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
+from cronos_extract.readers import ByteReader
 
 FIELD_VALUES = [b"42", b"text", "Привет".encode("cp1251"), b"1240315", b"0930", b"", b"seven", b"", b"", b"", b"eleven"]
 
@@ -66,6 +68,26 @@ def test_compressed_record_round_trips_through_the_reader(tmp_path: Path) -> Non
         (record,) = db.enumerate_records(table)
 
     assert [field.content for field in record.fields][1:3] == ["42", "text"]
+
+
+def test_key_referencing_a_deleted_record_appends_a_dangling_key(tmp_path: Path) -> None:
+    dbdir = key_referencing_a_deleted_record(tmp_path, "DanglingKey")
+
+    with Database(dbdir, False, KODcoding(INITIAL_KOD)) as db:
+        assert db.stru is not None
+        dbinfo = db.stru.readrec(1)
+        assert dbinfo is not None
+        rd = ByteReader(dbinfo[1:])
+        while not rd.eof():
+            keyname = rd.readname()
+            index_or_length = rd.readdword()
+            if keyname == "DanglingKey":
+                assert not index_or_length >> 31
+                assert db.stru.readrec(index_or_length) is None
+                return
+            if index_or_length >> 31:
+                rd.readbytes(index_or_length & 0x7FFFFFFF)
+    pytest.fail("DanglingKey not found in the database definition")
 
 
 def test_encrypted_database_decodes_only_with_its_kod(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

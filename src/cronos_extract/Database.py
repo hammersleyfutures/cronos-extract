@@ -112,7 +112,10 @@ class Database:
         """
         if not self.stru:
             sys.exit(f"Error: {self.missing_stru_message()}")
-        self.dump_db_table_defs(args)
+        try:
+            self.dump_db_table_defs(args)
+        except ValueError as e:
+            sys.exit(f"Error: {e}")
 
     def missing_stru_message(self):
         """
@@ -137,6 +140,8 @@ class Database:
                 d[keyname] = rd.readbytes(index_or_length & 0x7FFFFFFF)
             else:
                 refdata = self.stru.readrec(index_or_length)
+                if refdata is None:
+                    raise ValueError(f'key "{keyname}" refers to CroStru record {index_or_length}, which is deleted')
                 if refdata[:1] != b"\x04":
                     print("WARN: expected refdata to start with 0x04", file=sys.stderr)
                 d[keyname] = refdata[1:]

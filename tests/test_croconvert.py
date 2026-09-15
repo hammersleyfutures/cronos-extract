@@ -20,6 +20,7 @@ from cronos_builder import (
     corrupt_compressed_record,
     file_record,
     file_reference_field,
+    key_referencing_a_deleted_record,
     stru_records_from_test_db,
     write_database,
     write_datafile,
@@ -336,6 +337,19 @@ def test_html_tables_are_well_formed(tmp_path: Path) -> None:
     for rows in shapes.tables:
         assert len(rows) > 1
         assert len(set(rows)) == 1, f"rows of one table have different numbers of cells: {rows}"
+
+
+def test_croconvert_reports_a_key_referencing_a_deleted_record(tmp_path: Path) -> None:
+    dbdir = key_referencing_a_deleted_record(tmp_path / "db", "DanglingKey")
+
+    result = run_command("croconvert", ["-t", "postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert "Traceback" not in result.stderr
+    assert 'key "DanglingKey"' in result.stderr
+    assert "record 5" in result.stderr
+    assert "deleted" in result.stderr
+    assert "NoneType" not in result.stderr
 
 
 def test_croconvert_stops_with_a_clear_message_without_crostru(tmp_path: Path) -> None:

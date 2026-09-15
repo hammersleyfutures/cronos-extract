@@ -133,6 +133,24 @@ def corrupt_compressed_record() -> bytes:
     return compressed_chunk(b"\xff\xff\xff\xff") + b"\x00\x00\x02"
 
 
+def key_referencing_a_deleted_record(directory: Path, keyname: str, bank_records: Sequence[bytes | None] = ()) -> str:
+    """Write a database whose CroStru database definition has an extra key referencing a deleted CroStru record.
+
+    The key is appended after TEST_DB's own database definition keys, referencing a new CroStru record written
+    as deleted.
+    """
+    stru = stru_records_from_test_db()
+    dbinfo = stru[0]
+    assert dbinfo is not None
+    deleted_recno = len(stru) + 1
+    name = keyname.encode("cp1251")
+    stru[0] = dbinfo + bytes([len(name)]) + name + struct.pack("<L", deleted_recno)
+    stru.append(None)
+    write_datafile(directory, "Stru", stru)
+    write_datafile(directory, "Bank", bank_records)
+    return str(directory)
+
+
 def write_database(
     directory: Path,
     bank_records: Sequence[bytes | None],

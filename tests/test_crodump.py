@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from cli import run_command
-from cronos_builder import TEST_DB, write_database
+from cronos_builder import TEST_DB, key_referencing_a_deleted_record, write_database
 
 from cronos_extract.Database import Database
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
@@ -49,3 +49,15 @@ def test_strudump_stops_with_a_clear_message_without_crostru(tmp_path: Path) -> 
     assert "Traceback" not in result.stderr
     assert "CroStru.dat" in result.stderr
     assert dbdir in result.stderr
+
+
+def test_strudump_stops_with_a_clear_message_for_a_key_referencing_a_deleted_record(tmp_path: Path) -> None:
+    dbdir = key_referencing_a_deleted_record(tmp_path / "db", "DanglingKey")
+
+    result = run_command("crodump", ["strudump", dbdir])
+
+    assert result.returncode != 0
+    assert "Traceback" not in result.stderr
+    assert 'key "DanglingKey"' in result.stderr
+    assert "record 5" in result.stderr
+    assert "deleted" in result.stderr
