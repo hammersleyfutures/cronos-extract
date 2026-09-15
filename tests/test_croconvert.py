@@ -350,17 +350,24 @@ def test_croconvert_stops_with_a_clear_message_without_crostru(tmp_path: Path) -
     assert result.stdout == ""
 
 
-def duplicate_table_name_database(directory: Path) -> str:
-    """Write a database with two tables named "erdgeist", ids 1 and 2, holding records "one" and "two".
+def duplicate_table_name_database(directory: Path, second_table_name: bytes = b"erdgeist") -> str:
+    """Write a database with tables "erdgeist" and `second_table_name`, ids 1 and 2, with records "one" and "two".
 
-    The second table is the first table's definition with its table id changed, added to CroStru's
+    The second table is the first table's definition with its table id and name changed, added to CroStru's
     database definition as an inline Base002 entry.
     """
     stru = stru_records_from_test_db()
     with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD)) as db:
         assert db.stru is not None
         base001 = db.decode_db_definition(db.stru.readrec(1)[1:])["Base001"]
-    base002 = base001[:TABLE_ID_OFFSET] + struct.pack("<L", 2) + base001[TABLE_ID_OFFSET + 4 :]
+    name_offset = TABLE_ID_OFFSET + 4
+    base002 = (
+        base001[:TABLE_ID_OFFSET]
+        + struct.pack("<L", 2)
+        + bytes([len(second_table_name)])
+        + second_table_name
+        + base001[name_offset + 1 + base001[name_offset] :]
+    )
     name = b"Base002"
     database_definition = stru[0]
     assert database_definition is not None
@@ -513,3 +520,40 @@ def test_a_file_reference_to_a_record_of_another_table_is_skipped(tmp_path: Path
         assert list((tmp_path / "out" / "Files-Referenced").iterdir()) == []
     else:
         assert [dict(link).get("download") for link in start_tags(result.stdout, "a")] == []
+
+
+def test_csv_export_shortens_over_long_file_and_table_names(tmp_path: Path) -> None:
+    long_name = "я" * 200
+    dbdir = write_database(
+        tmp_path / "files",
+        [
+            file_record(b"one"),
+            file_record(b"two"),
+            file_record(b"three"),
+            record_with_file_field(file_reference_field(long_name, "txt", 1)),
+            record_with_file_field(file_reference_field(long_name + "ж", "txt", 2)),
+            record_with_file_field(file_reference_field("long", "x" * 300, 3)),
+        ],
+    )
+    outdir = tmp_path / "files-out"
+
+    result = run_command("croconvert", ["--csv", "-o", str(outdir), dbdir])
+
+    assert result.returncode == 0, result.stderr
+    files = {path.name: path.read_bytes() for path in (outdir / "Files-Referenced").iterdir()}
+    assert all(len(name.encode("utf-8")) <= 255 for name in files), list(files)
+    by_content = {content: name for name, content in files.items()}
+    assert set(by_content) == {b"one", b"two", b"three"}
+    assert by_content[b"one"].endswith(".txt") and by_content[b"one"].startswith("яяя")
+    assert by_content[b"two"].endswith("-2.txt")
+    assert by_content[b"three"].startswith("long.x")
+
+    tablesdir = duplicate_table_name_database(tmp_path / "tables", second_table_name=long_name.encode("cp1251"))
+    tablesout = tmp_path / "tables-out"
+
+    result = run_command("croconvert", ["--csv", "-o", str(tablesout), tablesdir])
+
+    assert result.returncode == 0, result.stderr
+    csv_names = sorted(path.name for path in tablesout.glob("*.csv"))
+    assert len(csv_names) == 2
+    assert all(len(name.encode("utf-8")) <= 255 and name.endswith(".csv") for name in csv_names), csv_names
