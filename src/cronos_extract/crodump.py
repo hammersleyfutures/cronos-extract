@@ -42,9 +42,9 @@ def destruct_sys_definition(args, data):
 
     systype = rd.readbyte()
     if systype == 3:
-        return destruct_sys3_def(rd)
+        destruct_sys3_def(rd)
     elif systype == 4:
-        return destruct_sys4_def(rd)
+        destruct_sys4_def(rd)
     else:
         raise Exception("unsupported sys record")
 
