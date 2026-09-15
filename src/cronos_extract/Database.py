@@ -69,7 +69,7 @@ class Database:
             if datname and tadname:
                 return self.opendatafile(name, datname, tadname)
         except OSError:
-            return
+            return None
 
     def opendatafile(self, name, datname, tadname):
         """
@@ -91,6 +91,7 @@ class Database:
         for fn in os.listdir(self.dbdir):
             if basename.lower() == fn.lower():
                 return os.path.join(self.dbdir, fn)
+        return None
 
     def dump(self, args):
         """
