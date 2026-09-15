@@ -46,8 +46,8 @@ def test_crodump_crack_flag_needs_a_database_subcommand() -> None:
 
 
 @pytest.mark.parametrize("flag", CRACK_FLAGS)
-def test_dumpdbfields_crack_flags_do_not_crash(encrypted_db: str, flag: str) -> None:
+def test_dumpdbfields_decodes_with_a_cracked_kod(encrypted_db: str, flag: str) -> None:
     result = run_command("dumpdbfields", [flag, encrypted_db])
 
-    assert "has no attribute" not in result.stdout
-    assert "Traceback" not in result.stderr
+    assert result.returncode == 0, result.stderr
+    assert "-- Hammersley" in result.stdout

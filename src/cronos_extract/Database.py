@@ -18,12 +18,11 @@ from .readers import ByteReader
 class Database:
     """represent the entire database, consisting of Stru, Index and Bank files"""
 
-    def __init__(self, dbdir, compact, kod=koddecoder.new()):
+    def __init__(self, dbdir, compact, kod):
         """
         `dbdir` is the directory containing the Cro*.dat and Cro*.tad files.
         `compact` if set, the .tad file is not cached in memory, making dumps 15 % slower
-        `kod` is optionally a KOD coder object.
-              by default the v3 KOD coding will be used.
+        `kod` is a KOD coder object, or None to read the records without KOD decoding.
         """
         self.dbdir = dbdir
         self.compact = compact

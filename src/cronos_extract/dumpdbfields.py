@@ -55,15 +55,15 @@ def main():
             else:
                 kod = koddecoder.new()
 
-            db = Database(path, kod)
+            db = Database(path, False, kod)
             for tab in db.enumerate_tables():
                 tab.dump(args)
                 print(f"nr of records: {db.bank.nrofrecords:d}")
                 for i, rec in enumerate(db.enumerate_records(tab), start=1):
-                    for field, fielddef in zip(rec.fields, tab.fields, strict=True):
-                        print(f">> {fielddef} -- {field.content}")
                     if i > args.maxrecs:
                         break
+                    for field, fielddef in zip(rec.fields, tab.fields, strict=True):
+                        print(f">> {fielddef} -- {field.content}")
         except Exception as e:
             print(f"ERROR: {e}")
 
