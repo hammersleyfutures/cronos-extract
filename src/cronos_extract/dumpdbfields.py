@@ -83,12 +83,12 @@ def main():
                 i = 0
                 for rec in db.enumerate_records(tab):
                     for field, fielddef in zip(rec.fields, tab.fields):
-                        print(">> {} -- {}".format(fielddef, field.content))
+                        print(f">> {fielddef} -- {field.content}")
                     i += 1
                     if i > args.maxrecs:
                         break
         except Exception as e:
-            print("ERROR: {}".format(e))
+            print(f"ERROR: {e}")
 
 
 if __name__ == "__main__":

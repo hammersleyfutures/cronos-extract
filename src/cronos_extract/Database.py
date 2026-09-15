@@ -62,7 +62,7 @@ class Database:
         Get a case-insensitive filename match for 'name.ext'.
         Returns None when no matching file was not found.
         """
-        basename = "Cro{}.{}".format(name, ext)
+        basename = f"Cro{name}.{ext}"
         for fn in os.listdir(self.dbdir):
             if basename.lower() == fn.lower():
                 return os.path.join(self.dbdir, fn)
@@ -99,7 +99,7 @@ class Database:
         while not rd.eof():
             keyname = rd.readname()
             if keyname in d:
-                print("WARN: duplicate key: {}".format(keyname))
+                print(f"WARN: duplicate key: {keyname}")
 
             index_or_length = rd.readdword()
             if index_or_length >> 31:
@@ -137,7 +137,7 @@ class Database:
 
         for k, v in dbdef.items():
             if k.startswith("Base") and k[4:].isnumeric():
-                print("== {} ==".format(k))
+                print(f"== {k} ==")
                 tbdef = TableDefinition(v, dbdef.get("BaseImage" + k[4:], b""))
                 tbdef.dump(args)
             elif k == "NS1":
@@ -179,7 +179,7 @@ class Database:
         try:
             dbdef = self.decode_db_definition(dbinfo[1:])
         except Exception as e:
-            print("ERROR decoding db definition: {}".format(e))
+            print(f"ERROR decoding db definition: {e}")
             print(
                 "This could possibly mean that you need to try     crodump strucrack     to deduct the database key first"
             )

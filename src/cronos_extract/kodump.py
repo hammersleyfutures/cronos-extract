@@ -35,7 +35,7 @@ def decode_kod(kod, args, data):
         # explicitly specified shift.
         for s in range(256):
             enc = incdata(data, s)
-            print("{:02x}: {}".format(s, toout(args, enc)))
+            print(f"{s:02x}: {toout(args, enc)}")
     else:
         # output with all possible 'shift' values.
         for s in range(256):
@@ -43,7 +43,7 @@ def decode_kod(kod, args, data):
                 enc = kod.encode(s, data)
             else:
                 enc = kod.decode(s, data)
-            print("{:02x}: {}".format(s, toout(args, enc)))
+            print(f"{s:02x}: {toout(args, enc)}")
 
 
 def kod_hexdump(kod, args):

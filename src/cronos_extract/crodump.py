@@ -137,12 +137,12 @@ def strucrack(kod, args):
     if args.sys:
         table = db.sys
         if not db.sys:
-            print("no CroSys.dat file found in {}".format(args.dbdir))
+            print(f"no CroSys.dat file found in {args.dbdir}")
             return
     else:
         table = db.stru
         if not db.stru:
-            print("no CroStru.dat file found in {}".format(args.dbdir))
+            print(f"no CroStru.dat file found in {args.dbdir}")
             return
 
     xref = [[0] * 256 for _ in range(256)]
@@ -246,13 +246,11 @@ def strucrack(kod, args):
             # print(sisnm)
             for ofix in incomplete_matches:
                 do = ofix[0]
-                print("Found {} which looks a lot like {} ".format(asasc(candidate[do : do + len(s)]), asasc(s)))
+                print(f"Found {asasc(candidate[do : do + len(s)])} which looks a lot like {asasc(s)} ")
                 print("Add the following switches to your command line to fix the decoder box:\n    ", end="")
                 for o, c in enumerate(deststring):
                     print(
-                        "-f {:02x}{:02x}{:02x} ".format(
-                            data[do + o + destoffset], (do + i + 1 + o + destoffset) % 256, c
-                        ),
+                        f"-f {data[do + o + destoffset]:02x}{(do + i + 1 + o + destoffset) % 256:02x}{c:02x} ",
                         end="",
                     )
                 print("\n")
@@ -266,9 +264,7 @@ def strucrack(kod, args):
             colored = "".join(color_code(c, confidence[o], force_color) for o, c in enumerate(text))
             colored_hexed = "".join(color_code(c, confidence[o >> 1], force_color) for o, c in enumerate(hexed))
             fix_helper = " ".join(
-                "{:02x}{:02x}={}".format(
-                    b, (w * ofs + i + 1 + o) % 256, color_code(text[o], confidence[o], force_color)
-                )
+                f"{b:02x}{(w * ofs + i + 1 + o) % 256:02x}={color_code(text[o], confidence[o], force_color)}"
                 for o, b in enumerate(data[ofs * w : ofs * w + w])
             )
 
@@ -294,14 +290,14 @@ def strucrack(kod, args):
         if args.noninteractive:
             return
         if not args.silent:
-            unset_entries = ", ".join(["{:02x}".format(o) for o, v in enumerate(KOD) if KOD_CONFIDENCE[o] == 0])
-            unused_values = ", ".join(["{:02x}".format(v) for v in sorted(set(range(0, 256)).difference(set(kod_set)))])
+            unset_entries = ", ".join([f"{o:02x}" for o, v in enumerate(KOD) if KOD_CONFIDENCE[o] == 0])
+            unused_values = ", ".join([f"{v:02x}" for v in sorted(set(range(0, 256)).difference(set(kod_set)))])
             print("\nAmbigous result when cracking. %d entries unsolved. Missing mappings:" % unset_count)
-            print("[{}] => [{}]\n".format(unset_entries, unused_values))
+            print(f"[{unset_entries}] => [{unused_values}]\n")
             print("KOD estimate:")
             print(
                 "".join(
-                    color_code("{:02x}".format(c) if KOD_CONFIDENCE[o] > 0 else "??", KOD_CONFIDENCE[o], force_color)
+                    color_code(f"{c:02x}" if KOD_CONFIDENCE[o] > 0 else "??", KOD_CONFIDENCE[o], force_color)
                     for o, c in enumerate(KOD)
                 )
             )
@@ -337,7 +333,7 @@ def dbcrack(kod, args):
 
     for dbfile in db.bank, db.index:
         if not dbfile:
-            print("no data file found in {}".format(args.dbdir))
+            print(f"no data file found in {args.dbdir}")
             return
         for i in range(1, min(10000, dbfile.nrofrecords)):
             rec = dbfile.readrec(i)
