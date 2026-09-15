@@ -263,8 +263,8 @@ def derive_kod_from_stru(db, args):
 
         candidate, candidate_confidence = kod.try_decode(i + 1, data)
 
-        for s, maxsubs, deststring, destoffset in known_strings:
-            incomplete_matches = match_with_mismatches(candidate, candidate_confidence, s, maxsubs)
+        for s, min_matching, deststring, destoffset in known_strings:
+            incomplete_matches = match_with_mismatches(candidate, candidate_confidence, s, min_matching)
             # print(sisnm)
             for ofix in incomplete_matches:
                 do = ofix[0]
