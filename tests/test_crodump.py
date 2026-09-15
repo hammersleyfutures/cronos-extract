@@ -1,5 +1,6 @@
 # ABOUTME: Tests for the crodump command's subcommands and options, run as subprocesses.
 # ABOUTME: Uses the sample database in test_data and databases from tests/cronos_builder.py.
+import re
 from pathlib import Path
 
 from cli import run_command
@@ -9,11 +10,14 @@ from cronos_builder import (
     TEST_TABLE_ID,
     bank_record,
     corrupt_compressed_record,
+    database_with_missing_definition,
+    database_with_wrong_kod_record_out_of_range,
     key_referencing_a_deleted_record,
+    stru_records_from_test_db,
     write_database,
 )
 
-from cronos_extract.Database import Database
+from cronos_extract.Database import KOD_HINT, Database
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
 
 
@@ -64,11 +68,62 @@ def test_strudump_stops_with_a_clear_message_for_a_key_referencing_a_deleted_rec
 
     result = run_command("crodump", ["strudump", dbdir])
 
-    assert result.returncode != 0
+    assert result.returncode == 1
+    assert result.stderr.splitlines() == [
+        'Error: key "DanglingKey" refers to CroStru record 5, which is deleted',
+        KOD_HINT,
+    ]
+
+
+def test_strudump_without_the_database_kod_stops_with_a_message() -> None:
+    result = run_command("crodump", ["--nokod", "strudump", str(TEST_DB)])
+
+    assert result.returncode == 1
+    assert result.stderr.splitlines() == [
+        "WARN: expected dbinfo to start with 0x03",
+        "Error: the database definition is cut off after 0 keys",
+        KOD_HINT,
+    ]
+
+
+def test_strudump_with_a_wrong_kod_reports_a_record_out_of_range(tmp_path: Path) -> None:
+    dbdir, wrong_kod_hex = database_with_wrong_kod_record_out_of_range(tmp_path / "db")
+
+    result = run_command("crodump", ["--kod", wrong_kod_hex, "strudump", dbdir])
+
+    assert result.returncode == 1
     assert "Traceback" not in result.stderr
-    assert 'key "DanglingKey"' in result.stderr
-    assert "record 5" in result.stderr
-    assert "deleted" in result.stderr
+    lines = result.stderr.splitlines()
+    assert len(lines) == 2
+    assert re.fullmatch(
+        r'Error: key ".*" refers to CroStru record \d+, which CroStru does not hold \(4 records\)', lines[0]
+    )
+    assert lines[1] == KOD_HINT
+
+
+def test_strudump_stops_with_a_clear_message_for_a_deleted_definition_record(tmp_path: Path) -> None:
+    stru_records = [None, *stru_records_from_test_db()[1:]]
+    dbdir = database_with_missing_definition(tmp_path / "db", stru_records)
+
+    result = run_command("crodump", ["strudump", dbdir])
+
+    assert result.returncode == 1
+    assert result.stderr.splitlines() == [
+        "Error: CroStru record 1, which holds the database definition, is deleted",
+        KOD_HINT,
+    ]
+
+
+def test_strudump_stops_with_a_clear_message_for_no_definition_record(tmp_path: Path) -> None:
+    dbdir = database_with_missing_definition(tmp_path / "db", [])
+
+    result = run_command("crodump", ["strudump", dbdir])
+
+    assert result.returncode == 1
+    assert result.stderr.splitlines() == [
+        "Error: CroStru holds no records, so it has no database definition",
+        KOD_HINT,
+    ]
 
 
 def test_crodump_shows_a_corrupt_compressed_record_and_dumps_the_next(tmp_path: Path) -> None:
@@ -85,4 +140,5 @@ def test_crodump_shows_a_corrupt_compressed_record_and_dumps_the_next(tmp_path: 
     bank_lines = lines[bank_header + 1 :]
     first, second = [line for line in bank_lines if line.startswith(("    1:", "    2:"))]
     assert "good" in first
-    assert "corrupt compressed data" in second
+    assert " <corrupt compressed data: " in second
+    assert second.endswith(">")

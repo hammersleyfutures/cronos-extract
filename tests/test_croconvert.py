@@ -2,6 +2,7 @@
 # ABOUTME: They run the real command as a subprocess and check its stdout, stderr and output files.
 import csv
 import gc
+import re
 import struct
 from argparse import Namespace
 from html.parser import HTMLParser
@@ -18,6 +19,8 @@ from cronos_builder import (
     bank_record,
     complex_field,
     corrupt_compressed_record,
+    database_with_missing_definition,
+    database_with_wrong_kod_record_out_of_range,
     file_record,
     file_reference_field,
     key_referencing_a_deleted_record,
@@ -27,7 +30,7 @@ from cronos_builder import (
 )
 
 from cronos_extract.croconvert import csv_output, template_convert, unique_sql_column_names, unique_sql_table_name
-from cronos_extract.Database import Database
+from cronos_extract.Database import KOD_HINT, Database
 from cronos_extract.Datamodel import TableDefinition
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
 
@@ -345,11 +348,53 @@ def test_croconvert_reports_a_key_referencing_a_deleted_record(tmp_path: Path) -
     result = run_command("croconvert", ["-t", "postgres", dbdir])
 
     assert result.returncode == 0, result.stderr
+    assert result.stderr.splitlines() == [
+        'ERROR decoding db definition: key "DanglingKey" refers to CroStru record 5, which is deleted',
+        KOD_HINT,
+    ]
+
+
+def test_croconvert_reports_a_record_out_of_range_with_a_wrong_kod(tmp_path: Path) -> None:
+    dbdir, wrong_kod_hex = database_with_wrong_kod_record_out_of_range(tmp_path / "db")
+
+    result = run_command("croconvert", ["--kod", wrong_kod_hex, "-t", "postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
     assert "Traceback" not in result.stderr
-    assert 'key "DanglingKey"' in result.stderr
-    assert "record 5" in result.stderr
-    assert "deleted" in result.stderr
-    assert "NoneType" not in result.stderr
+    assert not any("ERROR" in line or "Warning" in line for line in result.stdout.splitlines())
+    lines = result.stderr.splitlines()
+    assert len(lines) == 2
+    assert re.fullmatch(
+        r'ERROR decoding db definition: key ".*" refers to CroStru record \d+, '
+        r"which CroStru does not hold \(4 records\)",
+        lines[0],
+    )
+    assert lines[1] == KOD_HINT
+
+
+def test_croconvert_reports_a_deleted_definition_record(tmp_path: Path) -> None:
+    stru_records = [None, *stru_records_from_test_db()[1:]]
+    dbdir = database_with_missing_definition(tmp_path / "db", stru_records)
+
+    result = run_command("croconvert", ["-t", "postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.splitlines() == [
+        "ERROR decoding db definition: CroStru record 1, which holds the database definition, is deleted",
+        KOD_HINT,
+    ]
+
+
+def test_croconvert_reports_no_definition_record(tmp_path: Path) -> None:
+    dbdir = database_with_missing_definition(tmp_path / "db", [])
+
+    result = run_command("croconvert", ["-t", "postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.splitlines() == [
+        "ERROR decoding db definition: CroStru holds no records, so it has no database definition",
+        KOD_HINT,
+    ]
 
 
 def test_croconvert_stops_with_a_clear_message_without_crostru(tmp_path: Path) -> None:
@@ -575,9 +620,9 @@ def test_csv_export_skips_a_corrupt_compressed_bank_record(tmp_path: Path) -> No
     result = run_command("croconvert", ["--csv", "-o", str(outdir), dbdir])
 
     assert result.returncode == 0, result.stderr
-    assert any("Warning" in line and "record 2" in line and "corrupt" in line for line in result.stderr.splitlines()), (
-        result.stderr
-    )
+    prefix = "Warning: CroBank record 2 is corrupt: ValueError: corrupt compressed data: "
+    suffix = "; skipping it"
+    assert any(line.startswith(prefix) and line.endswith(suffix) for line in result.stderr.splitlines()), result.stderr
     with (outdir / "erdgeist.csv").open(encoding="utf-8", newline="") as csvfile:
         rows = list(csv.reader(csvfile))[1:]
     assert rows == [["1", "good", "", "", "", "", "", "", "", "", "", ""]]
