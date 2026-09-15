@@ -13,7 +13,7 @@ from cronos_builder import (
     write_database,
 )
 
-from cronos_extract.Database import Database
+from cronos_extract.Database import KOD_HINT, Database
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
 
 
@@ -64,21 +64,21 @@ def test_strudump_stops_with_a_clear_message_for_a_key_referencing_a_deleted_rec
 
     result = run_command("crodump", ["strudump", dbdir])
 
-    assert result.returncode != 0
-    assert "Traceback" not in result.stderr
-    assert 'key "DanglingKey"' in result.stderr
-    assert "record 5" in result.stderr
-    assert "deleted" in result.stderr
+    assert result.returncode == 1
+    assert result.stderr.splitlines() == [
+        'Error: key "DanglingKey" refers to CroStru record 5, which is deleted',
+        KOD_HINT,
+    ]
 
 
 def test_strudump_without_the_database_kod_stops_with_a_message() -> None:
     result = run_command("crodump", ["--nokod", "strudump", str(TEST_DB)])
 
     assert result.returncode == 1
-    assert "Traceback" not in result.stderr
     assert result.stderr.splitlines() == [
         "WARN: expected dbinfo to start with 0x03",
         "Error: the database definition is cut off after 0 keys",
+        KOD_HINT,
     ]
 
 

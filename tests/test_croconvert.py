@@ -27,7 +27,7 @@ from cronos_builder import (
 )
 
 from cronos_extract.croconvert import csv_output, template_convert, unique_sql_column_names, unique_sql_table_name
-from cronos_extract.Database import Database
+from cronos_extract.Database import KOD_HINT, Database
 from cronos_extract.Datamodel import TableDefinition
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
 
@@ -345,11 +345,10 @@ def test_croconvert_reports_a_key_referencing_a_deleted_record(tmp_path: Path) -
     result = run_command("croconvert", ["-t", "postgres", dbdir])
 
     assert result.returncode == 0, result.stderr
-    assert "Traceback" not in result.stderr
-    assert 'key "DanglingKey"' in result.stderr
-    assert "record 5" in result.stderr
-    assert "deleted" in result.stderr
-    assert "NoneType" not in result.stderr
+    assert result.stderr.splitlines() == [
+        'ERROR decoding db definition: key "DanglingKey" refers to CroStru record 5, which is deleted',
+        KOD_HINT,
+    ]
 
 
 def test_croconvert_stops_with_a_clear_message_without_crostru(tmp_path: Path) -> None:

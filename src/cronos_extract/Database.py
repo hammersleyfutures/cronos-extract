@@ -15,6 +15,12 @@ from .Datamodel import Record, TableDefinition, describe_error
 from .hexdump import ashex, strescape, toout
 from .readers import ByteReader
 
+# Printed after a database definition error: a KOD that isn't the database's own decodes the definition as garbage.
+KOD_HINT = (
+    "If the KOD used to read this database is not its own, the definition decodes as garbage; "
+    "crodump strucrack can derive the database's KOD."
+)
+
 
 class Database:
     """represent the entire database, consisting of Stru, Index and Bank files"""
@@ -115,7 +121,7 @@ class Database:
         try:
             self.dump_db_table_defs(args)
         except ValueError as e:
-            sys.exit(f"Error: {e}")
+            sys.exit(f"Error: {e}\n{KOD_HINT}")
 
     def missing_stru_message(self):
         """
@@ -223,11 +229,7 @@ class Database:
             dbdef = self.decode_db_definition(dbinfo[1:])
         except Exception as e:
             print(f"ERROR decoding db definition: {e}", file=sys.stderr)
-            print(
-                "This could possibly mean that you need to try     crodump strucrack     "
-                "to deduct the database key first",
-                file=sys.stderr,
-            )
+            print(KOD_HINT, file=sys.stderr)
             return
 
         for k, v in dbdef.items():
