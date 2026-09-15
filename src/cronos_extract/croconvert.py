@@ -99,7 +99,7 @@ def truncate_utf8(text, max_bytes):
     return text.encode("utf-8")[:max_bytes].decode("utf-8", "ignore")
 
 
-def unique_name(stem, extension, number, used_names, max_bytes):  # noqa: RET503 -- the loop over count() only ends by returning
+def unique_name(stem, extension, number, used_names, max_bytes):
     """
     Return `stem` followed by `extension` when no other output uses that name, or None when the thing
     numbered `number` already has it. A name already used by something else gets "-<number>" appended
@@ -107,7 +107,9 @@ def unique_name(stem, extension, number, used_names, max_bytes):  # noqa: RET503
     in `max_bytes` UTF-8 bytes.
     `used_names` maps each name given so far, compared case-insensitively, to its number.
     """
-    for suffix in chain(["", f"-{number}"], (f"-{number}-{n}" for n in count(2))):
+    suffixes = chain(["", f"-{number}"], (f"-{number}-{n}" for n in count(2)))
+    while True:
+        suffix = next(suffixes)
         room = max_bytes - len(suffix.encode("utf-8")) - len(extension.encode("utf-8"))
         name = truncate_utf8(stem, room) + suffix + extension
         key = name.casefold()
