@@ -469,3 +469,17 @@ def test_exports_close_the_database_files(tmp_path: Path, monkeypatch: pytest.Mo
     gc.collect()
 
     assert (tmp_path / "out" / "Files-Referenced" / "report.pdf").read_bytes() == b"DATA"
+
+
+@pytest.mark.parametrize("export_args", [["--csv", "-o", "out"], []], ids=["csv", "html"])
+def test_a_corrupt_referenced_file_gets_one_accurate_warning(tmp_path: Path, export_args: list[str]) -> None:
+    dbdir = corrupt_bank_record_database(tmp_path / "db")
+
+    result = run_command("croconvert", [*export_args, dbdir], cwd=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    warnings = [line for line in result.stderr.splitlines() if "broken.pdf" in line]
+    assert len(warnings) == 1, result.stderr
+    assert "record 4" in warnings[0]
+    assert "corrupt" in warnings[0]
+    assert "is not the number of a stored file" not in result.stderr

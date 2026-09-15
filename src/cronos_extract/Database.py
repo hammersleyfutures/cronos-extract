@@ -260,31 +260,41 @@ class Database:
             if data and data[0] == table.tableid:
                 yield i + 1, data[1:]
 
+    def readbankrec_or_raise(self, recno):
+        """
+        Read record `recno` from CroBank, returning None when the record is deleted.
+        Raises LookupError, naming the record, when the record is corrupt.
+        """
+        try:
+            return self.bank.readrec(recno)
+        except (ValueError, struct.error) as e:
+            raise LookupError(f"CroBank record {recno:d} is corrupt: {describe_error(e)}") from e
+
     def readbankrec(self, recno):
         """
         Read record `recno` from CroBank.
         Returns None when the record is deleted, or when it is corrupt, after printing a warning.
         """
         try:
-            return self.bank.readrec(recno)
-        except (ValueError, struct.error) as e:
-            print(f"Warning: skipping CroBank record {recno:d}, which is corrupt: {describe_error(e)}", file=sys.stderr)
+            return self.readbankrec_or_raise(recno)
+        except LookupError as e:
+            print(f"Warning: {e}; skipping it", file=sys.stderr)
             return None
 
     def get_record(self, index, asbase64=False):
         """
         Retrieve a single record from CroBank with record number `index`.
-        Returns None when `index` is not the number of a record in CroBank, or that record is deleted.
+        Raises LookupError, naming the reason, when `index` is not the number of a readable record in CroBank.
         """
         try:
             recno = int(index)
         except ValueError:
-            return None
+            raise LookupError(f"{index!r} is not a record number") from None
         if not 1 <= recno <= self.bank.nrofrecords:
-            return None
-        data = self.readbankrec(recno)
+            raise LookupError(f"CroBank has no record {recno:d}")
+        data = self.readbankrec_or_raise(recno)
         if data is None:
-            return None
+            raise LookupError(f"CroBank record {recno:d} is deleted")
         if asbase64:
             return base64.b64encode(data[1:]).decode("utf-8")
         else:

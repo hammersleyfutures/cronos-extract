@@ -26,14 +26,14 @@ def referenced_file(db, tablename, recno, field, asbase64=False):
     Return the content of the stored file that the file reference `field` of record `recno` refers to.
     Prints a warning and returns None when that file can't be read, so the export can skip it.
     """
-    content = db.get_record(field.filedatarecord, asbase64)
-    if content is None:
+    try:
+        return db.get_record(field.filedatarecord, asbase64)
+    except LookupError as e:
         print(
-            f'Warning: skipping file "{field.filename}.{field.extname}" of record {recno} in table "{tablename}": '
-            f"{field.filedatarecord!r} is not the number of a stored file",
+            f'Warning: skipping file "{field.filename}.{field.extname}" of record {recno} in table "{tablename}": {e}',
             file=sys.stderr,
         )
-    return content
+        return None
 
 
 def open_database(kod, args):
