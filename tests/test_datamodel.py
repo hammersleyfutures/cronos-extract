@@ -1,0 +1,75 @@
+# ABOUTME: Unit tests for field decoding in cronos_extract.Datamodel and text helpers in cronos_extract.hexdump.
+# ABOUTME: They pin how raw field bytes become presentable content, using real definition bytes, not mocks.
+import argparse
+import struct
+
+import pytest
+
+from cronos_extract.Datamodel import Field, FieldDefinition
+from cronos_extract.hexdump import aschr, hexdump
+
+
+def make_fielddef(typ: int, name: str = "Field") -> FieldDefinition:
+    """Build a FieldDefinition from bytes laid out as CroStru stores them."""
+    encoded_name = name.encode("cp1251")
+    data = struct.pack("<HLB", typ, 1, len(encoded_name)) + encoded_name + struct.pack("<LB", 0, 1)
+    if typ:
+        data += struct.pack("<LLL", 1, 20, 9)
+    return FieldDefinition(data)
+
+
+def test_fielddef_decodes_type_name_and_limits() -> None:
+    fielddef = make_fielddef(2, "Имя")
+
+    assert (fielddef.typ, fielddef.name, fielddef.idx2, fielddef.maxval) == (2, "Имя", 1, 20)
+    assert fielddef.sqltype() == "VARCHAR(20)"
+
+
+def test_system_number_field_is_shown_as_given() -> None:
+    assert Field(make_fielddef(0), "7").content == "7"
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (b"1240315", "2024-03-15"),
+        (b"1240315\x00\x00", "2024-03-15"),
+        (b"-10101", "1899-01-01"),
+        (b"00101", "1900-01-01"),
+    ],
+)
+def test_date_field_is_formatted_as_iso_date(raw: bytes, expected: str) -> None:
+    assert Field(make_fielddef(4), raw).content == expected
+
+
+@pytest.mark.parametrize(("raw", "expected"), [(b"0930", "09:30"), (b"2359\x00", "23:59")])
+def test_time_field_is_formatted_as_hours_and_minutes(raw: bytes, expected: str) -> None:
+    assert Field(make_fielddef(5), raw).content == expected
+
+
+def test_text_field_is_decoded_from_cp1251_without_trailing_nuls() -> None:
+    assert Field(make_fielddef(2), "Привет".encode("cp1251") + b"\x00\x00").content == "Привет"
+
+
+def test_empty_field_has_empty_content() -> None:
+    assert Field(make_fielddef(2), b"").content == ""
+
+
+@pytest.mark.parametrize(
+    ("byte", "expected"),
+    [(0x41, "A"), (0x20, " "), (0xC0, "\u0410"), (0xFF, "я"), (0x98, "."), (0x10, "."), (0x7F, ".")],
+)
+def test_aschr_maps_cp1251_bytes_to_text(byte: int, expected: str) -> None:
+    assert aschr(byte) == expected
+
+
+def test_hexdump_prints_hex_and_text_columns(capsys: pytest.CaptureFixture[str]) -> None:
+    hexdump(0x10, b"ABCDEFG", argparse.Namespace(width=4, ascdump=False))
+
+    assert capsys.readouterr().out == "00000010: 41 42 43 44  ABCD\n00000014: 45 46 47     EFG\n"
+
+
+def test_hexdump_ascdump_prints_text_only(capsys: pytest.CaptureFixture[str]) -> None:
+    hexdump(0, "Привет!".encode("cp1251"), argparse.Namespace(width=4, ascdump=True))
+
+    assert capsys.readouterr().out == "00000000: Прив\n00000004: ет!\n"
