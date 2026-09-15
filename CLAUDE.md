@@ -48,6 +48,10 @@ The code is layered, from bytes up to commands (`src/cronos_extract/`):
   presentable content (dates, times, text). Field type 6 is a file reference into the Files table. Record fields that
   fail to decode are left empty and counted in `Database.incomplete_records`.
 - **Commands**:
+  - `cronos-extract` (`cli.py`) has one subcommand, `survey`, which walks the directories it is given for `Cro*.dat`
+    files and reports each file's format version, generation and encoding flags from `survey.py`. It reads only the
+    19-byte `.dat` header, never a `.tad` file or a record. `--counts` and `--jsonl` choose the output format, and
+    `--list` takes a file naming the directories.
   - `croconvert` exports CSV (`csv_output`) or renders a Jinja2 template from `src/cronos_extract/templates/`. The
     templates call `db.enumerate_*` and helpers passed in from `croconvert.py`, such as `unique_sql_table_name` and
     `sql_value`. Only `html.j2` is autoescaped.
