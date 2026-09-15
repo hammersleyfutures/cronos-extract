@@ -4,9 +4,9 @@ import base64
 import os
 import re
 import struct
+import sys
 from binascii import b2a_hex
 from contextlib import ExitStack
-from sys import stderr
 
 from . import koddecoder
 from .Datafile import Datafile
@@ -107,7 +107,7 @@ class Database:
         prints all info found in the CroStru file.
         """
         if not self.stru:
-            print("missing CroStru file")
+            print("missing CroStru file", file=sys.stderr)
             return
         self.dump_db_table_defs(args)
 
@@ -121,7 +121,7 @@ class Database:
         while not rd.eof():
             keyname = rd.readname()
             if keyname in d:
-                print(f"WARN: duplicate key: {keyname}")
+                print(f"WARN: duplicate key: {keyname}", file=sys.stderr)
 
             index_or_length = rd.readdword()
             if index_or_length >> 31:
@@ -129,7 +129,7 @@ class Database:
             else:
                 refdata = self.stru.readrec(index_or_length)
                 if refdata[:1] != b"\x04":
-                    print("WARN: expected refdata to start with 0x04")
+                    print("WARN: expected refdata to start with 0x04", file=sys.stderr)
                 d[keyname] = refdata[1:]
         return d
 
@@ -153,7 +153,7 @@ class Database:
         """
         dbinfo = self.stru.readrec(1)
         if dbinfo[:1] != b"\x03":
-            print("WARN: expected dbinfo to start with 0x03")
+            print("WARN: expected dbinfo to start with 0x03", file=sys.stderr)
         dbdef = self.decode_db_definition(dbinfo[1:])
         self.dump_db_definition(args, dbdef)
 
@@ -167,7 +167,7 @@ class Database:
 
     def dump_ns1(self, data):
         if len(data) < 2:
-            print("NS1 is unexpectedly short")
+            print("NS1 is unexpectedly short", file=sys.stderr)
             return
         (
             unk1,
@@ -180,7 +180,7 @@ class Database:
         decoded_data = ns1kod.decode(sh, data[2:])
 
         if len(decoded_data) < 12:
-            print("NS1 is unexpectedly short")
+            print("NS1 is unexpectedly short", file=sys.stderr)
             return
         (
             serial,
@@ -197,14 +197,15 @@ class Database:
         """
         dbinfo = self.stru.readrec(1)
         if dbinfo[:1] != b"\x03":
-            print("WARN: expected dbinfo to start with 0x03")
+            print("WARN: expected dbinfo to start with 0x03", file=sys.stderr)
         try:
             dbdef = self.decode_db_definition(dbinfo[1:])
         except Exception as e:
-            print(f"ERROR decoding db definition: {e}")
+            print(f"ERROR decoding db definition: {e}", file=sys.stderr)
             print(
                 "This could possibly mean that you need to try     crodump strucrack     "
-                "to deduct the database key first"
+                "to deduct the database key first",
+                file=sys.stderr,
             )
             return
 
@@ -231,9 +232,9 @@ class Database:
                 try:
                     yield Record(i + 1, table.fields, data[1:])
                 except EOFError:
-                    print(f"Record {i + 1:d} too short: -- {ashex(data)}", file=stderr)
+                    print(f"Record {i + 1:d} too short: -- {ashex(data)}", file=sys.stderr)
                 except Exception as e:
-                    print(f"Record {i + 1:d} broken: ERROR '{e}' -- {ashex(data)}", file=stderr)
+                    print(f"Record {i + 1:d} broken: ERROR '{e}' -- {ashex(data)}", file=sys.stderr)
             del data
 
     def enumerate_files(self, table):
@@ -272,7 +273,7 @@ class Database:
             dbfile = self.bank
 
         if not dbfile:
-            print(".dat not found")
+            print(".dat not found", file=sys.stderr)
             return
         nerr = 0
         nr_recnone = 0

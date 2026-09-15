@@ -1,6 +1,7 @@
 # ABOUTME: Decodes CronosPro table definitions, field definitions and records.
 # ABOUTME: Turns raw field bytes into presentable content such as dates, times, file references and text.
 # -*- coding: utf-8 -*-
+import sys
 from typing import override
 
 from .hexdump import ashex, tohex
@@ -128,7 +129,7 @@ class TableDefinition:
             # Then there's another unknow dword and then (probably section indicator) 02 byte
             self.unk8_ = rd.readdword()
             if rd.readbyte() != 2:
-                print("Warning: FieldDefinition Section 2 not marked with a 2")
+                print("Warning: FieldDefinition Section 2 not marked with a 2", file=sys.stderr)
             self.unk9 = rd.readdword()
 
             # Then there's the amount of extra fields in the second section
@@ -139,14 +140,14 @@ class TableDefinition:
                 fielddef = rd.readbytes(deflen)
                 self.fields.append(FieldDefinition(fielddef))
         except Exception as e:
-            print(f"Warning: Error '{e}' parsing FieldDefinitions")
+            print(f"Warning: Error '{e}' parsing FieldDefinitions", file=sys.stderr)
 
         try:
             self.terminator = rd.readdword()
         except EOFError:
-            print("Warning: FieldDefinition section not terminated")
+            print("Warning: FieldDefinition section not terminated", file=sys.stderr)
         except Exception as e:
-            print(f"Warning: Error '{e}' parsing Tabledefinition")
+            print(f"Warning: Error '{e}' parsing Tabledefinition", file=sys.stderr)
 
         self.fields.sort(key=lambda field: field.idx2)
 

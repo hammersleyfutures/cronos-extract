@@ -1,3 +1,0 @@
-WARN: expected dbinfo to start with 0x03
-ERROR decoding db definition: 
-This could possibly mean that you need to try     crodump strucrack     to deduct the database key first
