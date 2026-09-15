@@ -5,7 +5,14 @@ import sys
 from pathlib import Path
 
 import pytest
-from cronos_builder import TEST_TABLE_ID, bank_record, crackable_database, random_kod, write_database
+from cronos_builder import (
+    TEST_TABLE_ID,
+    bank_record,
+    crackable_database,
+    random_kod,
+    write_database,
+    write_datafile,
+)
 
 from cronos_extract.crodump import build_parser, crack_kod, derive_kod_from_bank_and_index, derive_kod_from_stru
 from cronos_extract.Database import Database
@@ -59,6 +66,23 @@ def test_strucrack_rejects_a_kod_with_duplicate_values(encrypted_db: str, capsys
 
 def test_strucrack_returns_none_when_entries_stay_unresolved(uncrackable_db: str) -> None:
     assert derive_from_stru(uncrackable_db) is None
+
+
+def kod_estimate(output: str) -> str:
+    """Return the hex KOD estimate that strucrack prints when entries stay unresolved."""
+    lines = output.splitlines()
+    return lines[lines.index("KOD estimate:") + 1]
+
+
+def test_strucrack_keeps_entries_that_shift_rows_without_data_do_not_claim(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # 200 zero bytes in record 1 cover shifts 1..200 only, and KOD[0] is one of them.
+    assert 1 <= KOD[0] <= 200
+    write_datafile(tmp_path / "db", "Stru", [bytes(200)], KOD)
+
+    assert derive_from_stru(str(tmp_path / "db")) is None
+    assert kod_estimate(capsys.readouterr().out)[0:2] == f"{KOD[0]:02x}"
 
 
 def test_dbcrack_returns_none_when_the_kod_is_not_a_permutation(

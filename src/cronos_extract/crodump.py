@@ -162,6 +162,28 @@ def strucrack(kod, args):
         return derive_kod_from_stru(db, args)
 
 
+def kod_from_xref(xref):
+    """
+    Build a KOD table and its confidence from `xref`, where xref[shift][encrypted byte] counts how often that
+    encrypted byte was seen at that shift where the plaintext is assumed to be zero.
+
+    Each shift claims the encrypted byte it saw most, with that count as the confidence. Shifts that saw
+    no data claim nothing, so their entries keep confidence 0.
+    """
+    KOD = [0] * 256
+    KOD_CONFIDENCE = [0] * 256
+    for i, xx in enumerate(xref):
+        k, v = max(enumerate(xx), key=lambda kv: kv[1])
+        if v == 0:
+            continue
+
+        #       Display the confidence, matches under 3 usually are unreliable
+        #       print("%02x :: %02x :: %d" % (i, k, v))
+        KOD[k] = i
+        KOD_CONFIDENCE[k] = v
+    return KOD, KOD_CONFIDENCE
+
+
 def derive_kod_from_stru(db, args):
     """
     Derive the KOD table from the encrypted CroStru or CroSys records of `db`, as strucrack describes.
@@ -184,15 +206,7 @@ def derive_kod_from_stru(db, args):
         for ofs, byte in enumerate(data):
             xref[(ofs + i + 1) % 256][byte] += 1
 
-    KOD = [0] * 256
-    KOD_CONFIDENCE = [0] * 256
-    for i, xx in enumerate(xref):
-        k, v = max(enumerate(xx), key=lambda kv: kv[1])
-
-        #       Display the confidence, matches under 3 usually are unreliable
-        #       print("%02x :: %02x :: %d" % (i, k, v))
-        KOD[k] = i
-        KOD_CONFIDENCE[k] = v
+    KOD, KOD_CONFIDENCE = kod_from_xref(xref)
 
     #       Test deducted KOD against the default one, for debugging purposes
     #        if KOD[k] != INITIAL_KOD[k]:
@@ -373,14 +387,11 @@ def derive_kod_from_bank_and_index(db, args):
             if rec and len(rec) > 11:
                 xref[(i + 3) % 256][rec[3]] += 1
 
-    KOD = [0] * 256
-    for i, xx in enumerate(xref):
-        k, _count = max(enumerate(xx), key=lambda kv: kv[1])
-        KOD[k] = i
+    KOD, KOD_CONFIDENCE = kod_from_xref(xref)
 
-    # Rows that found no data, or lost their byte to another row, leave values out of the KOD.
-    unset_count = 256 - len(set(KOD))
-    if unset_count > 0:
+    # Rows that found no data, or lost their byte to another row, leave entries unresolved.
+    unset_count = len([o for o in KOD_CONFIDENCE if o <= 0])
+    if unset_count > 0 or sorted(KOD) != list(range(256)):
         if not args.silent:
             print(f"Ambigous result when cracking. {unset_count:d} entries unsolved: too few CroBank/CroIndex records")
         return None
