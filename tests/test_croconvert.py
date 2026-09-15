@@ -96,3 +96,48 @@ def test_postgres_output_is_not_html_escaped(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert "'<b>&\"O''Brien\"</b>'" in result.stdout
+
+
+def unreadable_file_references_database(directory: Path) -> str:
+    """Write a database whose record 3 refers to a stored file and records 4 to 6 refer to unreadable ones."""
+    return write_database(
+        directory,
+        [
+            file_record(b"GOOD"),
+            None,
+            record_with_file_field(file_reference_field("good", "pdf", 1)),
+            record_with_file_field(file_reference_field("letters", "pdf", "abc")),
+            record_with_file_field(file_reference_field("deleted", "pdf", 2)),
+            record_with_file_field(file_reference_field("missing", "pdf", 99)),
+        ],
+    )
+
+
+def assert_skipped_file_warnings(stderr: str) -> None:
+    for recno, filename in [(4, "letters.pdf"), (5, "deleted.pdf"), (6, "missing.pdf")]:
+        assert any(
+            "Warning" in line and f"record {recno}" in line and filename in line for line in stderr.splitlines()
+        ), f"no warning about {filename} of record {recno} in stderr: {stderr}"
+
+
+def test_csv_export_skips_unreadable_file_references(tmp_path: Path) -> None:
+    dbdir = unreadable_file_references_database(tmp_path / "db")
+    outdir = tmp_path / "out"
+
+    result = run_croconvert(["--csv", "-o", str(outdir), dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert_skipped_file_warnings(result.stderr)
+    assert [path.name for path in (outdir / "Files-Referenced").iterdir()] == ["good.pdf"]
+    assert (outdir / "Files-Referenced" / "good.pdf").read_bytes() == b"GOOD"
+
+
+def test_html_export_skips_unreadable_file_references(tmp_path: Path) -> None:
+    dbdir = unreadable_file_references_database(tmp_path / "db")
+
+    result = run_croconvert([dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert_skipped_file_warnings(result.stderr)
+    assert [dict(link).get("download") for link in start_tags(result.stdout, "a")[1:]] == ["good.pdf"]
+    assert "</html>" in result.stdout

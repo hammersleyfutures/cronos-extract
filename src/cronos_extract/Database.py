@@ -250,8 +250,17 @@ class Database:
     def get_record(self, index, asbase64=False):
         """
         Retrieve a single record from CroBank with record number `index`.
+        Returns None when `index` is not the number of a record in CroBank, or that record is deleted.
         """
-        data = self.bank.readrec(int(index))
+        try:
+            recno = int(index)
+        except ValueError:
+            return None
+        if not 1 <= recno <= self.bank.nrofrecords:
+            return None
+        data = self.bank.readrec(recno)
+        if data is None:
+            return None
         if asbase64:
             return base64.b64encode(data[1:]).decode("utf-8")
         else:

@@ -8,6 +8,7 @@ python3 croconvert.py -t html chechnya_proverki_ul_2012/
 
 import base64
 import csv
+import sys
 from datetime import datetime
 from os import chdir, mkdir
 from os.path import abspath, dirname, join
@@ -16,6 +17,21 @@ from sys import exit, stdout
 from .crodump import CRACK_FAILED_MESSAGE, crack_kod
 from .Database import Database
 from .hexdump import unhex
+
+
+def referenced_file(db, tablename, recno, field, asbase64=False):
+    """
+    Return the content of the stored file that the file reference `field` of record `recno` refers to.
+    Prints a warning and returns None when that file can't be read, so the export can skip it.
+    """
+    content = db.get_record(field.filedatarecord, asbase64)
+    if content is None:
+        print(
+            f'Warning: skipping file "{field.filename}.{field.extname}" of record {recno} in table "{tablename}": '
+            f"{field.filedatarecord!r} is not the number of a stored file",
+            file=sys.stderr,
+        )
+    return content
 
 
 def template_convert(kod, args):
@@ -31,7 +47,7 @@ def template_convert(kod, args):
     # Only HTML output is escaped; SQL output quotes its values itself and must not contain HTML entities.
     j2_env = Environment(loader=FileSystemLoader(template_dir), autoescape=lambda name: name == "html.j2")
     j2_templ = j2_env.get_template(args.template + ".j2")
-    stdout.writelines(j2_templ.generate(db=db, base64=base64))
+    stdout.writelines(j2_templ.generate(db=db, base64=base64, referenced_file=referenced_file))
 
 
 def safepathname(name):
@@ -60,7 +76,9 @@ def csv_output(kod, args):
             for record in db.enumerate_records(table):
                 writer.writerow([field.content for field in record.fields])
 
-                filereferences.extend([field for field in record.fields if field.typ == 6])
+                filereferences.extend(
+                    [(table.tablename, record.recno, field) for field in record.fields if field.typ == 6]
+                )
 
     if args.nofiles:
         return
@@ -79,10 +97,12 @@ def csv_output(kod, args):
         mkdir(filedir)
 
     # Write all referenced files with their filename and extension intact
-    for reffile in filereferences:
+    for tablename, recno, reffile in filereferences:
         if reffile.content:  # only print when file is not NULL
+            content = referenced_file(db, tablename, recno, reffile)
+            if content is None:
+                continue
             filesafename = safepathname(reffile.filename) + "." + safepathname(reffile.extname)
-            content = db.get_record(reffile.filedatarecord)
             with open(join("Files-Referenced", filesafename), "wb") as binfile:
                 binfile.write(content)
 
