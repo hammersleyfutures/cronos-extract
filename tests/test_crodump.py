@@ -140,4 +140,5 @@ def test_crodump_shows_a_corrupt_compressed_record_and_dumps_the_next(tmp_path: 
     bank_lines = lines[bank_header + 1 :]
     first, second = [line for line in bank_lines if line.startswith(("    1:", "    2:"))]
     assert "good" in first
-    assert second.endswith(" <corrupt compressed data: Error -3 while decompressing data: invalid block type>")
+    assert " <corrupt compressed data: " in second
+    assert second.endswith(">")

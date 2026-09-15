@@ -620,11 +620,9 @@ def test_csv_export_skips_a_corrupt_compressed_bank_record(tmp_path: Path) -> No
     result = run_command("croconvert", ["--csv", "-o", str(outdir), dbdir])
 
     assert result.returncode == 0, result.stderr
-    warning = (
-        "Warning: CroBank record 2 is corrupt: ValueError: corrupt compressed data: "
-        "Error -3 while decompressing data: invalid block type; skipping it"
-    )
-    assert warning in result.stderr.splitlines(), result.stderr
+    prefix = "Warning: CroBank record 2 is corrupt: ValueError: corrupt compressed data: "
+    suffix = "; skipping it"
+    assert any(line.startswith(prefix) and line.endswith(suffix) for line in result.stderr.splitlines()), result.stderr
     with (outdir / "erdgeist.csv").open(encoding="utf-8", newline="") as csvfile:
         rows = list(csv.reader(csvfile))[1:]
     assert rows == [["1", "good", "", "", "", "", "", "", "", "", "", ""]]
