@@ -192,12 +192,14 @@ def derive_kod_from_stru(db, args):
     if args.sys:
         table = db.sys
         if not db.sys:
-            print(f"no CroSys.dat file found in {args.dbdir}")
+            if not args.silent:
+                print(f"no CroSys.dat file found in {args.dbdir}")
             return
     else:
         table = db.stru
         if not db.stru:
-            print(f"no CroStru.dat file found in {args.dbdir}")
+            if not args.silent:
+                print(f"no CroStru.dat file found in {args.dbdir}")
             return
 
     xref = [[0] * 256 for _ in range(256)]
@@ -270,7 +272,8 @@ def derive_kod_from_stru(db, args):
 
     # Dump partially decoded stru records for the user to try to spot patterns
     w = args.width
-    for i, data in enumerate(table.enumrecords()):
+    records = [] if args.silent else table.enumrecords()
+    for i, data in enumerate(records):
         if not data:
             continue
 
@@ -312,7 +315,7 @@ def derive_kod_from_stru(db, args):
             print(f"{w * ofs:05d} {colored + padding} : {colored_hexed + padding * 2} : {fix_helper}")
         print()
 
-    if len(duplicates):
+    if len(duplicates) and not args.silent:
         print(
             "\nDuplicates found:\n"
             + ", ".join(
@@ -381,7 +384,8 @@ def derive_kod_from_bank_and_index(db, args):
 
     for dbfile in db.bank, db.index:
         if not dbfile:
-            print(f"no data file found in {args.dbdir}")
+            if not args.silent:
+                print(f"no data file found in {args.dbdir}")
             return
         for i in range(1, min(10000, dbfile.nrofrecords)):
             rec = dbfile.readrec(i)

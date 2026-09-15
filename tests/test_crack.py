@@ -106,6 +106,40 @@ def test_dbcrack_returns_none_when_the_kod_is_not_a_permutation(
     assert "entries unsolved" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("options", [[], ["-f", fix_switch(0, 0, KOD[1])]], ids=["cracked", "duplicate-fix"])
+def test_strucrack_prints_nothing_when_silent(
+    encrypted_db: str, options: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    derive_from_stru(encrypted_db, "--silent", *options)
+
+    assert capsys.readouterr().out == ""
+
+
+def test_strucrack_prints_nothing_about_a_missing_stru_file_when_silent(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_datafile(tmp_path / "db", "Bank", [bank_record(TEST_TABLE_ID, PERSON_FIELDS)], KOD)
+
+    assert derive_from_stru(str(tmp_path / "db"), "--silent") is None
+    assert capsys.readouterr().out == ""
+
+
+def test_dbcrack_prints_nothing_about_a_missing_index_file_when_silent(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dbdir = write_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, PERSON_FIELDS)], KOD)
+
+    assert derive_from_bank_and_index(dbdir, "--silent") is None
+    assert capsys.readouterr().out == ""
+
+
+def test_croconvert_output_holds_no_cracking_dump(encrypted_db: str) -> None:
+    result = run_command("croconvert", ["--strucrack", "-t", "postgres", encrypted_db])
+
+    assert result.returncode == 0, result.stderr
+    assert "Processing record number" not in result.stdout
+
+
 def run_command(module: str, args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", f"cronos_extract.{module}", *args],
