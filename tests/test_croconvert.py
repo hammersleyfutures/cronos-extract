@@ -384,6 +384,38 @@ def duplicate_table_name_database(directory: Path, second_table_name: bytes = b"
     return str(directory)
 
 
+def name_with_undefined_cp1251_byte_database(directory: Path) -> str:
+    """Write a database whose table name and a field name each contain byte 0x98, undefined in CP-1251.
+
+    Base001 (the test table's definition) is stored in CroStru record 4, referenced from record 1's database
+    definition; its table name "erdgeist" and field name "Entry #6" each have their first byte replaced.
+    """
+    stru = stru_records_from_test_db()
+    table_definition = stru[3]
+    assert table_definition is not None
+    mutated = bytearray(table_definition)
+    for name in (b"erdgeist", b"Entry #6"):
+        mutated[mutated.index(name)] = 0x98
+    stru[3] = bytes(mutated)
+    write_datafile(directory, "Stru", stru)
+
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[1] = b"value"
+    write_datafile(directory, "Bank", [bank_record(TEST_TABLE_ID, fields)])
+    return str(directory)
+
+
+def test_croconvert_replaces_an_undefined_cp1251_byte_in_a_name(tmp_path: Path) -> None:
+    dbdir = name_with_undefined_cp1251_byte_database(tmp_path / "db")
+
+    result = run_command("croconvert", [dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert "Traceback" not in result.stderr
+    assert "<caption>�rdgeist</caption>" in result.stdout
+    assert "<th>�ntry #6</th>" in result.stdout
+
+
 def test_csv_export_writes_tables_with_the_same_name_to_different_files(tmp_path: Path) -> None:
     dbdir = duplicate_table_name_database(tmp_path / "db")
     outdir = tmp_path / "out"

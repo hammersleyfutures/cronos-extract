@@ -65,16 +65,20 @@ class ByteReader:
     def readlongstring(self):
         """
         Reads a cp1251 encoded string prefixed with a dword sized length
+
+        Bytes undefined in CP-1251 become U+FFFD.
         """
         namelen = self.readdword()
-        return self.readbytes(namelen).decode("cp1251")
+        return self.readbytes(namelen).decode("cp1251", "replace")
 
     def readname(self):
         """
         Reads a cp1251 encoded string prefixed with a byte sized length
+
+        Bytes undefined in CP-1251 become U+FFFD.
         """
         namelen = self.readbyte()
-        return self.readbytes(namelen).decode("cp1251")
+        return self.readbytes(namelen).decode("cp1251", "replace")
 
     def readtoseperator(self, sep):
         """
