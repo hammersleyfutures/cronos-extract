@@ -197,7 +197,7 @@ def csv_output(kod, args):
                 continue
 
             with open(tablesafename, "w", encoding="utf-8") as csvfile:
-                writer = csv.writer(csvfile, delimiter=args.delimiter, escapechar="\\")
+                writer = csv.writer(csvfile, delimiter=args.delimiter)
                 writer.writerow([field.name for field in table.fields])
 
                 # Record should be iterable over its fields, so we could use writerows

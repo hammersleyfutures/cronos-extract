@@ -489,6 +489,20 @@ def test_postgres_output_declares_every_column_text_and_writes_values_as_decoded
     ]
 
 
+def test_csv_export_round_trips_a_backslash(tmp_path: Path) -> None:
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[1] = 'C:\\Users\\x,"quoted"'.encode("cp1251")
+    dbdir = write_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, fields)])
+    outdir = tmp_path / "out"
+
+    result = run_command("croconvert", ["--csv", "-o", str(outdir), dbdir])
+
+    assert result.returncode == 0, result.stderr
+    with (outdir / "erdgeist.csv").open(encoding="utf-8", newline="") as csvfile:
+        rows = list(csv.reader(csvfile))[1:]
+    assert rows[0][2] == 'C:\\Users\\x,"quoted"'
+
+
 def corrupt_bank_record_database(directory: Path) -> str:
     """Write a database whose CroBank record 2 is corrupt, with records referring to a good and to the corrupt file.
 
