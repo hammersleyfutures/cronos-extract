@@ -5,7 +5,7 @@ Several functions for converting bytes to readable text or hex bytes.
 """
 
 import struct
-from binascii import b2a_hex, a2b_hex
+from binascii import a2b_hex, b2a_hex
 
 
 def unhex(data):

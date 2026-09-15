@@ -3,8 +3,9 @@
 import io
 import struct
 import zlib
-from .hexdump import tohex, toout
+
 from . import koddecoder
+from .hexdump import tohex, toout
 
 
 class Datafile:

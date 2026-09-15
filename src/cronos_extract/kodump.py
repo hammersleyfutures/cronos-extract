@@ -4,9 +4,10 @@
 This module has the functions for the 'kodump' subcommand from the 'crodump' script.
 """
 
-from .hexdump import unhex, toout, hexdump
 import io
 import struct
+
+from .hexdump import hexdump, toout, unhex
 
 
 def decode_kod(kod, args, data):

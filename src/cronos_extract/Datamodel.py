@@ -1,7 +1,7 @@
 # ABOUTME: Decodes CronosPro table definitions, field definitions and records.
 # ABOUTME: Turns raw field bytes into presentable content such as dates, times, file references and text.
 # -*- coding: utf-8 -*-
-from .hexdump import tohex, ashex
+from .hexdump import ashex, tohex
 from .readers import ByteReader
 
 

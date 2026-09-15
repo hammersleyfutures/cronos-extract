@@ -6,8 +6,9 @@
 
 import os
 import os.path
+
+from .crodump import dbcrack, strucrack
 from .Database import Database
-from .crodump import strucrack, dbcrack
 from .hexdump import unhex
 
 

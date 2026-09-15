@@ -6,15 +6,16 @@ Commandline tool which convert a cronos database to .csv, .sql or .html.
 python3 croconvert.py -t html chechnya_proverki_ul_2012/
 """
 
-from .Database import Database
-from .crodump import strucrack, dbcrack
-from .hexdump import unhex
-from sys import exit, stdout
-from os.path import dirname, abspath, join
-from os import mkdir, chdir
-from datetime import datetime
 import base64
 import csv
+from datetime import datetime
+from os import chdir, mkdir
+from os.path import abspath, dirname, join
+from sys import exit, stdout
+
+from .crodump import dbcrack, strucrack
+from .Database import Database
+from .hexdump import unhex
 
 
 def template_convert(kod, args):

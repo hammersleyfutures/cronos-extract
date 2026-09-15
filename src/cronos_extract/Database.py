@@ -1,19 +1,18 @@
 # ABOUTME: Database: opens the Cro*.dat/.tad file pairs found in a CronosPro database directory.
 # ABOUTME: Decodes the database and table definitions from CroStru and enumerates tables, records and files.
-from __future__ import print_function, division
+import base64
 import os
 import re
-from sys import stderr
-from binascii import b2a_hex
-from .readers import ByteReader
-from .hexdump import strescape, toout, ashex
-from .Datamodel import TableDefinition, Record
-from .Datafile import Datafile
-import base64
 import struct
-from . import koddecoder
-
 import sys
+from binascii import b2a_hex
+from sys import stderr
+
+from . import koddecoder
+from .Datafile import Datafile
+from .Datamodel import Record, TableDefinition
+from .hexdump import ashex, strescape, toout
+from .readers import ByteReader
 
 if sys.version_info[0] == 2:
     sys.exit("cronodump needs python3")
@@ -55,7 +54,7 @@ class Database:
             tadname = self.getname(name, "tad")
             if datname and tadname:
                 return Datafile(name, open(datname, "rb"), open(tadname, "rb"), self.compact, self.kod)
-        except IOError:
+        except OSError:
             return
 
     def getname(self, name, ext):

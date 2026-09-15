@@ -1,11 +1,11 @@
 # ABOUTME: crodump command: subcommands for inspecting CronosPro databases and recovering KOD tables.
 # ABOUTME: Includes strucrack and dbcrack, which derive the KOD substitution table statistically.
-from .kodump import kod_hexdump
-from .koddecoder import INITIAL_KOD, match_with_mismatches
-from .hexdump import unhex, tohex, asambigoushex, asasc, aschr, as1251, ashex
-from .readers import ByteReader
 from .Database import Database
 from .Datamodel import TableDefinition
+from .hexdump import as1251, asambigoushex, asasc, tohex, unhex
+from .koddecoder import match_with_mismatches
+from .kodump import kod_hexdump
+from .readers import ByteReader
 
 
 def destruct_sys3_def(rd):
