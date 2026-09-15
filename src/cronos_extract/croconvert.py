@@ -158,13 +158,12 @@ def unique_sql_column_names(table):
     ]
 
 
-def sql_value(fielddef, field):
+def sql_value(field):
     """
-    Return the content of `field` as a PostgreSQL literal for a column defined by `fielddef`.
-    An empty value is NULL in a column that is not text, where '' is not a valid value.
+    Return the content of `field` as a PostgreSQL literal for its TEXT column, or NULL when the value is empty.
     Single quotes are doubled, which is correct with standard_conforming_strings on.
     """
-    if not field.content and not fielddef.sqltype().startswith(("TEXT", "VARCHAR")):
+    if not field.content:
         return "NULL"
     return "'" + field.content.replace("'", "''") + "'"
 

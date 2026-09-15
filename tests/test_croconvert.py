@@ -411,7 +411,7 @@ def test_postgres_output_gives_tables_with_the_same_name_different_names(tmp_pat
     assert inserts[1].startswith('INSERT INTO "erdgeist-2" VALUES (') and "'two'" in inserts[1]
 
 
-def test_postgres_output_writes_null_for_empty_values_in_columns_that_are_not_text(tmp_path: Path) -> None:
+def test_postgres_output_writes_null_for_every_empty_value(tmp_path: Path) -> None:
     fields = [b""] * TEST_TABLE_FIELD_COUNT
     fields[1] = b"text"
     dbdir = write_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, fields)])
@@ -420,7 +420,35 @@ def test_postgres_output_writes_null_for_empty_values_in_columns_that_are_not_te
 
     assert result.returncode == 0, result.stderr
     assert insert_statements(result.stdout) == [
-        "INSERT INTO \"erdgeist\" VALUES ('1', NULL, 'text', '', NULL, NULL, '', '', '', '', '', '');"
+        "INSERT INTO \"erdgeist\" VALUES ('1', NULL, 'text', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);"
+    ]
+
+
+def test_postgres_output_declares_every_column_text_and_writes_values_as_decoded(tmp_path: Path) -> None:
+    decoded = [b""] * TEST_TABLE_FIELD_COUNT
+    decoded[0] = b"42"
+    decoded[3] = b"1240315"
+    decoded[4] = b"0930"
+    unparseable = [b""] * TEST_TABLE_FIELD_COUNT
+    unparseable[0] = b"not a number"
+    unparseable[3] = b"12x"
+    dbdir = write_database(
+        tmp_path / "db", [bank_record(TEST_TABLE_ID, decoded), bank_record(TEST_TABLE_ID, unparseable)]
+    )
+
+    result = run_command("croconvert", ["-t", "postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    column_lines = [
+        line.strip().rstrip(",").strip() for line in result.stdout.splitlines() if line.startswith('        "')
+    ]
+    assert len(column_lines) == TEST_TABLE_FIELD_COUNT + 1
+    assert all(line.endswith('" TEXT') for line in column_lines), column_lines
+    assert insert_statements(result.stdout) == [
+        'INSERT INTO "erdgeist" VALUES '
+        "('1', '42', NULL, NULL, '2024-03-15', '09:30', NULL, NULL, NULL, NULL, NULL, NULL);",
+        'INSERT INTO "erdgeist" VALUES '
+        "('2', 'not a number', NULL, NULL, '12x', NULL, NULL, NULL, NULL, NULL, NULL, NULL);",
     ]
 
 
