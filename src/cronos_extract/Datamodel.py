@@ -204,7 +204,7 @@ class Field:
                 y, m, d = 1900 + int(data[:-4]), int(data[-4:-2]), int(data[-2:])
                 self.content = f"{y:04d}-{m:02d}-{d:02d}"
             except ValueError:
-                self.content = str(data)
+                self.content = data.decode("cp1251", "ignore")
 
         elif self.typ == 5:
             # typ 5 is TIME, formatted like: <hour:2digits><minute:2digits>
@@ -213,7 +213,7 @@ class Field:
                 h, m = int(data[-4:-2]), int(data[-2:])
                 self.content = f"{h:02d}:{m:02d}"
             except ValueError:
-                self.content = str(data)
+                self.content = data.decode("cp1251", "ignore")
 
         elif self.typ == 6:
             # decode internal file reference
