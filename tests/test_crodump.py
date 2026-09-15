@@ -3,7 +3,15 @@
 from pathlib import Path
 
 from cli import run_command
-from cronos_builder import TEST_DB, key_referencing_a_deleted_record, write_database
+from cronos_builder import (
+    TEST_DB,
+    TEST_TABLE_FIELD_COUNT,
+    TEST_TABLE_ID,
+    bank_record,
+    corrupt_compressed_record,
+    key_referencing_a_deleted_record,
+    write_database,
+)
 
 from cronos_extract.Database import Database
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
@@ -61,3 +69,20 @@ def test_strudump_stops_with_a_clear_message_for_a_key_referencing_a_deleted_rec
     assert 'key "DanglingKey"' in result.stderr
     assert "record 5" in result.stderr
     assert "deleted" in result.stderr
+
+
+def test_crodump_shows_a_corrupt_compressed_record_and_dumps_the_next(tmp_path: Path) -> None:
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[0] = b"good"
+    dbdir = write_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, fields), corrupt_compressed_record()])
+
+    result = run_command("crodump", ["crodump", "--ascdump", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert "Traceback" not in result.stderr
+    lines = result.stdout.splitlines()
+    bank_header = next(i for i, line in enumerate(lines) if line.startswith("hdr: Bank"))
+    bank_lines = lines[bank_header + 1 :]
+    first, second = [line for line in bank_lines if line.startswith(("    1:", "    2:"))]
+    assert "good" in first
+    assert "corrupt compressed data" in second

@@ -312,7 +312,11 @@ class Datafile:
                 decflags[0] = " "
 
             if args.decompress and self.iscompressed(encdat):
-                encdat = self.decompress(encdat)
+                try:
+                    encdat = self.decompress(encdat)
+                except ValueError as e:
+                    print(f"{idx:5d}: {ofs:08x}-{ofs + ln:08x}: ({flags:02x}:{chk:08x}) <{e}>")
+                    continue
                 decflags[1] = "@"
 
             # TODO: separate handling for v4
