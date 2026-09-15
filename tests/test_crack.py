@@ -64,6 +64,33 @@ def test_strucrack_rejects_a_kod_with_duplicate_values(encrypted_db: str, capsys
     assert "entries unsolved" in output
 
 
+@pytest.fixture
+def db_with_counts_of_255(tmp_path: Path) -> str:
+    """A database whose CroStru makes every shift see its zero byte exactly 255 times."""
+    write_datafile(tmp_path / "db", "Stru", [bytes(255 * 256)], KOD)
+    return str(tmp_path / "db")
+
+
+def test_strucrack_does_not_treat_a_count_of_255_as_forced(
+    db_with_counts_of_255: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Force KOD[0] to the value of KOD[1]; entry 1 was only counted, so it is the duplicate that is unsolved.
+    assert derive_from_stru(db_with_counts_of_255, "-f", fix_switch(0, 0, KOD[1])) is None
+
+    output = capsys.readouterr().out
+    assert "Ambigous result when cracking. 1 entries unsolved" in output
+    assert "[01] =>" in output
+
+
+def test_strucrack_colours_only_forced_entries_as_forced(
+    db_with_counts_of_255: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    forced_colour = "\033[32m"
+
+    assert derive_from_stru(db_with_counts_of_255, "--color") == KOD
+    assert forced_colour not in capsys.readouterr().out
+
+
 def test_strucrack_returns_none_when_entries_stay_unresolved(uncrackable_db: str) -> None:
     assert derive_from_stru(uncrackable_db) is None
 

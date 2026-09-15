@@ -110,19 +110,19 @@ def destruct(kod, args):
         destruct_sys_definition(args, data)
 
 
-def color_code(c, confidence, force):
+def color_code(c, confidence, forced, force):
     from sys import stdout
 
     is_a_tty = hasattr(stdout, "isatty") and stdout.isatty()
     if not force and not is_a_tty:
         return c
 
+    if forced:
+        return "\033[32m" + c + "\033[0m"
     if confidence < 0:
         return "\033[96m" + c + "\033[0m"
     if confidence == 0:
         return "\033[31m" + c + "\033[0m"
-    if confidence == 255:
-        return "\033[32m" + c + "\033[0m"
     if confidence > 3:
         return "\033[93m" + c + "\033[0m"
     return "\033[94m" + c + "\033[0m"
@@ -216,9 +216,12 @@ def derive_kod_from_stru(db, args):
     #            print("# KOD[%02x] == %02x, should be %02x" % (i, KOD[i], INITIAL_KOD[i]))
     #            KOD[k] = -1
 
+    # Entries the user forced with --fix or --text keep their value when they duplicate another entry
+    KOD_FORCED = [False] * 256
     for i, o, c in args.fix or []:
         KOD[i] = (c + o) % 256
         KOD_CONFIDENCE[i] = 255
+        KOD_FORCED[i] = True
         # print("%02x %02x %02x" % ((c + o) % 256, i, o))
 
     # For chunks of text where record and offset is known, set the KOD
@@ -231,6 +234,7 @@ def derive_kod_from_stru(db, args):
             d = data[dataoff + i]
             KOD[d] = (int.from_bytes(as1251(c), "little") + o + i) % 256
             KOD_CONFIDENCE[d] = 255
+            KOD_FORCED[d] = True
 
     kod_set = set([v for o, v in enumerate(KOD) if KOD_CONFIDENCE[o] > 0])
     unset_entries = [o for o, v in enumerate(KOD) if KOD_CONFIDENCE[o] == 0]
@@ -249,7 +253,7 @@ def derive_kod_from_stru(db, args):
     duplicates = sorted(duplicates, key=lambda x: x[1])
 
     for o, _v in duplicates:
-        if KOD_CONFIDENCE[o] < 255:
+        if not KOD_FORCED[o]:
             KOD_CONFIDENCE[o] = -1
 
     from . import koddecoder
@@ -302,10 +306,14 @@ def derive_kod_from_stru(db, args):
             text = asasc(chunk, confidence)
             hexed = asambigoushex(chunk, confidence)
 
-            colored = "".join(color_code(c, confidence[o], force_color) for o, c in enumerate(text))
-            colored_hexed = "".join(color_code(c, confidence[o >> 1], force_color) for o, c in enumerate(hexed))
+            forced = [KOD_FORCED[b] for b in data[ofs * w : ofs * w + w]]
+
+            colored = "".join(color_code(c, confidence[o], forced[o], force_color) for o, c in enumerate(text))
+            colored_hexed = "".join(
+                color_code(c, confidence[o >> 1], forced[o >> 1], force_color) for o, c in enumerate(hexed)
+            )
             fix_helper = " ".join(
-                f"{b:02x}{(w * ofs + i + 1 + o) % 256:02x}={color_code(text[o], confidence[o], force_color)}"
+                f"{b:02x}{(w * ofs + i + 1 + o) % 256:02x}={color_code(text[o], confidence[o], forced[o], force_color)}"
                 for o, b in enumerate(data[ofs * w : ofs * w + w])
             )
 
@@ -320,7 +328,7 @@ def derive_kod_from_stru(db, args):
         print(
             "\nDuplicates found:\n"
             + ", ".join(
-                color_code(f"[{o:02x}=>{v:02x} ({KOD_CONFIDENCE[o]:d})]", KOD_CONFIDENCE[o], force_color)
+                color_code(f"[{o:02x}=>{v:02x} ({KOD_CONFIDENCE[o]:d})]", KOD_CONFIDENCE[o], KOD_FORCED[o], force_color)
                 for o, v in duplicates
             )
         )
@@ -342,7 +350,9 @@ def derive_kod_from_stru(db, args):
             print("KOD estimate:")
             print(
                 "".join(
-                    color_code(f"{c:02x}" if KOD_CONFIDENCE[o] > 0 else "??", KOD_CONFIDENCE[o], force_color)
+                    color_code(
+                        f"{c:02x}" if KOD_CONFIDENCE[o] > 0 else "??", KOD_CONFIDENCE[o], KOD_FORCED[o], force_color
+                    )
                     for o, c in enumerate(KOD)
                 )
             )
