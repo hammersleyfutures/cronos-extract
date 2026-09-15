@@ -25,9 +25,9 @@ def golden(request: pytest.FixtureRequest) -> Callable[[str, str], None]:
         path = GOLDEN_DIR / name
         if update:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(actual, encoding="utf-8", newline="")
+            path.write_bytes(actual.encode("utf-8"))
             return
         assert path.exists(), f"missing golden file {path}; run `uv run pytest --update-golden` to create it"
-        assert actual == path.read_text(encoding="utf-8", newline=""), f"output differs from golden file {path}"
+        assert actual == path.read_bytes().decode("utf-8"), f"output differs from golden file {path}"
 
     return check
