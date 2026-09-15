@@ -102,7 +102,7 @@ def destruct(kod, args):
     if args.type == 1:
         # create a dummy db object
         db = Database(".", args.compact, kod)
-        db.dump_db_definition(args, data)
+        db.dump_db_definition(args, db.decode_db_definition(data))
     elif args.type == 2:
         tbdef = TableDefinition(data)
         tbdef.dump(args)
