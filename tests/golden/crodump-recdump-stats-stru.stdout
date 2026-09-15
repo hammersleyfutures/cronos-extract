@@ -1,9 +1,3 @@
-    5: <unpack_from requires a buffer of at least 60 bytes for unpacking 12 bytes at offset 48 (actual buffer size is 48)>
-    6: <unpack_from requires a buffer of at least 72 bytes for unpacking 12 bytes at offset 60 (actual buffer size is 48)>
-    7: <unpack_from requires a buffer of at least 84 bytes for unpacking 12 bytes at offset 72 (actual buffer size is 48)>
-    8: <unpack_from requires a buffer of at least 96 bytes for unpacking 12 bytes at offset 84 (actual buffer size is 48)>
-    9: <unpack_from requires a buffer of at least 108 bytes for unpacking 12 bytes at offset 96 (actual buffer size is 48)>
-   10: <unpack_from requires a buffer of at least 120 bytes for unpacking 12 bytes at offset 108 (actual buffer size is 48)>
 -- table-id stats --, 0 * none, 2 * empty
     1 * 03
     1 * 04

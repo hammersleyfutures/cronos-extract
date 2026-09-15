@@ -278,7 +278,7 @@ class Database:
         nr_recempty = 0
         tabidxref = [0] * 256
         bytexref = [0] * 256
-        for i in range(1, args.maxrecs + 1):
+        for i in range(1, min(args.maxrecs, dbfile.nrofrecords) + 1):
             try:
                 data = dbfile.readrec(i)
                 if args.find1d:
@@ -301,8 +301,6 @@ class Database:
                         for b in data[1:]:
                             bytexref[b] += 1
                 nerr = 0
-            except IndexError:
-                break
             except Exception as e:
                 print(f"{i:5d}: <{e}>")
                 if args.debug:
