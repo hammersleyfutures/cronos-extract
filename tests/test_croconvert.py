@@ -252,3 +252,34 @@ def test_template_export_keeps_the_decoded_fields_of_broken_records(tmp_path: Pa
     assert_partly_broken_record_warnings(result.stderr)
     assert "intact" in result.stdout
     assert "after" in result.stdout
+
+
+def insert_statements(sql: str) -> list[str]:
+    return [line for line in sql.splitlines() if line.lstrip().startswith("INSERT")]
+
+
+def test_postgres_output_has_no_insert_for_an_empty_table(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [])
+
+    result = run_croconvert(["-t", "postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert 'CREATE TABLE "erdgeist"' in result.stdout
+    assert insert_statements(result.stdout) == []
+
+
+def test_postgres_output_has_one_insert_per_record(tmp_path: Path) -> None:
+    first = [b""] * TEST_TABLE_FIELD_COUNT
+    first[1] = b"one"
+    second = [b""] * TEST_TABLE_FIELD_COUNT
+    second[1] = b"two"
+    dbdir = write_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, first), bank_record(TEST_TABLE_ID, second)])
+
+    result = run_croconvert(["-t", "postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    inserts = insert_statements(result.stdout)
+    assert len(inserts) == 2
+    assert all(line.startswith('INSERT INTO "erdgeist" VALUES (') and line.endswith(");") for line in inserts)
+    assert "'one'" in inserts[0]
+    assert "'two'" in inserts[1]
