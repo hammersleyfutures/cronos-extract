@@ -34,6 +34,7 @@ Homepage = "https://github.com/hammersleyfutures/cronos-extract"
 Issues = "https://github.com/hammersleyfutures/cronos-extract/issues"
 
 [project.scripts]
+cronos-extract = "cronos_extract.cli:main"
 crodump = "cronos_extract.crodump:main"
 croconvert = "cronos_extract.croconvert:main"
 

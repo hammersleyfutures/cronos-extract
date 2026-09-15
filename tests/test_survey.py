@@ -1,7 +1,11 @@
 # ABOUTME: Tests for cronos_extract.survey, which reports the CronosPro version of every database under a directory.
 # ABOUTME: Uses databases from tests/cronos_builder.py and header-only files for v4 and v7.
+import json
+import os
 from pathlib import Path
 
+import pytest
+from cli import run_command
 from cronos_builder import write_database, write_header_only_datafile
 
 from cronos_extract.survey import survey_databases
@@ -53,3 +57,180 @@ def test_survey_reports_unreadable_files_without_stopping(tmp_path: Path) -> Non
     assert any("unknown magic" in problem for problem in problems)
     assert any("shorter than" in problem for problem in problems)
     assert [database.directory for database in databases] == [tmp_path / "broken", tmp_path / "fine"]
+
+
+def test_survey_sorts_a_databases_files_case_insensitively(tmp_path: Path) -> None:
+    write_header_only_datafile(tmp_path / "db", "Stru")
+    write_header_only_datafile(tmp_path / "db", "Bank")
+    (tmp_path / "db" / "CroBank.dat").rename(tmp_path / "db" / "crobank.DAT")
+
+    (database,) = survey_databases(tmp_path)
+
+    assert [file.name for file in database.files] == ["bank", "Stru"]
+
+
+@pytest.mark.skipif(os.getuid() == 0, reason="root can list a directory whatever its permissions are")
+def test_survey_reports_a_directory_it_cannot_list(tmp_path: Path) -> None:
+    write_header_only_datafile(tmp_path / "locked", "Stru")
+    (tmp_path / "locked").chmod(0o000)
+    problems: list[OSError] = []
+
+    try:
+        databases = list(survey_databases(tmp_path, problems))
+    finally:
+        (tmp_path / "locked").chmod(0o700)
+
+    assert databases == []
+    (problem,) = problems
+    assert problem.filename == str(tmp_path / "locked")
+
+
+def test_survey_command_prints_a_line_for_each_file(tmp_path: Path) -> None:
+    write_database(tmp_path / "db", [])
+
+    result = run_command("cli", ["survey", str(tmp_path)])
+
+    assert result.returncode == 0, result.stderr
+    assert str(tmp_path / "db") in result.stdout
+    assert "Stru  01.04  v3  32-bit  plain  uncompressed  own-kod" in result.stdout
+
+
+def test_survey_command_counts_without_naming_directories(tmp_path: Path) -> None:
+    write_database(tmp_path / "db", [])
+    write_header_only_datafile(tmp_path / "v7", "Bank", version=b"01.19")
+
+    result = run_command("cli", ["survey", "--counts", str(tmp_path)])
+
+    assert result.returncode == 0, result.stderr
+    assert str(tmp_path) not in result.stdout
+    assert "01.04  v3  2" in result.stdout
+    assert "01.19  v7  1" in result.stdout
+
+
+def test_survey_command_writes_one_json_object_per_database(tmp_path: Path) -> None:
+    write_header_only_datafile(tmp_path / "v7", "Bank", version=b"01.19", encoding=2)
+
+    result = run_command("cli", ["survey", "--jsonl", str(tmp_path)])
+
+    assert result.returncode == 0, result.stderr
+    (line,) = result.stdout.splitlines()
+    assert json.loads(line) == {
+        "directory": str(tmp_path / "v7"),
+        "files": [
+            {
+                "name": "Bank",
+                "version": "01.19",
+                "generation": "v7",
+                "use64bit": False,
+                "kod_encoded": False,
+                "compressed": True,
+                "own_kod": False,
+                "problem": None,
+            }
+        ],
+    }
+
+
+def test_survey_command_reports_a_problem_file_and_still_exits_zero(tmp_path: Path) -> None:
+    (tmp_path / "broken").mkdir()
+    (tmp_path / "broken" / "CroStru.dat").write_bytes(b"NotACronosFile" + bytes(20))
+
+    result = run_command("cli", ["survey", str(tmp_path)])
+
+    assert result.returncode == 0, result.stderr
+    assert "unknown magic" in result.stdout
+    assert "Traceback" not in result.stderr
+
+
+@pytest.mark.skipif(os.getuid() == 0, reason="root can list a directory whatever its permissions are")
+def test_survey_command_warns_about_a_directory_it_cannot_list(tmp_path: Path) -> None:
+    write_database(tmp_path / "db", [])
+    (tmp_path / "locked").mkdir()
+    (tmp_path / "locked").chmod(0o000)
+
+    try:
+        result = run_command("cli", ["survey", str(tmp_path)])
+    finally:
+        (tmp_path / "locked").chmod(0o700)
+
+    assert result.returncode == 0, result.stderr
+    assert str(tmp_path / "db") in result.stdout
+    assert f"warning: {tmp_path / 'locked'} cannot be listed" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_survey_command_rejects_a_missing_directory(tmp_path: Path) -> None:
+    result = run_command("cli", ["survey", str(tmp_path / "nowhere")])
+
+    assert result.returncode == 2
+    assert "Traceback" not in result.stderr
+    assert "nowhere" in result.stderr
+
+
+def test_survey_command_surveys_the_directories_named_in_a_list_file(tmp_path: Path) -> None:
+    write_database(tmp_path / "first" / "db", [])
+    write_header_only_datafile(tmp_path / "second" / "v7", "Bank", version=b"01.19")
+    list_file = tmp_path / "databases.txt"
+    list_file.write_text(
+        f"# databases to survey\n\n{tmp_path / 'first'}\n  {tmp_path / 'second'}  \n", encoding="utf-8"
+    )
+
+    result = run_command("cli", ["survey", "--list", str(list_file)])
+
+    assert result.returncode == 0, result.stderr
+    assert str(tmp_path / "first" / "db") in result.stdout
+    assert str(tmp_path / "second" / "v7") in result.stdout
+
+
+def test_survey_command_counts_a_list_file_as_one_group(tmp_path: Path) -> None:
+    write_database(tmp_path / "first" / "db", [])
+    write_header_only_datafile(tmp_path / "second" / "v7", "Bank", version=b"01.19")
+    list_file = tmp_path / "databases.txt"
+    list_file.write_text(f"{tmp_path / 'first'}\n{tmp_path / 'second'}\n", encoding="utf-8")
+
+    result = run_command("cli", ["survey", "--list", str(list_file), "--counts"])
+
+    assert result.returncode == 0, result.stderr
+    assert str(tmp_path) not in result.stdout
+    assert "01.04  v3  2" in result.stdout
+    assert "01.19  v7  1" in result.stdout
+
+
+def test_survey_command_warns_about_a_list_entry_that_is_not_a_directory(tmp_path: Path) -> None:
+    write_database(tmp_path / "db", [])
+    list_file = tmp_path / "databases.txt"
+    list_file.write_text(f"{tmp_path / 'db'}\n{tmp_path / 'gone'}\n", encoding="utf-8")
+
+    result = run_command("cli", ["survey", "--list", str(list_file)])
+
+    assert result.returncode == 0, result.stderr
+    assert str(tmp_path / "db") in result.stdout
+    assert f"warning: {tmp_path / 'gone'} is not a directory; skipping it" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_survey_command_reports_a_database_once_when_the_roots_overlap(tmp_path: Path) -> None:
+    write_database(tmp_path / "outer" / "db", [])
+    list_file = tmp_path / "databases.txt"
+    list_file.write_text(f"{tmp_path / 'outer'}\n{tmp_path / 'outer' / 'db'}\n", encoding="utf-8")
+
+    result = run_command("cli", ["survey", "--list", str(list_file), str(tmp_path / "outer")])
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.count(str(tmp_path / "outer" / "db")) == 1
+
+
+def test_survey_command_rejects_a_missing_list_file(tmp_path: Path) -> None:
+    result = run_command("cli", ["survey", "--list", str(tmp_path / "nowhere.txt")])
+
+    assert result.returncode == 2
+    assert "Traceback" not in result.stderr
+    assert "nowhere.txt" in result.stderr
+
+
+def test_survey_command_needs_a_directory_or_a_list() -> None:
+    result = run_command("cli", ["survey"])
+
+    assert result.returncode == 2
+    assert "Traceback" not in result.stderr
+    assert "--list" in result.stderr
