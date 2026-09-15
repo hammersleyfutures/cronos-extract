@@ -483,3 +483,33 @@ def test_a_corrupt_referenced_file_gets_one_accurate_warning(tmp_path: Path, exp
     assert "record 4" in warnings[0]
     assert "corrupt" in warnings[0]
     assert "is not the number of a stored file" not in result.stderr
+
+
+def reference_to_a_data_record_database(directory: Path) -> str:
+    """Write a database whose record 2 refers to record 1, a record of the data table instead of the Files table."""
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[1] = b"secret"
+    return write_database(
+        directory,
+        [
+            bank_record(TEST_TABLE_ID, fields),
+            record_with_file_field(file_reference_field("stolen", "txt", 1)),
+        ],
+    )
+
+
+@pytest.mark.parametrize("export_args", [["--csv", "-o", "out"], []], ids=["csv", "html"])
+def test_a_file_reference_to_a_record_of_another_table_is_skipped(tmp_path: Path, export_args: list[str]) -> None:
+    dbdir = reference_to_a_data_record_database(tmp_path / "db")
+
+    result = run_command("croconvert", [*export_args, dbdir], cwd=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    warnings = [line for line in result.stderr.splitlines() if "stolen.txt" in line]
+    assert len(warnings) == 1, result.stderr
+    assert "record 2" in warnings[0]
+    assert "Files table" in warnings[0]
+    if export_args:
+        assert list((tmp_path / "out" / "Files-Referenced").iterdir()) == []
+    else:
+        assert [dict(link).get("download") for link in start_tags(result.stdout, "a")] == []

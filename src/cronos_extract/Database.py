@@ -7,6 +7,7 @@ import struct
 import sys
 from binascii import b2a_hex
 from contextlib import ExitStack
+from functools import cached_property
 
 from . import koddecoder
 from .Datafile import Datafile
@@ -281,10 +282,18 @@ class Database:
             print(f"Warning: {e}; skipping it", file=sys.stderr)
             return None
 
+    @cached_property
+    def files_tableid(self):
+        """
+        The table id of the Files table, which holds the stored files, or None when the database has no Files table.
+        """
+        table = next(self.enumerate_tables(files=True), None)
+        return table.tableid if table else None
+
     def get_record(self, index, asbase64=False):
         """
-        Retrieve a single record from CroBank with record number `index`.
-        Raises LookupError, naming the reason, when `index` is not the number of a readable record in CroBank.
+        Retrieve a stored file's record from CroBank with record number `index`.
+        Raises LookupError, naming the reason, when `index` is not the number of a readable record of the Files table.
         """
         try:
             recno = int(index)
@@ -295,6 +304,8 @@ class Database:
         data = self.readbankrec_or_raise(recno)
         if data is None:
             raise LookupError(f"CroBank record {recno:d} is deleted")
+        if not data or data[0] != self.files_tableid:
+            raise LookupError(f"CroBank record {recno:d} is not a record of the Files table")
         if asbase64:
             return base64.b64encode(data[1:]).decode("utf-8")
         else:
