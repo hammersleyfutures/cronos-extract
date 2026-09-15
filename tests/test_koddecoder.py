@@ -45,3 +45,10 @@ def test_match_with_mismatches_needs_at_least_the_given_number_of_matching_chara
 
     assert match_with_mismatches(data, confidence, b"ABC", 3) == []
     assert match_with_mismatches(data, confidence, b"ABC", 2) == [(0, 2)]
+
+
+def test_kodcoding_instances_do_not_share_their_default_confidence() -> None:
+    first = KODcoding()
+    first.confidence[0] = 0
+
+    assert KODcoding().confidence[0] == 255

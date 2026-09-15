@@ -270,14 +270,14 @@ class KODcoding:
     with a user specified KOD table.
     """
 
-    def __init__(self, initial=INITIAL_KOD, confidence=[255] * 256):
+    def __init__(self, initial=INITIAL_KOD, confidence=None):
         self.kod = [_ for _ in initial]
-        self.confidence = confidence
+        self.confidence = confidence if confidence is not None else [255] * len(self.kod)
 
         # calculate the inverse table, from the entries whose value is known.
         self.inv = [0 for _ in initial]
         for i, x in enumerate(self.kod):
-            if confidence[i] > 0:
+            if self.confidence[i] > 0:
                 self.inv[x] = i
 
     def decode(self, o, data):
