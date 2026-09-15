@@ -287,6 +287,19 @@ def derive_kod_from_stru(db, args):
         ),
     ]
 
+    # The KOD is resolved when every entry has a positive confidence and it is a permutation of 0..255,
+    # because a KOD with duplicate values can't decode the database.
+    unset_count = len([o for o in KOD_CONFIDENCE if o <= 0])
+    is_resolved = unset_count == 0 and sorted(KOD) == list(range(256))
+    if not is_resolved and args.noninteractive:
+        if not args.silent:
+            print(
+                f"Automatic cracking failed: {unset_count:d} entries unsolved. "
+                "Run strucrack without --noninteractive to resolve them.",
+                file=sys.stderr,
+            )
+        return None
+
     force_color = args.color
 
     # Dump partially decoded stru records for the user to try to spot patterns
@@ -349,11 +362,8 @@ def derive_kod_from_stru(db, args):
         )
 
     # If the KOD is not completely resolved, show the missing mappings. Entries with a duplicate value
-    # count as unresolved, and a KOD that is not a permutation of 0..255 can't decode the database.
-    unset_count = len([o for o in KOD_CONFIDENCE if o <= 0])
-    if unset_count > 0 or sorted(KOD) != list(range(256)):
-        if args.noninteractive:
-            return
+    # count as unresolved.
+    if not is_resolved:
         if not args.silent:
             kod_set = set([v for o, v in enumerate(KOD) if KOD_CONFIDENCE[o] > 0])
             unset_entries = ", ".join([f"{o:02x}" for o, v in enumerate(KOD) if KOD_CONFIDENCE[o] <= 0])
@@ -589,7 +599,10 @@ def main():
         kod = koddecoder.new()
 
     if args.handler:
-        args.handler(kod, args)
+        result = args.handler(kod, args)
+        # strucrack --noninteractive stops with status 1 when it can't derive the KOD
+        if result is None and getattr(args, "noninteractive", False):
+            sys.exit(1)
 
 
 if __name__ == "__main__":

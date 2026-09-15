@@ -95,6 +95,21 @@ def test_strucrack_returns_none_when_entries_stay_unresolved(uncrackable_db: str
     assert derive_from_stru(uncrackable_db) is None
 
 
+def test_strucrack_noninteractive_stops_with_a_message_when_cracking_fails(uncrackable_db: str) -> None:
+    result = run_command("crodump", ["strucrack", "--noninteractive", uncrackable_db])
+
+    assert result.returncode == 1
+    assert "Processing record number" not in result.stdout
+    assert "entries unsolved" in result.stderr
+
+
+def test_strucrack_noninteractive_prints_nothing_when_silent(
+    uncrackable_db: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert derive_from_stru(uncrackable_db, "--silent", "--noninteractive") is None
+    assert capsys.readouterr().out == ""
+
+
 def kod_estimate(output: str) -> str:
     """Return the hex KOD estimate that strucrack prints when entries stay unresolved."""
     lines = output.splitlines()
