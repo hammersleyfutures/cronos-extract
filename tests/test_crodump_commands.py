@@ -24,3 +24,13 @@ def test_destruct_type_1_prints_a_database_definition() -> None:
 
     assert result.returncode == 0, result.stderr
     assert 'BankName             - "nowa"' in result.stdout
+
+
+def test_global_nokod_applies_to_kodump() -> None:
+    datafile = str(TEST_DB / "CroStru.dat")
+
+    global_flag = run_command("crodump", ["--nokod", "kodump", "-s", "1", "-l", "16", datafile])
+    subcommand_flag = run_command("crodump", ["kodump", "--nokod", "-s", "1", "-l", "16", datafile])
+
+    assert global_flag.returncode == 0, global_flag.stderr
+    assert global_flag.stdout == subcommand_flag.stdout

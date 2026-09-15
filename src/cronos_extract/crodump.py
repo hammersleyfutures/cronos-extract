@@ -393,7 +393,8 @@ def build_parser():
     p.add_argument("--length", "-l", type=str)
     p.add_argument("--width", "-w", type=str)
     p.add_argument("--endofs", "-e", type=str)
-    p.add_argument("--nokod", "-n", action="store_true", help="don't KOD decode")
+    # SUPPRESS keeps an absent subcommand --nokod from overwriting the global --nokod.
+    p.add_argument("--nokod", "-n", action="store_true", default=argparse.SUPPRESS, help="don't KOD decode")
     p.add_argument("--unhex", "-x", action="store_true", help="assume the input contains hex data")
     p.add_argument("--shift", "-s", type=str, help="KOD decode with the specified shift")
     p.add_argument(
