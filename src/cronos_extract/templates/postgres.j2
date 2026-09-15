@@ -16,7 +16,7 @@ CREATE TABLE "{{ tablename }}" (
 {% for record in db.enumerate_records( table ) -%}
 INSERT INTO "{{ tablename }}" VALUES (
     {%- for field in record.fields -%}
-        {{ sql_value(field) }} {{- ", " if not loop.last else "" -}}
+        {{ sql_value(table.tablename, record.recno, table.fields[loop.index0].name, field) }} {{- ", " if not loop.last else "" -}}
     {%- endfor -%}
 );
 {% endfor %}

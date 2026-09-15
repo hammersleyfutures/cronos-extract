@@ -158,14 +158,23 @@ def unique_sql_column_names(table):
     ]
 
 
-def sql_value(field):
+def sql_value(tablename, recno, fieldname, field):
     """
     Return the content of `field` as a PostgreSQL literal for its TEXT column, or NULL when the value is empty.
     Single quotes are doubled, which is correct with standard_conforming_strings on.
+    PostgreSQL text can't hold NUL, so each NUL becomes U+FFFD, with a warning naming the table, record and field.
     """
     if not field.content:
         return "NULL"
-    return "'" + field.content.replace("'", "''") + "'"
+    content = field.content
+    if "\x00" in content:
+        print(
+            f'Warning: record {recno} in table "{tablename}": field "{fieldname}" contains NUL characters, '
+            "written as U+FFFD in the SQL output",
+            file=sys.stderr,
+        )
+        content = content.replace("\x00", "�")
+    return "'" + content.replace("'", "''") + "'"
 
 
 def csv_output(kod, args):

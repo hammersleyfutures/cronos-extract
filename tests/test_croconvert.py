@@ -637,3 +637,29 @@ def test_postgres_output_shortens_a_long_table_name(tmp_path: Path) -> None:
     for line in creates:
         name = line.removeprefix('CREATE TABLE "').removesuffix('" (')
         assert len(name.encode("utf-8")) <= 63, line
+
+
+def test_postgres_output_replaces_nul_characters_and_warns(tmp_path: Path) -> None:
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[1] = b"a\x00b"
+    dbdir = write_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, fields)])
+
+    result = run_command("croconvert", ["-t", "postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    (insert,) = insert_statements(result.stdout)
+    assert "'a�b'" in insert
+    assert "\x00" not in result.stdout
+    warnings = [line for line in result.stderr.splitlines() if "NUL" in line]
+    assert len(warnings) == 1, result.stderr
+    assert 'table "erdgeist"' in warnings[0]
+    assert "record 1" in warnings[0]
+    assert '"Entry #2"' in warnings[0]
+
+    outdir = tmp_path / "out"
+    csv_result = run_command("croconvert", ["--csv", "-o", str(outdir), dbdir])
+
+    assert csv_result.returncode == 0, csv_result.stderr
+    assert "NUL" not in csv_result.stderr
+    with (outdir / "erdgeist.csv").open(encoding="utf-8", newline="") as csvfile:
+        assert list(csv.reader(csvfile))[1][2] == "a\x00b"
