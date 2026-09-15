@@ -1,7 +1,9 @@
 # ABOUTME: Tests for the croconvert command's HTML, PostgreSQL and CSV exports of crafted and sample databases.
 # ABOUTME: They run the real command as a subprocess and check its stdout, stderr and output files.
 import csv
+import gc
 import struct
+from argparse import Namespace
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import override
@@ -22,7 +24,9 @@ from cronos_builder import (
     write_datafile,
 )
 
+from cronos_extract.croconvert import csv_output, template_convert, unique_sql_column_names, unique_sql_table_name
 from cronos_extract.Database import Database
+from cronos_extract.Datamodel import TableDefinition
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
 
 # The offset of the table id in a table definition of TEST_DB, which has version 3 and an extra dword.
@@ -347,17 +351,24 @@ def test_croconvert_stops_with_a_clear_message_without_crostru(tmp_path: Path) -
     assert result.stdout == ""
 
 
-def duplicate_table_name_database(directory: Path) -> str:
-    """Write a database with two tables named "erdgeist", ids 1 and 2, holding records "one" and "two".
+def duplicate_table_name_database(directory: Path, second_table_name: bytes = b"erdgeist") -> str:
+    """Write a database with tables "erdgeist" and `second_table_name`, ids 1 and 2, with records "one" and "two".
 
-    The second table is the first table's definition with its table id changed, added to CroStru's
+    The second table is the first table's definition with its table id and name changed, added to CroStru's
     database definition as an inline Base002 entry.
     """
     stru = stru_records_from_test_db()
     with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD)) as db:
         assert db.stru is not None
         base001 = db.decode_db_definition(db.stru.readrec(1)[1:])["Base001"]
-    base002 = base001[:TABLE_ID_OFFSET] + struct.pack("<L", 2) + base001[TABLE_ID_OFFSET + 4 :]
+    name_offset = TABLE_ID_OFFSET + 4
+    base002 = (
+        base001[:TABLE_ID_OFFSET]
+        + struct.pack("<L", 2)
+        + bytes([len(second_table_name)])
+        + second_table_name
+        + base001[name_offset + 1 + base001[name_offset] :]
+    )
     name = b"Base002"
     database_definition = stru[0]
     assert database_definition is not None
@@ -400,7 +411,7 @@ def test_postgres_output_gives_tables_with_the_same_name_different_names(tmp_pat
     assert inserts[1].startswith('INSERT INTO "erdgeist-2" VALUES (') and "'two'" in inserts[1]
 
 
-def test_postgres_output_writes_null_for_empty_values_in_columns_that_are_not_text(tmp_path: Path) -> None:
+def test_postgres_output_writes_null_for_every_empty_value(tmp_path: Path) -> None:
     fields = [b""] * TEST_TABLE_FIELD_COUNT
     fields[1] = b"text"
     dbdir = write_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, fields)])
@@ -409,7 +420,35 @@ def test_postgres_output_writes_null_for_empty_values_in_columns_that_are_not_te
 
     assert result.returncode == 0, result.stderr
     assert insert_statements(result.stdout) == [
-        "INSERT INTO \"erdgeist\" VALUES ('1', NULL, 'text', '', NULL, NULL, '', '', '', '', '', '');"
+        "INSERT INTO \"erdgeist\" VALUES ('1', NULL, 'text', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);"
+    ]
+
+
+def test_postgres_output_declares_every_column_text_and_writes_values_as_decoded(tmp_path: Path) -> None:
+    decoded = [b""] * TEST_TABLE_FIELD_COUNT
+    decoded[0] = b"42"
+    decoded[3] = b"1240315"
+    decoded[4] = b"0930"
+    unparseable = [b""] * TEST_TABLE_FIELD_COUNT
+    unparseable[0] = b"not a number"
+    unparseable[3] = b"12x"
+    dbdir = write_database(
+        tmp_path / "db", [bank_record(TEST_TABLE_ID, decoded), bank_record(TEST_TABLE_ID, unparseable)]
+    )
+
+    result = run_command("croconvert", ["-t", "postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    column_lines = [
+        line.strip().rstrip(",").strip() for line in result.stdout.splitlines() if line.startswith('        "')
+    ]
+    assert len(column_lines) == TEST_TABLE_FIELD_COUNT + 1
+    assert all(line.endswith('" TEXT') for line in column_lines), column_lines
+    assert insert_statements(result.stdout) == [
+        'INSERT INTO "erdgeist" VALUES '
+        "('1', '42', NULL, NULL, '2024-03-15', '09:30', NULL, NULL, NULL, NULL, NULL, NULL);",
+        'INSERT INTO "erdgeist" VALUES '
+        "('2', 'not a number', NULL, NULL, '12x', NULL, NULL, NULL, NULL, NULL, NULL, NULL);",
     ]
 
 
@@ -449,3 +488,178 @@ def test_csv_export_skips_a_corrupt_bank_record(tmp_path: Path) -> None:
         assert [row[0] for row in list(csv.reader(csvfile))[1:]] == ["3", "4"]
     assert [path.name for path in (outdir / "Files-FL").iterdir()] == ["1"]
     assert [path.name for path in (outdir / "Files-Referenced").iterdir()] == ["good.pdf"]
+
+
+def test_exports_close_the_database_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    dbdir = write_database(
+        tmp_path / "db", [file_record(b"DATA"), record_with_file_field(file_reference_field("report", "pdf", 1))]
+    )
+    monkeypatch.chdir(tmp_path)
+    kod = KODcoding(INITIAL_KOD)
+
+    template_convert(kod, Namespace(dbdir=dbdir, compact=False, template="html"))
+    template_convert(kod, Namespace(dbdir=dbdir, compact=False, template="postgres"))
+    csv_output(
+        kod, Namespace(dbdir=dbdir, compact=False, outputdir=str(tmp_path / "out"), delimiter=",", nofiles=False)
+    )
+    gc.collect()
+
+    assert (tmp_path / "out" / "Files-Referenced" / "report.pdf").read_bytes() == b"DATA"
+
+
+@pytest.mark.parametrize("export_args", [["--csv", "-o", "out"], []], ids=["csv", "html"])
+def test_a_corrupt_referenced_file_gets_one_accurate_warning(tmp_path: Path, export_args: list[str]) -> None:
+    dbdir = corrupt_bank_record_database(tmp_path / "db")
+
+    result = run_command("croconvert", [*export_args, dbdir], cwd=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    warnings = [line for line in result.stderr.splitlines() if "broken.pdf" in line]
+    assert len(warnings) == 1, result.stderr
+    assert "record 4" in warnings[0]
+    assert "corrupt" in warnings[0]
+    assert "is not the number of a stored file" not in result.stderr
+
+
+def reference_to_a_data_record_database(directory: Path) -> str:
+    """Write a database whose record 2 refers to record 1, a record of the data table instead of the Files table."""
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[1] = b"secret"
+    return write_database(
+        directory,
+        [
+            bank_record(TEST_TABLE_ID, fields),
+            record_with_file_field(file_reference_field("stolen", "txt", 1)),
+        ],
+    )
+
+
+@pytest.mark.parametrize("export_args", [["--csv", "-o", "out"], []], ids=["csv", "html"])
+def test_a_file_reference_to_a_record_of_another_table_is_skipped(tmp_path: Path, export_args: list[str]) -> None:
+    dbdir = reference_to_a_data_record_database(tmp_path / "db")
+
+    result = run_command("croconvert", [*export_args, dbdir], cwd=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    warnings = [line for line in result.stderr.splitlines() if "stolen.txt" in line]
+    assert len(warnings) == 1, result.stderr
+    assert "record 2" in warnings[0]
+    assert "Files table" in warnings[0]
+    if export_args:
+        assert list((tmp_path / "out" / "Files-Referenced").iterdir()) == []
+    else:
+        assert [dict(link).get("download") for link in start_tags(result.stdout, "a")] == []
+
+
+def test_csv_export_shortens_over_long_file_and_table_names(tmp_path: Path) -> None:
+    long_name = "я" * 200
+    dbdir = write_database(
+        tmp_path / "files",
+        [
+            file_record(b"one"),
+            file_record(b"two"),
+            file_record(b"three"),
+            record_with_file_field(file_reference_field(long_name, "txt", 1)),
+            record_with_file_field(file_reference_field(long_name + "ж", "txt", 2)),
+            record_with_file_field(file_reference_field("long", "x" * 300, 3)),
+        ],
+    )
+    outdir = tmp_path / "files-out"
+
+    result = run_command("croconvert", ["--csv", "-o", str(outdir), dbdir])
+
+    assert result.returncode == 0, result.stderr
+    files = {path.name: path.read_bytes() for path in (outdir / "Files-Referenced").iterdir()}
+    assert all(len(name.encode("utf-8")) <= 255 for name in files), list(files)
+    by_content = {content: name for name, content in files.items()}
+    assert set(by_content) == {b"one", b"two", b"three"}
+    assert by_content[b"one"].endswith(".txt") and by_content[b"one"].startswith("яяя")
+    assert by_content[b"two"].endswith("-2.txt")
+    assert by_content[b"three"].startswith("long.x")
+
+    tablesdir = duplicate_table_name_database(tmp_path / "tables", second_table_name=long_name.encode("cp1251"))
+    tablesout = tmp_path / "tables-out"
+
+    result = run_command("croconvert", ["--csv", "-o", str(tablesout), tablesdir])
+
+    assert result.returncode == 0, result.stderr
+    csv_names = sorted(path.name for path in tablesout.glob("*.csv"))
+    assert len(csv_names) == 2
+    assert all(len(name.encode("utf-8")) <= 255 and name.endswith(".csv") for name in csv_names), csv_names
+
+
+def decoded_test_table() -> TableDefinition:
+    """Return the table definition of the test table, decoded from TEST_DB."""
+    with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD)) as db:
+        (table,) = db.enumerate_tables()
+    assert isinstance(table, TableDefinition)
+    return table
+
+
+def test_sql_column_names_are_unique_and_fit_postgres_identifiers() -> None:
+    table = decoded_test_table()
+    table.fields[1].name = "я" * 40
+    table.fields[2].name = "я" * 40 + "ж"
+    table.fields[3].name = "same"
+    table.fields[4].name = "same"
+
+    names = unique_sql_column_names(table)
+
+    assert len(names) == len(table.fields)
+    assert len({name.casefold() for name in names}) == len(names), names
+    assert all(len(name.encode("utf-8")) <= 63 for name in names), names
+    assert names[3] == "same"
+    assert names[4] == "same-4"
+
+
+def test_sql_table_names_are_unique_and_fit_postgres_identifiers() -> None:
+    first = decoded_test_table()
+    first.tablename = "я" * 40
+    second = decoded_test_table()
+    second.tablename = "я" * 40 + "ж"
+    second.tableid = 2
+    used_names: dict[str, int] = {}
+
+    names = [unique_sql_table_name(first, used_names), unique_sql_table_name(second, used_names)]
+
+    assert all(name is not None and len(name.encode("utf-8")) <= 63 for name in names), names
+    assert names[0] != names[1]
+
+
+def test_postgres_output_shortens_a_long_table_name(tmp_path: Path) -> None:
+    dbdir = duplicate_table_name_database(tmp_path / "db", second_table_name=("я" * 100).encode("cp1251"))
+
+    result = run_command("croconvert", ["-t", "postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    creates = [line for line in result.stdout.splitlines() if line.startswith("CREATE TABLE")]
+    assert len(creates) == 2
+    for line in creates:
+        name = line.removeprefix('CREATE TABLE "').removesuffix('" (')
+        assert len(name.encode("utf-8")) <= 63, line
+
+
+def test_postgres_output_replaces_nul_characters_and_warns(tmp_path: Path) -> None:
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[1] = b"a\x00b"
+    dbdir = write_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, fields)])
+
+    result = run_command("croconvert", ["-t", "postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    (insert,) = insert_statements(result.stdout)
+    assert "'a�b'" in insert
+    assert "\x00" not in result.stdout
+    warnings = [line for line in result.stderr.splitlines() if "NUL" in line]
+    assert len(warnings) == 1, result.stderr
+    assert 'table "erdgeist"' in warnings[0]
+    assert "record 1" in warnings[0]
+    assert '"Entry #2"' in warnings[0]
+
+    outdir = tmp_path / "out"
+    csv_result = run_command("croconvert", ["--csv", "-o", str(outdir), dbdir])
+
+    assert csv_result.returncode == 0, csv_result.stderr
+    assert "NUL" not in csv_result.stderr
+    with (outdir / "erdgeist.csv").open(encoding="utf-8", newline="") as csvfile:
+        assert list(csv.reader(csvfile))[1][2] == "a\x00b"

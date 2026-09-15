@@ -46,17 +46,6 @@ class FieldDefinition:
         else:
             return f"Type: {self.typ:2d} {self.idx1:2d}    {self.flags:d},{self.minval:d}       - '{self.name}'"
 
-    def sqltype(self):
-        return {
-            0: "INTEGER PRIMARY KEY",
-            1: "INTEGER",
-            2: "VARCHAR(" + str(self.maxval) + ")",
-            3: "TEXT",  # dictionaray
-            4: "DATE",
-            5: "TIME",
-            6: "TEXT",  # file reference
-        }.get(self.typ, "TEXT")
-
 
 class TableImage:
     def __init__(self, data):

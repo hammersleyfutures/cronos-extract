@@ -22,11 +22,6 @@ def test_fielddef_decodes_type_name_and_limits() -> None:
     fielddef = make_fielddef(2, "Имя")
 
     assert (fielddef.typ, fielddef.name, fielddef.idx2, fielddef.maxval) == (2, "Имя", 1, 20)
-    assert fielddef.sqltype() == "VARCHAR(20)"
-
-
-def test_time_field_has_the_sql_type_time() -> None:
-    assert make_fielddef(5).sqltype() == "TIME"
 
 
 def test_system_number_field_is_shown_as_given() -> None:
