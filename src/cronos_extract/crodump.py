@@ -26,7 +26,7 @@ def destruct_sys4_def(rd):
         path = rd.readlongstring()
         marker2 = rd.readdword()
 
-        print("%08x;%08x: %-50s : %s" % (marker, marker2, path, description))
+        print(f"{marker:08x};{marker2:08x}: {path:<50} : {description}")
 
 
 def destruct_sys_definition(args, data):
@@ -209,7 +209,7 @@ def strucrack(kod, args):
     duplicates = [(o, v) for o, v in enumerate(KOD) if kod_set.count(v) > 1 and KOD_CONFIDENCE[o] > 0]
     duplicates = sorted(duplicates, key=lambda x: x[1])
 
-    for o, v in duplicates:
+    for o, _v in duplicates:
         if KOD_CONFIDENCE[o] < 255:
             KOD_CONFIDENCE[o] = -1
 
@@ -237,7 +237,7 @@ def strucrack(kod, args):
         if not data:
             continue
 
-        print("Processing record number %d" % i)
+        print(f"Processing record number {i:d}")
 
         candidate, candidate_confidence = kod.try_decode(i + 1, data)
 
@@ -272,14 +272,14 @@ def strucrack(kod, args):
             # so do manual padding
             padding = " " * (w - len(chunk))
 
-            print("%05d %s : %s : %s" % (w * ofs, colored + padding, colored_hexed + padding * 2, fix_helper))
+            print(f"{w * ofs:05d} {colored + padding} : {colored_hexed + padding * 2} : {fix_helper}")
         print()
 
     if len(duplicates):
         print(
             "\nDuplicates found:\n"
             + ", ".join(
-                color_code("[%02x=>%02x (%d)]" % (o, v, KOD_CONFIDENCE[o]), KOD_CONFIDENCE[o], force_color)
+                color_code(f"[{o:02x}=>{v:02x} ({KOD_CONFIDENCE[o]:d})]", KOD_CONFIDENCE[o], force_color)
                 for o, v in duplicates
             )
         )
@@ -292,7 +292,7 @@ def strucrack(kod, args):
         if not args.silent:
             unset_entries = ", ".join([f"{o:02x}" for o, v in enumerate(KOD) if KOD_CONFIDENCE[o] == 0])
             unused_values = ", ".join([f"{v:02x}" for v in sorted(set(range(0, 256)).difference(set(kod_set)))])
-            print("\nAmbigous result when cracking. %d entries unsolved. Missing mappings:" % unset_count)
+            print(f"\nAmbigous result when cracking. {unset_count:d} entries unsolved. Missing mappings:")
             print(f"[{unset_entries}] => [{unused_values}]\n")
             print("KOD estimate:")
             print(
@@ -342,7 +342,7 @@ def dbcrack(kod, args):
 
     KOD = [0] * 256
     for i, xx in enumerate(xref):
-        k, v = max(enumerate(xx), key=lambda kv: kv[1])
+        k, _count = max(enumerate(xx), key=lambda kv: kv[1])
         KOD[k] = i
 
     if not args.silent:
@@ -444,7 +444,8 @@ def main():
         "-t",
         action="append",
         dest="text",
-        help="add fixed bytes to decoder box by providing whole strings for a position in a record, format is record:line:offset:plaintext",
+        help="add fixed bytes to decoder box by providing whole strings for a position in a record, "
+        "format is record:line:offset:plaintext",
     )
     p.add_argument("--width", "-w", type=int, help="max number of decoded characters on screen", default=24)
 

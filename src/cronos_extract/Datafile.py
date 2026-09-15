@@ -86,7 +86,7 @@ class Datafile:
             self.nrdeleted, self.firstdeleted = struct.unpack("<2L", hdrdata)
         elif self.isv4():
             hdrdata = self.tad.read(4 * 4)
-            unk1, self.nrdeleted, self.firstdeleted, unk2 = struct.unpack("<4L", hdrdata)
+            _unk1, self.nrdeleted, self.firstdeleted, _unk2 = struct.unpack("<4L", hdrdata)
         else:
             raise Exception("unsupported .tad version")
 
@@ -142,7 +142,7 @@ class Datafile:
         """
         if idx == 0:
             raise Exception("recnum must be a positive number")
-        ofs, ln, chk = self.tadidx(idx - 1)
+        ofs, ln, _chk = self.tadidx(idx - 1)
         if ln == 0xFFFFFFFF:
             # deleted record
             return
@@ -200,7 +200,7 @@ class Datafile:
         From a list of used byte ranges and the filesize, enumerate the list of unused byte ranges
         """
         o = 0
-        for start, end, desc in sorted(ranges):
+        for start, end, _desc in sorted(ranges):
             if start > o:
                 yield o, start - o
             o = end
@@ -229,7 +229,7 @@ class Datafile:
             if args.maxrecs and i == args.maxrecs:
                 break
             if ln == 0xFFFFFFFF:
-                print("%5d: %08x %08x %08x" % (idx, ofs, ln, chk))
+                print(f"{idx:5d}: {ofs:08x} {ln:08x} {chk:08x}")
                 continue
 
             if self.isv3():
@@ -243,7 +243,7 @@ class Datafile:
                 ofs &= (1 << 56) - 1
 
             dat = self.readdata(ofs, ln)
-            ranges.append((ofs, ofs + ln, "item #%d" % i))
+            ranges.append((ofs, ofs + ln, f"item #{i:d}"))
             decflags = [" ", " "]
             infostr = ""
             tail = b""
@@ -262,7 +262,7 @@ class Datafile:
                 encdat = dat[o:]
                 while len(encdat) < extlen:
                     dat = self.readdata(extofs, self.blocksize)
-                    ranges.append((extofs, extofs + self.blocksize, "item #%d ext" % i))
+                    ranges.append((extofs, extofs + self.blocksize, f"item #{i:d} ext"))
                     if self.use64bit:
                         (extofs,) = struct.unpack("<Q", dat[:8])
                         o = 8
@@ -297,9 +297,9 @@ class Datafile:
 
         if args.verbose:
             # output parts not referenced in the .tad file.
-            for o, l in self.enumunreferenced(ranges, self.datsize):
-                dat = self.readdata(o, l)
-                print(f"{o:08x}-{o + l:08x}: {toout(args, dat)}")
+            for o, length in self.enumunreferenced(ranges, self.datsize):
+                dat = self.readdata(o, length)
+                print(f"{o:08x}-{o + length:08x}: {toout(args, dat)}")
 
     def iscompressed(self, data):
         """
@@ -337,8 +337,8 @@ class Datafile:
         o = 0
         while o < len(data) - 3:
             # note the mix of bigendian and little endian numbers here.
-            size, flag = struct.unpack_from(">HH", data, o)
-            (storedcrc,) = struct.unpack_from("<L", data, o + 4)
+            size, _flag = struct.unpack_from(">HH", data, o)
+            (_storedcrc,) = struct.unpack_from("<L", data, o + 4)
 
             C = zlib.decompressobj(-15)
             result += C.decompress(data[o + 8 : o + 8 + size - 6])

@@ -79,10 +79,10 @@ def main():
             db = Database(path, kod)
             for tab in db.enumerate_tables():
                 tab.dump(args)
-                print("nr of records: %d" % db.bank.nrofrecords)
+                print(f"nr of records: {db.bank.nrofrecords:d}")
                 i = 0
                 for rec in db.enumerate_records(tab):
-                    for field, fielddef in zip(rec.fields, tab.fields):
+                    for field, fielddef in zip(rec.fields, tab.fields, strict=True):
                         print(f">> {fielddef} -- {field.content}")
                     i += 1
                     if i > args.maxrecs:

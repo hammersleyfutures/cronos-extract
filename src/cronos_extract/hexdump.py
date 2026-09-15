@@ -12,7 +12,7 @@ def unhex(data):
     """
     convert a possibly space separated list of 2-digit hex values to a byte-array
     """
-    if type(data) == bytes:
+    if isinstance(data, bytes):
         data = data.decode("ascii")
     data = data.replace(" ", "")
     data = data.strip()
@@ -52,7 +52,7 @@ def aschr(b):
     This will make both cyrillic and latin text readable.
     """
     if 32 <= b < 0x7F:
-        return "%c" % b
+        return chr(b)
     elif 0x80 <= b <= 0xFF:
         try:
             c = struct.pack("<B", b).decode("cp1251")
@@ -68,7 +68,7 @@ def asasc(line, confidence=None):
     """
     convert a CP-1251 encoded byte-array to a line of unicode characters.
     """
-    if confidence == None:
+    if confidence is None:
         return "".join(aschr(_) for _ in line)
     else:
         return "".join(aschr(_) if confidence[o] > 0 else "?" for o, _ in enumerate(line))
@@ -111,7 +111,7 @@ def strescape(txt):
     """
     Convert bytes or text to a c-style escaped string.
     """
-    if type(txt) == bytes:
+    if isinstance(txt, bytes):
         txt = txt.decode("cp1251")
     txt = txt.replace("\\", "\\\\")
     txt = txt.replace("\n", "\\n")

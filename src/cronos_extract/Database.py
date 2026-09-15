@@ -4,7 +4,6 @@ import base64
 import os
 import re
 import struct
-import sys
 from binascii import b2a_hex
 from sys import stderr
 
@@ -13,9 +12,6 @@ from .Datafile import Datafile
 from .Datamodel import Record, TableDefinition
 from .hexdump import ashex, strescape, toout
 from .readers import ByteReader
-
-if sys.version_info[0] == 2:
-    sys.exit("cronodump needs python3")
 
 
 class Database:
@@ -117,9 +113,9 @@ class Database:
         """
         for k, v in dbdict.items():
             if re.search(b"[^\x0d\x0a\x09\x20-\x7e\xc0-\xff]", v):
-                print("%-20s - %s" % (k, toout(args, v)))
+                print(f"{k:<20} - {toout(args, v)}")
             else:
-                print('%-20s - "%s"' % (k, strescape(v)))
+                print(f'{k:<20} - "{strescape(v)}"')
 
     def dump_db_table_defs(self, args):
         """
@@ -167,7 +163,7 @@ class Database:
         ) = struct.unpack_from("<LLL", decoded_data, 0)
         password = decoded_data[12 : 12 + pwlen].decode("cp1251")
 
-        print("== NS1: (%02x,%02x) -> %6d, %d, %d:'%s'" % (unk1, sh, serial, unk2, pwlen, password))
+        print(f"== NS1: ({unk1:02x},{sh:02x}) -> {serial:6d}, {unk2:d}, {pwlen:d}:'{password}'")
 
     def enumerate_tables(self, files=False):
         """
@@ -181,7 +177,8 @@ class Database:
         except Exception as e:
             print(f"ERROR decoding db definition: {e}")
             print(
-                "This could possibly mean that you need to try     crodump strucrack     to deduct the database key first"
+                "This could possibly mean that you need to try     crodump strucrack     "
+                "to deduct the database key first"
             )
             return
 
@@ -208,9 +205,9 @@ class Database:
                 try:
                     yield Record(i + 1, table.fields, data[1:])
                 except EOFError:
-                    print("Record %d too short: -- %s" % (i + 1, ashex(data)), file=stderr)
+                    print(f"Record {i + 1:d} too short: -- {ashex(data)}", file=stderr)
                 except Exception as e:
-                    print("Record %d broken: ERROR '%s' -- %s" % (i + 1, e, ashex(data)), file=stderr)
+                    print(f"Record {i + 1:d} broken: ERROR '{e}' -- {ashex(data)}", file=stderr)
             del data
 
     def enumerate_files(self, table):
@@ -261,14 +258,14 @@ class Database:
                 data = dbfile.readrec(i)
                 if args.find1d:
                     if data and (data.find(b"\x1d") > 0 or data.find(b"\x1b") > 0):
-                        print("record with '1d': %d -> %s" % (i, b2a_hex(data)))
+                        print(f"record with '1d': {i:d} -> {b2a_hex(data)}")
                         break
 
                 elif not args.stats:
                     if data is None:
-                        print("%5d: <deleted>" % i)
+                        print(f"{i:5d}: <deleted>")
                     else:
-                        print("%5d: %s" % (i, toout(args, data)))
+                        print(f"{i:5d}: {toout(args, data)}")
                 else:
                     if data is None:
                         nr_recnone += 1
@@ -282,7 +279,7 @@ class Database:
             except IndexError:
                 break
             except Exception as e:
-                print("%5d: <%s>" % (i, e))
+                print(f"{i:5d}: <{e}>")
                 if args.debug:
                     raise
                 nerr += 1
@@ -290,11 +287,11 @@ class Database:
                     break
 
         if args.stats:
-            print("-- table-id stats --, %d * none, %d * empty" % (nr_recnone, nr_recempty))
+            print(f"-- table-id stats --, {nr_recnone:d} * none, {nr_recempty:d} * empty")
             for k, v in enumerate(tabidxref):
                 if v:
-                    print("%5d * %02x" % (v, k))
+                    print(f"{v:5d} * {k:02x}")
             print("-- byte stats --")
             for k, v in enumerate(bytexref):
                 if v:
-                    print("%5d * %02x" % (v, k))
+                    print(f"{v:5d} * {k:02x}")

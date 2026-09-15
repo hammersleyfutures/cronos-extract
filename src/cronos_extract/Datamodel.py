@@ -1,6 +1,8 @@
 # ABOUTME: Decodes CronosPro table definitions, field definitions and records.
 # ABOUTME: Turns raw field bytes into presentable content such as dates, times, file references and text.
 # -*- coding: utf-8 -*-
+from typing import override
+
 from .hexdump import ashex, tohex
 from .readers import ByteReader
 
@@ -31,6 +33,7 @@ class FieldDefinition:
             self.maxval = self.unk4 = None
         self.remaining = rd.readbytes()
 
+    @override
     def __str__(self):
         if self.typ:
             return "Type: %2d (%2d/%2d) %04x,(%d-%4d),%04x - %-40s -- %s" % (
@@ -45,7 +48,7 @@ class FieldDefinition:
                 tohex(self.remaining),
             )
         else:
-            return "Type: %2d %2d    %d,%d       - '%s'" % (self.typ, self.idx1, self.flags, self.minval, self.name)
+            return f"Type: {self.typ:2d} {self.idx1:2d}    {self.flags:d},{self.minval:d}       - '{self.name}'"
 
     def sqltype(self):
         return {
@@ -124,7 +127,7 @@ class TableDefinition:
 
         for _ in range(self.extraunkdatastrings):
             datalen = rd.readword()
-            skip = rd.readbytes(datalen)
+            rd.readbytes(datalen)
 
         try:
             # Then there's another unknow dword and then (probably section indicator) 02 byte
@@ -156,6 +159,7 @@ class TableDefinition:
 
         self.tableimage = TableImage(image)
 
+    @override
     def __str__(self):
         return "%d,%d<%d,%d,%d>%d  %d,%d '%s'  '%s'  [TableImage(%d bytes): %s]" % (
             self.unk1,
@@ -180,7 +184,7 @@ class TableDefinition:
 
         for i, field in enumerate(self.fields):
             if args.verbose:
-                print("field#%2d: %04x - %s" % (i, len(field.defdata), tohex(field.defdata)))
+                print(f"field#{i:2d}: {len(field.defdata):04x} - {tohex(field.defdata)}")
             print(str(field))
         if args.verbose:
             print(f"remaining: {tohex(self.remainingdata)}")
@@ -211,7 +215,7 @@ class Field:
             try:
                 data = data.rstrip(b"\x00")
                 y, m, d = 1900 + int(data[:-4]), int(data[-4:-2]), int(data[-2:])
-                self.content = "%04d-%02d-%02d" % (y, m, d)
+                self.content = f"{y:04d}-{m:02d}-{d:02d}"
             except ValueError:
                 self.content = str(data)
 
@@ -220,7 +224,7 @@ class Field:
             try:
                 data = data.rstrip(b"\x00")
                 h, m = int(data[-4:-2]), int(data[-2:])
-                self.content = "%02d:%02d" % (h, m)
+                self.content = f"{h:02d}:{m:02d}"
             except ValueError:
                 self.content = str(data)
 

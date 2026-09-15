@@ -30,7 +30,7 @@ def template_convert(kod, args):
     template_dir = join(dirname(abspath(__file__)), "templates")
     j2_env = Environment(loader=FileSystemLoader(template_dir))
     j2_templ = j2_env.get_template(args.template + ".j2")
-    j2_templ.stream(db=db, base64=base64).dump(stdout)
+    stdout.writelines(j2_templ.generate(db=db, base64=base64))
 
 
 def safepathname(name):
@@ -131,7 +131,8 @@ def main():
         cracked = strucrack(None, cargs) if args.strucrack else dbcrack(None, cargs)
         if not cracked:
             exit(
-                "Can't automatically crack the database password. Try using   crodump strucrack   and pass the database key (KOD) using --kod"
+                "Can't automatically crack the database password. Try using   crodump strucrack   "
+                "and pass the database key (KOD) using --kod"
             )
         kod = koddecoder.new(cracked)
     else:
