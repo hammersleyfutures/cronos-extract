@@ -24,8 +24,9 @@ from cronos_builder import (
     write_datafile,
 )
 
-from cronos_extract.croconvert import csv_output, template_convert
+from cronos_extract.croconvert import csv_output, template_convert, unique_sql_column_names, unique_sql_table_name
 from cronos_extract.Database import Database
+from cronos_extract.Datamodel import TableDefinition
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
 
 # The offset of the table id in a table definition of TEST_DB, which has version 3 and an extra dword.
@@ -557,3 +558,54 @@ def test_csv_export_shortens_over_long_file_and_table_names(tmp_path: Path) -> N
     csv_names = sorted(path.name for path in tablesout.glob("*.csv"))
     assert len(csv_names) == 2
     assert all(len(name.encode("utf-8")) <= 255 and name.endswith(".csv") for name in csv_names), csv_names
+
+
+def decoded_test_table() -> TableDefinition:
+    """Return the table definition of the test table, decoded from TEST_DB."""
+    with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD)) as db:
+        (table,) = db.enumerate_tables()
+    assert isinstance(table, TableDefinition)
+    return table
+
+
+def test_sql_column_names_are_unique_and_fit_postgres_identifiers() -> None:
+    table = decoded_test_table()
+    table.fields[1].name = "я" * 40
+    table.fields[2].name = "я" * 40 + "ж"
+    table.fields[3].name = "same"
+    table.fields[4].name = "same"
+
+    names = unique_sql_column_names(table)
+
+    assert len(names) == len(table.fields)
+    assert len({name.casefold() for name in names}) == len(names), names
+    assert all(len(name.encode("utf-8")) <= 63 for name in names), names
+    assert names[3] == "same"
+    assert names[4] == "same-4"
+
+
+def test_sql_table_names_are_unique_and_fit_postgres_identifiers() -> None:
+    first = decoded_test_table()
+    first.tablename = "я" * 40
+    second = decoded_test_table()
+    second.tablename = "я" * 40 + "ж"
+    second.tableid = 2
+    used_names: dict[str, int] = {}
+
+    names = [unique_sql_table_name(first, used_names), unique_sql_table_name(second, used_names)]
+
+    assert all(name is not None and len(name.encode("utf-8")) <= 63 for name in names), names
+    assert names[0] != names[1]
+
+
+def test_postgres_output_shortens_a_long_table_name(tmp_path: Path) -> None:
+    dbdir = duplicate_table_name_database(tmp_path / "db", second_table_name=("я" * 100).encode("cp1251"))
+
+    result = run_command("croconvert", ["-t", "postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    creates = [line for line in result.stdout.splitlines() if line.startswith("CREATE TABLE")]
+    assert len(creates) == 2
+    for line in creates:
+        name = line.removeprefix('CREATE TABLE "').removesuffix('" (')
+        assert len(name.encode("utf-8")) <= 63, line

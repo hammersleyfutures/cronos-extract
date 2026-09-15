@@ -74,6 +74,7 @@ def template_convert(kod, args):
                 base64=base64,
                 referenced_file=referenced_file,
                 unique_sql_table_name=unique_sql_table_name,
+                unique_sql_column_names=unique_sql_column_names,
                 sql_value=sql_value,
             )
         )
@@ -89,6 +90,8 @@ def safepathname(name):
 MAX_FILE_NAME_BYTES = 255
 # The longest file name extension kept in full, in bytes, dot included.
 MAX_EXTENSION_BYTES = 64
+# The longest identifier, in bytes, that PostgreSQL keeps without truncating it.
+POSTGRES_IDENTIFIER_BYTES = 63
 
 
 def truncate_utf8(text, max_bytes):
@@ -96,20 +99,17 @@ def truncate_utf8(text, max_bytes):
     return text.encode("utf-8")[:max_bytes].decode("utf-8", "ignore")
 
 
-def unique_name(stem, extension, number, used_names, max_bytes=None):
+def unique_name(stem, extension, number, used_names, max_bytes):
     """
     Return `stem` followed by `extension` when no other output uses that name, or None when the thing
     numbered `number` already has it. A name already used by something else gets "-<number>" appended
-    to its stem, and a counter after that if needed.
-    With `max_bytes`, the stem is shortened so that the whole name fits in that many UTF-8 bytes.
+    to its stem, and a counter after that if needed. The stem is shortened so that the whole name fits
+    in `max_bytes` UTF-8 bytes.
     `used_names` maps each name given so far, compared case-insensitively, to its number.
     """
     for suffix in chain(["", f"-{number}"], (f"-{number}-{n}" for n in count(2))):
-        if max_bytes is None:
-            name = stem + suffix + extension
-        else:
-            room = max_bytes - len(suffix.encode("utf-8")) - len(extension.encode("utf-8"))
-            name = truncate_utf8(stem, room) + suffix + extension
+        room = max_bytes - len(suffix.encode("utf-8")) - len(extension.encode("utf-8"))
+        name = truncate_utf8(stem, room) + suffix + extension
         key = name.casefold()
         if key not in used_names:
             used_names[key] = number
@@ -137,11 +137,25 @@ def unique_file_name(stem, extension, number, used_names):
 def unique_sql_table_name(table, used_names):
     """
     Return the name to give `table` in SQL output, or None when a table with the same name and table id
-    is already written. Double quotes become underscores and an empty name becomes the table id.
-    See unique_name for how names are kept unique.
+    is already written. Double quotes become underscores, an empty name becomes the table id, and the name
+    fits in POSTGRES_IDENTIFIER_BYTES. See unique_name for how names are kept unique.
     """
     name = table.tablename.replace('"', "_") or str(table.tableid)
-    return unique_name(name, "", table.tableid, used_names)
+    return unique_name(name, "", table.tableid, used_names, POSTGRES_IDENTIFIER_BYTES)
+
+
+def unique_sql_column_names(table):
+    """
+    Return the names to give the columns of `table` in SQL output, in the order of its fields.
+    Double quotes become underscores, an empty name becomes the column number, counting the system number
+    as column 0, and every name is unique within the table and fits in POSTGRES_IDENTIFIER_BYTES.
+    See unique_name for how names are kept unique.
+    """
+    used_names = {}
+    return [
+        unique_name(field.name.replace('"', "_") or str(number), "", number, used_names, POSTGRES_IDENTIFIER_BYTES)
+        for number, field in enumerate(table.fields)
+    ]
 
 
 def sql_value(fielddef, field):
