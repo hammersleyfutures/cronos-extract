@@ -264,6 +264,15 @@ def test_strucrack_rejects_an_invalid_fix(encrypted_db: str, fix: str, message: 
     assert message in result.stderr
 
 
+@pytest.mark.parametrize("width", ["0", "-3"])
+def test_strucrack_rejects_a_width_that_is_not_positive(encrypted_db: str, width: str) -> None:
+    result = run_command("crodump", ["strucrack", "--width", width, encrypted_db])
+
+    assert result.returncode != 0
+    assert "Traceback" not in result.stderr
+    assert "must be a positive number" in result.stderr
+
+
 def test_crodump_crack_flag_needs_a_database_subcommand() -> None:
     result = run_command("crodump", ["--strucrack", "kodump", "--help"])
 

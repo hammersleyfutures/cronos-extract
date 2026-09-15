@@ -150,6 +150,21 @@ def parse_fix(value):
     return i, o, c
 
 
+def positive_int(value):
+    """
+    Parse a command line option that must be a positive whole number.
+
+    Raises argparse.ArgumentTypeError when `value` is not one.
+    """
+    try:
+        number = int(value)
+    except ValueError:
+        number = 0
+    if number <= 0:
+        raise argparse.ArgumentTypeError(f"{value!r} must be a positive number")
+    return number
+
+
 def strucrack(kod, args):
     """
     This function derives the KOD key from the assumption that most bytes in
@@ -518,7 +533,7 @@ def build_parser():
         help="add fixed bytes to decoder box by providing whole strings for a position in a record, "
         "format is record:line:offset:plaintext",
     )
-    p.add_argument("--width", "-w", type=int, help="max number of decoded characters on screen", default=24)
+    p.add_argument("--width", "-w", type=positive_int, help="max number of decoded characters on screen", default=24)
 
     p.add_argument("dbdir", type=str)
     p.set_defaults(handler=strucrack)
