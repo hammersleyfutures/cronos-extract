@@ -2,13 +2,12 @@
 # ABOUTME: They run the real command as a subprocess and check its stdout, stderr and output files.
 import csv
 import struct
-import subprocess
-import sys
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import override
 
 import pytest
+from cli import run_command
 from cronos_builder import (
     TEST_DB,
     TEST_TABLE_FIELD_COUNT,
@@ -28,17 +27,6 @@ from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
 
 # The offset of the table id in a table definition of TEST_DB, which has version 3 and an extra dword.
 TABLE_ID_OFFSET = 14
-
-
-def run_croconvert(args: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, "-m", "cronos_extract.croconvert", *args],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
 
 
 def record_with_file_field(file_field: bytes) -> bytes:
@@ -68,7 +56,7 @@ def start_tags(html: str, name: str) -> list[list[tuple[str, str | None]]]:
 
 
 def test_table_definition_warnings_go_to_stderr_not_into_the_sql() -> None:
-    result = run_croconvert(["-t", "postgres", str(TEST_DB)])
+    result = run_command("croconvert", ["-t", "postgres", str(TEST_DB)])
 
     assert result.returncode == 0, result.stderr
     assert "Warning" not in result.stdout
@@ -76,7 +64,7 @@ def test_table_definition_warnings_go_to_stderr_not_into_the_sql() -> None:
 
 
 def test_db_definition_errors_go_to_stderr_not_into_the_sql() -> None:
-    result = run_croconvert(["--nokod", "-t", "postgres", str(TEST_DB)])
+    result = run_command("croconvert", ["--nokod", "-t", "postgres", str(TEST_DB)])
 
     assert result.returncode == 0, result.stderr
     assert result.stdout == ""
@@ -90,7 +78,7 @@ def test_html_escapes_a_hostile_file_name_in_the_download_attribute(tmp_path: Pa
         tmp_path / "db", [file_record(b"DATA"), record_with_file_field(file_reference_field(hostile_name, "pdf", 1))]
     )
 
-    result = run_croconvert([dbdir])
+    result = run_command("croconvert", [dbdir])
 
     assert result.returncode == 0, result.stderr
     (link,) = start_tags(result.stdout, "a")[1:]
@@ -104,7 +92,7 @@ def test_postgres_output_is_not_html_escaped(tmp_path: Path) -> None:
     fields[1] = b'<b>&"O\'Brien"</b>'
     dbdir = write_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, fields)])
 
-    result = run_croconvert(["-t", "postgres", dbdir])
+    result = run_command("croconvert", ["-t", "postgres", dbdir])
 
     assert result.returncode == 0, result.stderr
     assert "'<b>&\"O''Brien\"</b>'" in result.stdout
@@ -136,7 +124,7 @@ def test_csv_export_skips_unreadable_file_references(tmp_path: Path) -> None:
     dbdir = unreadable_file_references_database(tmp_path / "db")
     outdir = tmp_path / "out"
 
-    result = run_croconvert(["--csv", "-o", str(outdir), dbdir])
+    result = run_command("croconvert", ["--csv", "-o", str(outdir), dbdir])
 
     assert result.returncode == 0, result.stderr
     assert_skipped_file_warnings(result.stderr)
@@ -147,7 +135,7 @@ def test_csv_export_skips_unreadable_file_references(tmp_path: Path) -> None:
 def test_html_export_skips_unreadable_file_references(tmp_path: Path) -> None:
     dbdir = unreadable_file_references_database(tmp_path / "db")
 
-    result = run_croconvert([dbdir])
+    result = run_command("croconvert", [dbdir])
 
     assert result.returncode == 0, result.stderr
     assert_skipped_file_warnings(result.stderr)
@@ -174,7 +162,7 @@ def test_csv_export_gives_referenced_files_safe_unique_names(tmp_path: Path) -> 
     )
     outdir = tmp_path / "out"
 
-    result = run_croconvert(["--csv", "-o", str(outdir), dbdir])
+    result = run_command("croconvert", ["--csv", "-o", str(outdir), dbdir])
 
     assert result.returncode == 0, result.stderr
     referenced = outdir / "Files-Referenced"
@@ -192,7 +180,7 @@ def test_tad_leftover_warning_goes_to_stderr_not_into_the_sql(tmp_path: Path) ->
     with (Path(dbdir) / "CroBank.tad").open("ab") as tad:
         tad.write(b"\x00\x00\x00")
 
-    result = run_croconvert(["-t", "postgres", dbdir])
+    result = run_command("croconvert", ["-t", "postgres", dbdir])
 
     assert result.returncode == 0, result.stderr
     assert "WARN" not in result.stdout
@@ -237,7 +225,7 @@ def test_csv_export_keeps_the_decoded_fields_of_broken_records(tmp_path: Path) -
     dbdir = partly_broken_records_database(tmp_path / "db")
     outdir = tmp_path / "out"
 
-    result = run_croconvert(["--csv", "-o", str(outdir), dbdir])
+    result = run_command("croconvert", ["--csv", "-o", str(outdir), dbdir])
 
     assert result.returncode == 0, result.stderr
     assert_partly_broken_record_warnings(result.stderr)
@@ -254,7 +242,7 @@ def test_csv_export_keeps_the_decoded_fields_of_broken_records(tmp_path: Path) -
 def test_template_export_keeps_the_decoded_fields_of_broken_records(tmp_path: Path, template_args: list[str]) -> None:
     dbdir = partly_broken_records_database(tmp_path / "db")
 
-    result = run_croconvert([*template_args, dbdir])
+    result = run_command("croconvert", [*template_args, dbdir])
 
     assert result.returncode == 0, result.stderr
     assert_partly_broken_record_warnings(result.stderr)
@@ -269,7 +257,7 @@ def insert_statements(sql: str) -> list[str]:
 def test_postgres_output_has_no_insert_for_an_empty_table(tmp_path: Path) -> None:
     dbdir = write_database(tmp_path / "db", [])
 
-    result = run_croconvert(["-t", "postgres", dbdir])
+    result = run_command("croconvert", ["-t", "postgres", dbdir])
 
     assert result.returncode == 0, result.stderr
     assert 'CREATE TABLE "erdgeist"' in result.stdout
@@ -283,7 +271,7 @@ def test_postgres_output_has_one_insert_per_record(tmp_path: Path) -> None:
     second[1] = b"two"
     dbdir = write_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, first), bank_record(TEST_TABLE_ID, second)])
 
-    result = run_croconvert(["-t", "postgres", dbdir])
+    result = run_command("croconvert", ["-t", "postgres", dbdir])
 
     assert result.returncode == 0, result.stderr
     inserts = insert_statements(result.stdout)
@@ -331,7 +319,7 @@ def test_html_tables_are_well_formed(tmp_path: Path) -> None:
         ],
     )
 
-    result = run_croconvert([dbdir])
+    result = run_command("croconvert", [dbdir])
 
     assert result.returncode == 0, result.stderr
     shapes = TableShapes()
@@ -350,7 +338,7 @@ def test_croconvert_stops_with_a_clear_message_without_crostru(tmp_path: Path) -
     (Path(dbdir) / "CroStru.dat").unlink()
     (Path(dbdir) / "CroStru.tad").unlink()
 
-    result = run_croconvert(["-t", "postgres", dbdir])
+    result = run_command("croconvert", ["-t", "postgres", dbdir])
 
     assert result.returncode != 0
     assert "Traceback" not in result.stderr
@@ -388,7 +376,7 @@ def test_csv_export_writes_tables_with_the_same_name_to_different_files(tmp_path
     dbdir = duplicate_table_name_database(tmp_path / "db")
     outdir = tmp_path / "out"
 
-    result = run_croconvert(["--csv", "-o", str(outdir), dbdir])
+    result = run_command("croconvert", ["--csv", "-o", str(outdir), dbdir])
 
     assert result.returncode == 0, result.stderr
     tables = {}
@@ -401,7 +389,7 @@ def test_csv_export_writes_tables_with_the_same_name_to_different_files(tmp_path
 def test_postgres_output_gives_tables_with_the_same_name_different_names(tmp_path: Path) -> None:
     dbdir = duplicate_table_name_database(tmp_path / "db")
 
-    result = run_croconvert(["-t", "postgres", dbdir])
+    result = run_command("croconvert", ["-t", "postgres", dbdir])
 
     assert result.returncode == 0, result.stderr
     creates = [line for line in result.stdout.splitlines() if line.startswith("CREATE TABLE")]
@@ -417,7 +405,7 @@ def test_postgres_output_writes_null_for_empty_values_in_columns_that_are_not_te
     fields[1] = b"text"
     dbdir = write_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, fields)])
 
-    result = run_croconvert(["-t", "postgres", dbdir])
+    result = run_command("croconvert", ["-t", "postgres", dbdir])
 
     assert result.returncode == 0, result.stderr
     assert insert_statements(result.stdout) == [
@@ -453,7 +441,7 @@ def test_csv_export_skips_a_corrupt_bank_record(tmp_path: Path) -> None:
     dbdir = corrupt_bank_record_database(tmp_path / "db")
     outdir = tmp_path / "out"
 
-    result = run_croconvert(["--csv", "-o", str(outdir), dbdir])
+    result = run_command("croconvert", ["--csv", "-o", str(outdir), dbdir])
 
     assert result.returncode == 0, result.stderr
     assert any("Warning" in line and "record 2" in line for line in result.stderr.splitlines()), result.stderr
