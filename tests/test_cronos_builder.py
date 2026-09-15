@@ -1,10 +1,12 @@
 # ABOUTME: Tests that databases written by tests/cronos_builder.py are read back correctly by cronos_extract.
 # ABOUTME: They prove the fixture builder before other tests rely on it to reproduce bugs.
+import io
 import struct
 from pathlib import Path
 
 import pytest
 from cronos_builder import (
+    BLOCKSIZE,
     TEST_DB,
     TEST_TABLE_FILE_FIELD_INDEX,
     TEST_TABLE_ID,
@@ -17,8 +19,10 @@ from cronos_builder import (
     random_kod,
     stru_records_from_test_db,
     write_database,
+    write_header_only_datafile,
 )
 
+from cronos_extract._format.header import DatHeader, read_dat_header
 from cronos_extract.Database import KOD_HINT, Database
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
 
@@ -121,3 +125,14 @@ def test_encrypted_database_decodes_only_with_its_kod(tmp_path: Path, capsys: py
         "ERROR decoding db definition: the database definition is cut off after 0 keys",
         KOD_HINT,
     ]
+
+
+def test_write_header_only_datafile_writes_just_the_header(tmp_path: Path) -> None:
+    write_header_only_datafile(tmp_path, "Bank", version=b"01.19", encoding=3)
+
+    data = (tmp_path / "CroBank.dat").read_bytes()
+    assert len(data) == 19
+    assert read_dat_header(io.BytesIO(data), where="CroBank.dat") == DatHeader(
+        version=b"01.19", unknown=0, encoding=3, blocksize=BLOCKSIZE
+    )
+    assert not (tmp_path / "CroBank.tad").exists()
