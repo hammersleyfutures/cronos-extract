@@ -80,11 +80,9 @@ def main():
             for tab in db.enumerate_tables():
                 tab.dump(args)
                 print(f"nr of records: {db.bank.nrofrecords:d}")
-                i = 0
-                for rec in db.enumerate_records(tab):
+                for i, rec in enumerate(db.enumerate_records(tab), start=1):
                     for field, fielddef in zip(rec.fields, tab.fields, strict=True):
                         print(f">> {fielddef} -- {field.content}")
-                    i += 1
                     if i > args.maxrecs:
                         break
         except Exception as e:

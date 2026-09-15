@@ -153,6 +153,8 @@ class Datafile:
         elif self.isv4():
             flags = ofs >> 56
             ofs &= (1 << 56) - 1
+        else:
+            raise ValueError(f"unsupported Cronos file version {self.version!r} in Cro{self.name}.dat")
 
         dat = self.readdata(ofs, ln)
 
@@ -182,9 +184,8 @@ class Datafile:
         else:
             encdat = dat
 
-        if self.encoding & 1:
-            if self.kod:
-                encdat = self.kod.decode(idx, encdat)
+        if self.encoding & 1 and self.kod:
+            encdat = self.kod.decode(idx, encdat)
 
         if self.iscompressed(encdat):
             encdat = self.decompress(encdat)
@@ -217,8 +218,9 @@ class Datafile:
         the `args` object controls how data is decoded.
         """
         print(
-            "hdr: %-6s dat: %04x %s enc:%04x bs:%04x, tad: %08x %08x"
-            % (self.name, self.hdrunk, self.version, self.encoding, self.blocksize, self.nrdeleted, self.firstdeleted)
+            f"hdr: {self.name:<6} dat: {self.hdrunk:04x} {self.version} "
+            f"enc:{self.encoding:04x} bs:{self.blocksize:04x}, "
+            f"tad: {self.nrdeleted:08x} {self.firstdeleted:08x}"
         )
 
         ranges = []  # keep track of used bytes in the .dat file.
@@ -241,6 +243,8 @@ class Datafile:
                 # 02,03 --> deleted
                 # 00 --> extrec
                 ofs &= (1 << 56) - 1
+            else:
+                raise ValueError(f"unsupported Cronos file version {self.version!r} in Cro{self.name}.dat")
 
             dat = self.readdata(ofs, ln)
             ranges.append((ofs, ofs + ln, f"item #{i:d}"))
@@ -284,15 +288,14 @@ class Datafile:
             else:
                 decflags[0] = " "
 
-            if args.decompress:
-                if self.iscompressed(encdat):
-                    encdat = self.decompress(encdat)
-                    decflags[1] = "@"
+            if args.decompress and self.iscompressed(encdat):
+                encdat = self.decompress(encdat)
+                decflags[1] = "@"
 
             # TODO: separate handling for v4
             print(
-                "%5d: %08x-%08x: (%02x:%08x) %s %s%s %s"
-                % (i + 1, ofs, ofs + ln, flags, chk, infostr, "".join(decflags), toout(args, encdat), tohex(tail))
+                f"{i + 1:5d}: {ofs:08x}-{ofs + ln:08x}: ({flags:02x}:{chk:08x}) "
+                f"{infostr} {''.join(decflags)}{toout(args, encdat)} {tohex(tail)}"
             )
 
         if args.verbose:

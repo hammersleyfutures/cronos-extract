@@ -36,16 +36,11 @@ class FieldDefinition:
     @override
     def __str__(self):
         if self.typ:
-            return "Type: %2d (%2d/%2d) %04x,(%d-%4d),%04x - %-40s -- %s" % (
-                self.typ,
-                self.idx1,
-                self.idx2,
-                self.flags,
-                self.minval,
-                self.maxval,
-                self.unk4,
-                f"'{self.name}'",
-                tohex(self.remaining),
+            quoted_name = f"'{self.name}'"
+            return (
+                f"Type: {self.typ:2d} ({self.idx1:2d}/{self.idx2:2d}) "
+                f"{self.flags:04x},({self.minval:d}-{self.maxval:4d}),"
+                f"{self.unk4:04x} - {quoted_name:<40} -- {tohex(self.remaining)}"
             )
         else:
             return f"Type: {self.typ:2d} {self.idx1:2d}    {self.flags:d},{self.minval:d}       - '{self.name}'"
@@ -161,19 +156,10 @@ class TableDefinition:
 
     @override
     def __str__(self):
-        return "%d,%d<%d,%d,%d>%d  %d,%d '%s'  '%s'  [TableImage(%d bytes): %s]" % (
-            self.unk1,
-            self.version,
-            self.unk2,
-            self.unk3,
-            self.unk4,
-            self.tableid,
-            self.unk7,
-            len(self.fields),
-            self.tablename,
-            self.abbrev,
-            len(self.tableimage.data),
-            self.tableimage.filename,
+        return (
+            f"{self.unk1:d},{self.version:d}<{self.unk2:d},{self.unk3:d},{self.unk4:d}>{self.tableid:d}  "
+            f"{self.unk7:d},{len(self.fields):d} '{self.tablename}'  '{self.abbrev}'  "
+            f"[TableImage({len(self.tableimage.data):d} bytes): {self.tableimage.filename}]"
         )
 
     def dump(self, args):

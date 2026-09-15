@@ -79,15 +79,12 @@ def hexdump(ofs, data, args):
     Output offset prefixed lines of hex + ascii characters.
     """
     w = args.width
-    if args.ascdump:
-        fmt = "%08x: %s"
-    else:
-        fmt = "%%08x: %%-%ds  %%s" % (3 * w - 1)
     for o in range(0, len(data), w):
+        chunk = data[o : o + w]
         if args.ascdump:
-            print(fmt % (o + ofs, asasc(data[o : o + w])))
+            print(f"{o + ofs:08x}: {asasc(chunk)}")
         else:
-            print(fmt % (o + ofs, ashex(data[o : o + w]), asasc(data[o : o + w])))
+            print(f"{o + ofs:08x}: {ashex(chunk):<{3 * w - 1}}  {asasc(chunk)}")
 
 
 def tohex(data):

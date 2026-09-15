@@ -39,10 +39,7 @@ def decode_kod(kod, args, data):
     else:
         # output with all possible 'shift' values.
         for s in range(256):
-            if args.invkod:
-                enc = kod.encode(s, data)
-            else:
-                enc = kod.decode(s, data)
+            enc = kod.encode(s, data) if args.invkod else kod.decode(s, data)
             print(f"{s:02x}: {toout(args, enc)}")
 
 
