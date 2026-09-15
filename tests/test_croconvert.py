@@ -1,7 +1,9 @@
 # ABOUTME: Tests for the croconvert command's HTML, PostgreSQL and CSV exports of crafted and sample databases.
 # ABOUTME: They run the real command as a subprocess and check its stdout, stderr and output files.
 import csv
+import gc
 import struct
+from argparse import Namespace
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import override
@@ -22,6 +24,7 @@ from cronos_builder import (
     write_datafile,
 )
 
+from cronos_extract.croconvert import csv_output, template_convert
 from cronos_extract.Database import Database
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
 
@@ -449,3 +452,20 @@ def test_csv_export_skips_a_corrupt_bank_record(tmp_path: Path) -> None:
         assert [row[0] for row in list(csv.reader(csvfile))[1:]] == ["3", "4"]
     assert [path.name for path in (outdir / "Files-FL").iterdir()] == ["1"]
     assert [path.name for path in (outdir / "Files-Referenced").iterdir()] == ["good.pdf"]
+
+
+def test_exports_close_the_database_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    dbdir = write_database(
+        tmp_path / "db", [file_record(b"DATA"), record_with_file_field(file_reference_field("report", "pdf", 1))]
+    )
+    monkeypatch.chdir(tmp_path)
+    kod = KODcoding(INITIAL_KOD)
+
+    template_convert(kod, Namespace(dbdir=dbdir, compact=False, template="html"))
+    template_convert(kod, Namespace(dbdir=dbdir, compact=False, template="postgres"))
+    csv_output(
+        kod, Namespace(dbdir=dbdir, compact=False, outputdir=str(tmp_path / "out"), delimiter=",", nofiles=False)
+    )
+    gc.collect()
+
+    assert (tmp_path / "out" / "Files-Referenced" / "report.pdf").read_bytes() == b"DATA"

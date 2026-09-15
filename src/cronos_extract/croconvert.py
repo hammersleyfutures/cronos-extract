@@ -63,22 +63,21 @@ def template_convert(kod, args):
     except ImportError:
         exit("Fatal: Jinja templating engine not found. Install using pip install jinja2")
 
-    db = open_database(kod, args)
-
     template_dir = join(dirname(abspath(__file__)), "templates")
     # Only HTML output is escaped; SQL output quotes its values itself and must not contain HTML entities.
     j2_env = Environment(loader=FileSystemLoader(template_dir), autoescape=lambda name: name == "html.j2")
     j2_templ = j2_env.get_template(args.template + ".j2")
-    stdout.writelines(
-        j2_templ.generate(
-            db=db,
-            base64=base64,
-            referenced_file=referenced_file,
-            unique_sql_table_name=unique_sql_table_name,
-            sql_value=sql_value,
+    with open_database(kod, args) as db:
+        stdout.writelines(
+            j2_templ.generate(
+                db=db,
+                base64=base64,
+                referenced_file=referenced_file,
+                unique_sql_table_name=unique_sql_table_name,
+                sql_value=sql_value,
+            )
         )
-    )
-    report_incomplete_records(db)
+        report_incomplete_records(db)
 
 
 def safepathname(name):
@@ -142,66 +141,65 @@ def sql_value(fielddef, field):
 def csv_output(kod, args):
     """creates a directory with the current timestamp and in it a set of CSV or TSV
     files with all the tables found and an extra directory with all the files"""
-    db = open_database(kod, args)
+    with open_database(kod, args) as db:
+        mkdir(args.outputdir)
+        chdir(args.outputdir)
 
-    mkdir(args.outputdir)
-    chdir(args.outputdir)
+        filereferences = []
 
-    filereferences = []
+        # first dump all non-file tables
+        table_names = {}
+        for table in db.enumerate_tables(files=False):
+            tablesafename = unique_file_name(table.tablename, "csv", table.tableid, table_names)
+            if tablesafename is None:
+                # a table with this name and table id is already written, and would hold the same records
+                continue
 
-    # first dump all non-file tables
-    table_names = {}
-    for table in db.enumerate_tables(files=False):
-        tablesafename = unique_file_name(table.tablename, "csv", table.tableid, table_names)
-        if tablesafename is None:
-            # a table with this name and table id is already written, and would hold the same records
-            continue
+            with open(tablesafename, "w", encoding="utf-8") as csvfile:
+                writer = csv.writer(csvfile, delimiter=args.delimiter, escapechar="\\")
+                writer.writerow([field.name for field in table.fields])
 
-        with open(tablesafename, "w", encoding="utf-8") as csvfile:
-            writer = csv.writer(csvfile, delimiter=args.delimiter, escapechar="\\")
-            writer.writerow([field.name for field in table.fields])
+                # Record should be iterable over its fields, so we could use writerows
+                for record in db.enumerate_records(table):
+                    writer.writerow([field.content for field in record.fields])
 
-            # Record should be iterable over its fields, so we could use writerows
-            for record in db.enumerate_records(table):
-                writer.writerow([field.content for field in record.fields])
+                    filereferences.extend(
+                        [(table.tablename, record.recno, field) for field in record.fields if field.typ == 6]
+                    )
 
-                filereferences.extend(
-                    [(table.tablename, record.recno, field) for field in record.fields if field.typ == 6]
+        if args.nofiles:
+            report_incomplete_records(db)
+            return
+
+        # Write all files from the file table. This is useful for unreferenced files
+        for table in db.enumerate_tables(files=True):
+            filedir = "Files-" + safepathname(table.abbrev)
+            mkdir(filedir)
+
+            for system_number, content in db.enumerate_files(table):
+                with open(join(filedir, str(system_number)), "wb") as binfile:
+                    binfile.write(content)
+
+        if len(filereferences):
+            filedir = "Files-Referenced"
+            mkdir(filedir)
+
+        # Write all referenced files with their filename and extension intact, as far as that is safe and unique
+        referenced_names = {}
+        for tablename, recno, reffile in filereferences:
+            if reffile.content:  # only print when file is not NULL
+                content = referenced_file(db, tablename, recno, reffile)
+                if content is None:
+                    continue
+                filesafename = unique_file_name(
+                    reffile.filename, reffile.extname, int(reffile.filedatarecord), referenced_names
                 )
+                if filesafename is None:
+                    continue
+                with open(join("Files-Referenced", filesafename), "wb") as binfile:
+                    binfile.write(content)
 
-    if args.nofiles:
         report_incomplete_records(db)
-        return
-
-    # Write all files from the file table. This is useful for unreferenced files
-    for table in db.enumerate_tables(files=True):
-        filedir = "Files-" + safepathname(table.abbrev)
-        mkdir(filedir)
-
-        for system_number, content in db.enumerate_files(table):
-            with open(join(filedir, str(system_number)), "wb") as binfile:
-                binfile.write(content)
-
-    if len(filereferences):
-        filedir = "Files-Referenced"
-        mkdir(filedir)
-
-    # Write all referenced files with their filename and extension intact, as far as that is safe and unique
-    referenced_names = {}
-    for tablename, recno, reffile in filereferences:
-        if reffile.content:  # only print when file is not NULL
-            content = referenced_file(db, tablename, recno, reffile)
-            if content is None:
-                continue
-            filesafename = unique_file_name(
-                reffile.filename, reffile.extname, int(reffile.filedatarecord), referenced_names
-            )
-            if filesafename is None:
-                continue
-            with open(join("Files-Referenced", filesafename), "wb") as binfile:
-                binfile.write(content)
-
-    report_incomplete_records(db)
 
 
 def main():
