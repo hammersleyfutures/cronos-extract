@@ -1,0 +1,21 @@
+Warning: FieldDefinition Section 2 not marked with a 2
+
+
+CREATE TABLE "erdgeist" (
+        "Системный номер" INTEGER PRIMARY KEY, 
+        "Entry #1" INTEGER, 
+        "Entry #2" VARCHAR(100000), 
+        "Entry #3" TEXT, 
+        "Entry #4" DATE, 
+        "Entry #5" TIMESTAMP, 
+        "Entry #6" TEXT, 
+        "Entry #7" TEXT, 
+        "Entry #8" TEXT, 
+        "Entry #9" TEXT, 
+        "Entry #10" TEXT, 
+        "Entry #11" TEXT
+);
+
+INSERT INTO "erdgeist" VALUES
+;
+

@@ -1,3 +1,5 @@
+# ABOUTME: ByteReader: sequential little-endian reader over a bytes buffer.
+# ABOUTME: Raises EOFError on reads past the end; used by all structure decoders.
 import struct
 
 

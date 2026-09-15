@@ -1,17 +1,24 @@
-# cronodump
+# cronos-extract
 
-The cronodump utility can parse most of the databases created by the [CronosPro](https://www.cronos.ru/) database software
-and dump it to several output formats.
+cronos-extract parses most of the databases created by the [CronosPro](https://www.cronos.ru/) database software
+and dumps them to several output formats.
 
 The software is popular among Russian public offices, companies and police agencies.
+
+cronos-extract is a successor to [cronodump](https://github.com/alephdata/cronodump) by Willem Hengeveld and
+Dirk Engling, published by the Organized Crime and Corruption Reporting Project. It continues from cronodump's
+`master` branch together with the assisted KOD recovery work from
+[alephdata/cronodump#13](https://github.com/alephdata/cronodump/pull/13). The full history of the original project
+is kept in this repository.
 
 
 # Quick start
 
-In its simplest form, without any dependencies, the croconvert command creates a [CSV](https://en.wikipedia.org/wiki/Comma-separated_values) representation of all the database's tables and a copy of all files contained in the database:
+In its simplest form, the croconvert command creates a [CSV](https://en.wikipedia.org/wiki/Comma-separated_values) representation of all the database's tables and a copy of all files contained in the database:
 
 ```bash
-bin/croconvert --csv test_data/all_field_types
+uv tool install git+https://github.com/hammersleyfutures/cronos-extract
+croconvert --csv test_data/all_field_types
 ```
 
 By default it creates a `cronodump-YYYY-mm-DD-HH-MM-SS-ffffff/` directory containing CSV files for each table found. It will under this directory also create a `Files-FL/` directory containing all the files stored in the Database, regardless if they are (still) referenced in any data table. All files that are actually referenced (and thus are known by their filename) will be stored under the `Files-Referenced` directory. With the `--outputdir` option you can chose your own dump location.
@@ -21,45 +28,41 @@ When you get an error message, or just unreadable data, chances are your databas
 
 # Templates
 
-The croconvert command can use the powerful [jinja templating framework](https://jinja.palletsprojects.com/en/3.0.x/) to render more file formats like PostgreSQL and HTML.
-The default action for `croconvert` is to convert the database using the `html` template.
-Use
+The croconvert command uses the [jinja templating framework](https://jinja.palletsprojects.com/) to render more file formats like PostgreSQL and HTML.
+The default action for `croconvert` is to convert the database using the `html` template:
 
 ```bash
-python3 -m venv ./venc
-. venv/bin/activate
-pip install jinja2
-bin/croconvert test_data/all_field_types > test_data.html
+croconvert test_data/all_field_types > test_data.html
 ```
 
-to dump an HTML file with all tables found in the database, files listed and ready for download as inlined [data URI](https://en.wikipedia.org/wiki/Data_URI_scheme) and all table images inlined as well. Note that the resulting HTML file can be huge for large databases, causing a lot of load on browsers when trying to open them.
+This dumps an HTML file with all tables found in the database, files listed and ready for download as inlined [data URI](https://en.wikipedia.org/wiki/Data_URI_scheme) and all table images inlined as well. Note that the resulting HTML file can be huge for large databases, causing a lot of load on browsers when trying to open them.
 
 
 The `-t postgres` command will dump the table schemes and records as valid `CREATE TABLE` and `INSERT INTO` statements to stdout. This dump can then be imported in a PostgreSQL database. Note that the backslash character is not escaped and thus the [`standard_conforming_strings`](https://www.postgresql.org/docs/current/runtime-config-compatible.html#GUC-STANDARD-CONFORMING-STRINGS) option should be off.
 
-Pull requests for [more templates supporting other output types](/templates) are welcome.
+Pull requests for [more templates supporting other output types](src/cronos_extract/templates) are welcome.
 
 
 # Inspection
 
-There's a `bin/crodump` tool to further investigate databases. This might be useful for extracting metadata like path names of table image files or input and output forms. Not all metadata has yet been completely reverse engineered, so some experience with understanding binary dumps might be required.
+The `crodump` command helps to further investigate databases. This might be useful for extracting metadata like path names of table image files or input and output forms. Not all metadata has yet been completely reverse engineered, so some experience with understanding binary dumps might be required.
 
-The crodump script has a plethora of options but in the most basic for the `strudump` sub command will provide a rich variety of metadata to look further:
+The crodump command has a plethora of options but in the most basic for the `strudump` sub command will provide a rich variety of metadata to look further:
 
 ```bash
-bin/crodump strudump -v -a test_data/all_field_types/
+crodump strudump -v -a test_data/all_field_types/
 ```
 The `-a` option tells strudump to output ascii instead of a hexdump.
 
 For a low level dump of the database contents, use:
 ```bash
-bin/crodump crodump -v  test_data/all_field_types/
+crodump crodump -v  test_data/all_field_types/
 ```
 The `-v` option tells crodump to include all unused byte ranges, this may be useful when identifying deleted records.
 
 For a bit higher level dump of the database contents, use:
 ```bash
-bin/crodump recdump  test_data/all_field_types/
+crodump recdump  test_data/all_field_types/
 ```
 This will print a hexdump of all records for all tables.
 
@@ -67,7 +70,7 @@ This will print a hexdump of all records for all tables.
 ## decoding password protected databases
 
 Cronos v4 and higher are able to password protect databases, the protection works
-by modifying the KOD sbox. `cronodump` has two methods of deriving the KOD sbox from
+by modifying the KOD sbox. cronos-extract has two methods of deriving the KOD sbox from
 a database:
 
 Both these methods are statistics based operations, it may not always
@@ -94,15 +97,24 @@ The `--dbcrack` option will do this.
 
 # Installing
 
-`cronodump` requires python 3.7 or later. It has been tested on Linux, MacOS and Windows.
-There is one optional requirement: the `Jinja2` templating engine, but it will install fine without.
+cronos-extract requires Python 3.12 or later and installs the `Jinja2` templating engine as its only dependency.
 
-There are several ways of installing `cronodump`:
+ * Install the `crodump` and `croconvert` commands with `uv tool install git+https://github.com/hammersleyfutures/cronos-extract`.
+ * Or run them from a clone of this repository with `uv run crodump ...` and `uv run croconvert ...`.
 
- * You can run `cronodump` directly from the cloned git repository, by using the shell scripts in the `bin` subdirectory.
- * You can install `cronodump` in your python environment by ruinning: `python setup.py  build install`.
- * You can install `cronodump` from the public [pypi repository](https://pypi.org/project/cronodump/) with `pip install cronodump`.
- * You can install `cronodump` with the `Jinja2` templating engine from the public [pypi repository](https://pypi.org/project/cronodump/) with `pip install cronodump[templates]`.
+
+# Development
+
+```bash
+uv sync                      # create the virtual environment with the dev tools
+uv run pre-commit install    # lint, format, type-check and test before each commit
+uv run pytest -q             # run the tests
+uv run ruff check && uv run ruff format --check && uv run ty check
+```
+
+The characterisation tests in `tests/test_cli_characterisation.py` compare command output with the files in
+`tests/golden/`. After a deliberate output change, run `uv run pytest --update-golden` and review the diff of the
+golden files before committing.
 
 
 # Terminology
@@ -121,12 +133,13 @@ Here is a table showing how cronos calls these:
 
 # License
 
-cronodump is released under the [MIT license](LICENSE).
+cronos-extract is released under the [MIT license](LICENSE), which retains the copyright notice of the original
+cronodump project.
 
 
 # References
 
-cronodump builds upon [documentation of the file format found in older versions of Cronos](http://sergsv.narod.ru/cronos.htm) and
+cronodump built upon [documentation of the file format found in older versions of Cronos](http://sergsv.narod.ru/cronos.htm) and
 the [subsequent implementation of a parser for the old file format](https://github.com/occrp/cronosparser) but dropped the heuristic
 approach to guess offsets and obfuscation parameters for a more rigid parser. Refer to [the docs](docs/cronos-research.md) for further
 details.

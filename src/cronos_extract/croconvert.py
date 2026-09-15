@@ -1,3 +1,5 @@
+# ABOUTME: croconvert command: converts a CronosPro database to CSV files or to Jinja2 template output.
+# ABOUTME: Selects the KOD table from --kod, --nokod, --strucrack or --dbcrack before converting.
 """
 Commandline tool which convert a cronos database to .csv, .sql or .html.
 
@@ -25,7 +27,7 @@ def template_convert(kod, args):
 
     db = Database(args.dbdir, args.compact, kod)
 
-    template_dir = join(dirname(dirname(abspath(__file__))), "templates")
+    template_dir = join(dirname(abspath(__file__)), "templates")
     j2_env = Environment(loader=FileSystemLoader(template_dir))
     j2_templ = j2_env.get_template(args.template + ".j2")
     j2_templ.stream(db=db, base64=base64).dump(stdout)
@@ -102,11 +104,11 @@ def main():
     parser.add_argument("dbdir", type=str)
     args = parser.parse_args()
 
-    import crodump.koddecoder
+    from . import koddecoder
     if args.kod:
         if len(args.kod)!=512:
             raise Exception("--kod should have a 512 hex digit argument")
-        kod = crodump.koddecoder.new(list(unhex(args.kod)))
+        kod = koddecoder.new(list(unhex(args.kod)))
     elif args.nokod:
         kod = None
     elif args.strucrack or args.dbcrack:
@@ -124,9 +126,9 @@ def main():
             exit(
             "Can't automatically crack the database password. Try using   crodump strucrack   and pass the database key (KOD) using --kod"
             )
-        kod = crodump.koddecoder.new(cracked)
+        kod = koddecoder.new(cracked)
     else:
-        kod = crodump.koddecoder.new()
+        kod = koddecoder.new()
 
     if args.csv:
         if not args.outputdir:

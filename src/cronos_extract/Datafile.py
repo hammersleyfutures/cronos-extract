@@ -1,8 +1,10 @@
+# ABOUTME: Datafile: reads the records of one CronosPro .dat file through its .tad index.
+# ABOUTME: Handles v3/v4 headers, extension blocks, KOD decoding and zlib decompression.
 import io
 import struct
 import zlib
 from .hexdump import tohex, toout
-import crodump.koddecoder
+from . import koddecoder
 
 class Datafile:
     """Represent a single .dat with it's .tad index file"""
@@ -19,7 +21,7 @@ class Datafile:
         self.dat.seek(0, io.SEEK_END)
         self.datsize = self.dat.tell()
 
-        self.kod = kod if not kod or self.isencrypted() else crodump.koddecoder.new()
+        self.kod = kod if not kod or self.isencrypted() else koddecoder.new()
 
     def isencrypted(self):
         return self.version in (b'01.04', b'01.05') or self.isv4()

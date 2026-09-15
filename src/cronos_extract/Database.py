@@ -1,3 +1,5 @@
+# ABOUTME: Database: opens the Cro*.dat/.tad file pairs found in a CronosPro database directory.
+# ABOUTME: Decodes the database and table definitions from CroStru and enumerates tables, records and files.
 from __future__ import print_function, division
 import os
 import re
@@ -9,7 +11,7 @@ from .Datamodel import TableDefinition, Record
 from .Datafile import Datafile
 import base64
 import struct
-import crodump.koddecoder
+from . import koddecoder
 
 import sys
 if sys.version_info[0] == 2:
@@ -19,7 +21,7 @@ if sys.version_info[0] == 2:
 class Database:
     """represent the entire database, consisting of Stru, Index and Bank files"""
 
-    def __init__(self, dbdir, compact, kod=crodump.koddecoder.new()):
+    def __init__(self, dbdir, compact, kod=koddecoder.new()):
         """
         `dbdir` is the directory containing the Cro*.dat and Cro*.tad files.
         `compact` if set, the .tad file is not cached in memory, making dumps 15 % slower
@@ -149,7 +151,7 @@ class Database:
 
         # NS1 is encoded with the default KOD table,
         # so we are not using stru.kod here.
-        ns1kod = crodump.koddecoder.new()
+        ns1kod = koddecoder.new()
         decoded_data = ns1kod.decode(sh, data[2:])
 
         if len(decoded_data) < 12:

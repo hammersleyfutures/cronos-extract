@@ -1,3 +1,5 @@
+# ABOUTME: crodump command: subcommands for inspecting CronosPro databases and recovering KOD tables.
+# ABOUTME: Includes strucrack and dbcrack, which derive the KOD substitution table statistically.
 from .kodump import kod_hexdump
 from .koddecoder import INITIAL_KOD, match_with_mismatches
 from .hexdump import unhex, tohex, asambigoushex, asasc, aschr, as1251, ashex
@@ -206,8 +208,8 @@ def strucrack(kod, args):
         if KOD_CONFIDENCE[o] < 255:
             KOD_CONFIDENCE[o] = -1
 
-    import crodump.koddecoder
-    kod = crodump.koddecoder.new(KOD, KOD_CONFIDENCE)
+    from . import koddecoder
+    kod = koddecoder.new(KOD, KOD_CONFIDENCE)
 
     known_strings = [
         (b'USERINFO', 4, b'\x08USERINFO', -1),
@@ -406,11 +408,11 @@ def main():
 
     args = parser.parse_args()
 
-    import crodump.koddecoder
+    from . import koddecoder
     if args.kod:
         if len(args.kod)!=512:
             raise Exception("--kod should have a 512 hex digit argument")
-        kod = crodump.koddecoder.new(list(unhex(args.kod)))
+        kod = koddecoder.new(list(unhex(args.kod)))
     elif args.nokod:
         kod = None
     elif args.strucrack:
@@ -427,7 +429,7 @@ def main():
         cracked = strucrack(None, cargs)
         if not cracked:
             return
-        kod = crodump.koddecoder.new(cracked)
+        kod = koddecoder.new(cracked)
     elif args.dbcrack:
         class Cls: pass
         cargs = Cls()
@@ -438,9 +440,9 @@ def main():
         cracked = dbcrack(None, cargs)
         if not cracked:
             return
-        kod = crodump.koddecoder.new(cracked)
+        kod = koddecoder.new(cracked)
     else:
-        kod = crodump.koddecoder.new()
+        kod = koddecoder.new()
 
     if args.handler:
         args.handler(kod, args)

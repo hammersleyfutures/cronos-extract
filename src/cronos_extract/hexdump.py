@@ -1,3 +1,5 @@
+# ABOUTME: Helpers that convert bytes to hex, CP-1251 text and C-style escaped strings.
+# ABOUTME: Also prints offset-prefixed hex and text dumps for the inspection commands.
 """
 Several functions for converting bytes to readable text or hex bytes.
 """

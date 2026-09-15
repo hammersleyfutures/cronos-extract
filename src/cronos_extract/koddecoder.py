@@ -1,3 +1,5 @@
+# ABOUTME: KOD substitution cipher that CronosPro uses to obfuscate records.
+# ABOUTME: Provides the default KOD table, shifted decode/encode, and fuzzy known-string matching.
 """
 Decode CroStru KOD encoding.
 """

@@ -1,3 +1,5 @@
+# ABOUTME: Example script that prints table definitions and the first records of one or more databases.
+# ABOUTME: Shows how to enumerate tables and records with the Database API.
 """
 `dumpdbfields` demonstrates how to enumerate tables and records.
 """
@@ -35,11 +37,11 @@ def main():
 
     for path in processargs(args):
         try:
-            import crodump.koddecoder
+            from . import koddecoder
             if args.kod:
                 if len(args.kod)!=512:
                     raise Exception("--kod should have a 512 hex digit argument")
-                kod = crodump.koddecoder.new(list(unhex(args.kod)))
+                kod = koddecoder.new(list(unhex(args.kod)))
             elif args.nokod:
                 kod = None
             elif args.strucrack:
@@ -51,7 +53,7 @@ def main():
                 cracked = strucrack(None, cargs)
                 if not cracked:
                     return
-                kod = crodump.koddecoder.new(cracked)
+                kod = koddecoder.new(cracked)
             elif args.dbcrack:
                 class Cls: pass
                 cargs = Cls()
@@ -61,9 +63,9 @@ def main():
                 cracked = dbcrack(None, cargs)
                 if not cracked:
                     return
-                kod = crodump.koddecoder.new(cracked)
+                kod = koddecoder.new(cracked)
             else:
-                kod = crodump.koddecoder.new()
+                kod = koddecoder.new()
 
             db = Database(path, kod)
             for tab in db.enumerate_tables():

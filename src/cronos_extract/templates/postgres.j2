@@ -1,3 +1,5 @@
+{#- ABOUTME: Jinja2 template that renders CronosPro tables as PostgreSQL CREATE TABLE and INSERT statements. -#}
+{#- ABOUTME: Quotes identifiers and doubles single quotes in values. -#}
 {% for table in db.enumerate_tables(files=False) %}
 
 CREATE TABLE "{{ table.tablename | replace('"', '_') }}" (
