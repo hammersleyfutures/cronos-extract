@@ -294,16 +294,20 @@ def derive_kod_from_stru(db, args):
             )
         )
 
-    # If the KOD is not completely resolved, show the missing mappings
-    unset_count = KOD_CONFIDENCE.count(0)
-    if unset_count > 0:
+    # If the KOD is not completely resolved, show the missing mappings. Entries with a duplicate value
+    # count as unresolved, and a KOD that is not a permutation of 0..255 can't decode the database.
+    unset_count = len([o for o in KOD_CONFIDENCE if o <= 0])
+    if unset_count > 0 or sorted(KOD) != list(range(256)):
         if args.noninteractive:
             return
         if not args.silent:
-            unset_entries = ", ".join([f"{o:02x}" for o, v in enumerate(KOD) if KOD_CONFIDENCE[o] == 0])
-            unused_values = ", ".join([f"{v:02x}" for v in sorted(set(range(0, 256)).difference(set(kod_set)))])
+            kod_set = set([v for o, v in enumerate(KOD) if KOD_CONFIDENCE[o] > 0])
+            unset_entries = ", ".join([f"{o:02x}" for o, v in enumerate(KOD) if KOD_CONFIDENCE[o] <= 0])
+            unused_values = ", ".join([f"{v:02x}" for v in sorted(set(range(0, 256)).difference(kod_set))])
             print(f"\nAmbigous result when cracking. {unset_count:d} entries unsolved. Missing mappings:")
             print(f"[{unset_entries}] => [{unused_values}]\n")
+            if unset_count == 0:
+                print("The forced KOD entries map several entries to the same value, see the duplicates above.\n")
             print("KOD estimate:")
             print(
                 "".join(
@@ -314,7 +318,7 @@ def derive_kod_from_stru(db, args):
 
             print("\nIf you can provide clues for unresolved KOD entries by looking at the output, pass them via")
             print("crodump strucrack -f f103=B  -f f10342")
-        return [0 if KOD_CONFIDENCE[o] == 0 else _ for o, _ in enumerate(KOD)]
+        return None
 
     if not args.silent:
         print(
@@ -361,6 +365,13 @@ def derive_kod_from_bank_and_index(db, args):
     for i, xx in enumerate(xref):
         k, _count = max(enumerate(xx), key=lambda kv: kv[1])
         KOD[k] = i
+
+    # Rows that found no data, or lost their byte to another row, leave values out of the KOD.
+    unset_count = 256 - len(set(KOD))
+    if unset_count > 0:
+        if not args.silent:
+            print(f"Ambigous result when cracking. {unset_count:d} entries unsolved: too few CroBank/CroIndex records")
+        return None
 
     if not args.silent:
         print(tohex(bytes(KOD)))
