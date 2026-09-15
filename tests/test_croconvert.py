@@ -173,3 +173,15 @@ def test_csv_export_gives_referenced_files_safe_unique_names(tmp_path: Path) -> 
         "same-4.txt": b"four",
         "nul_byte.bin": b"five",
     }
+
+
+def test_tad_leftover_warning_goes_to_stderr_not_into_the_sql(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [])
+    with (Path(dbdir) / "CroBank.tad").open("ab") as tad:
+        tad.write(b"\x00\x00\x00")
+
+    result = run_croconvert(["-t", "postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert "WARN" not in result.stdout
+    assert "WARN: leftover data in .tad" in result.stderr

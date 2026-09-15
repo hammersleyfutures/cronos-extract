@@ -2,6 +2,7 @@
 # ABOUTME: Handles v3/v4 headers, extension blocks, KOD decoding and zlib decompression.
 import io
 import struct
+import sys
 import zlib
 
 from . import koddecoder
@@ -106,7 +107,7 @@ class Datafile:
         self.tadsize = self.tad.tell() - self.tadhdrlen
         self.nrofrecords = self.tadsize // self.tadentrysize
         if self.tadsize % self.tadentrysize:
-            print("WARN: leftover data in .tad")
+            print("WARN: leftover data in .tad", file=sys.stderr)
 
     def tadidx(self, idx):
         """
