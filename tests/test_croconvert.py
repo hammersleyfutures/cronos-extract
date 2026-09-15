@@ -1,17 +1,21 @@
 # ABOUTME: Tests for the croconvert command's HTML, PostgreSQL and CSV exports of crafted and sample databases.
 # ABOUTME: They run the real command as a subprocess and check its stdout, stderr and output files.
+import csv
+import struct
 import subprocess
 import sys
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import override
 
+import pytest
 from cronos_builder import (
     TEST_DB,
     TEST_TABLE_FIELD_COUNT,
     TEST_TABLE_FILE_FIELD_INDEX,
     TEST_TABLE_ID,
     bank_record,
+    complex_field,
     file_record,
     file_reference_field,
     write_database,
@@ -185,3 +189,66 @@ def test_tad_leftover_warning_goes_to_stderr_not_into_the_sql(tmp_path: Path) ->
     assert result.returncode == 0, result.stderr
     assert "WARN" not in result.stdout
     assert "WARN: leftover data in .tad" in result.stderr
+
+
+def partly_broken_records_database(directory: Path) -> str:
+    """Write a database with one intact record and two whose fields fail to decode.
+
+    Record 2's second field claims 100 bytes but holds 3, so no later field can be read either.
+    Record 3's file reference field is too short to decode, but the field after it is intact.
+    """
+    intact = [b""] * TEST_TABLE_FIELD_COUNT
+    intact[0] = b"intact"
+    truncated = [b""] * TEST_TABLE_FIELD_COUNT
+    truncated[0] = b"first"
+    truncated[1] = b"\x1b" + struct.pack("<L", 100) + b"abc"
+    short_file = [b""] * TEST_TABLE_FIELD_COUNT
+    short_file[0] = b"first"
+    short_file[TEST_TABLE_FILE_FIELD_INDEX] = complex_field(b"\x01")
+    short_file[TEST_TABLE_FILE_FIELD_INDEX + 1] = b"after"
+    return write_database(
+        directory,
+        [
+            bank_record(TEST_TABLE_ID, intact),
+            bank_record(TEST_TABLE_ID, truncated),
+            bank_record(TEST_TABLE_ID, short_file),
+        ],
+    )
+
+
+def assert_partly_broken_record_warnings(stderr: str) -> None:
+    lines = stderr.splitlines()
+    for recno, fieldname in [(2, "Entry #2"), (3, "Entry #6")]:
+        assert any("Warning" in line and f"record {recno}" in line and f'"{fieldname}"' in line for line in lines), (
+            f"no warning about field {fieldname} of record {recno} in stderr: {stderr}"
+        )
+    assert "2 records" in lines[-1], f"no count of affected records at the end of stderr: {stderr}"
+
+
+def test_csv_export_keeps_the_decoded_fields_of_broken_records(tmp_path: Path) -> None:
+    dbdir = partly_broken_records_database(tmp_path / "db")
+    outdir = tmp_path / "out"
+
+    result = run_croconvert(["--csv", "-o", str(outdir), dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert_partly_broken_record_warnings(result.stderr)
+    with (outdir / "erdgeist.csv").open(encoding="utf-8", newline="") as csvfile:
+        rows = list(csv.reader(csvfile))[1:]
+    assert rows == [
+        ["1", "intact", "", "", "", "", "", "", "", "", "", ""],
+        ["2", "first", "", "", "", "", "", "", "", "", "", ""],
+        ["3", "first", "", "", "", "", "", "after", "", "", "", ""],
+    ]
+
+
+@pytest.mark.parametrize("template_args", [[], ["-t", "postgres"]], ids=["html", "postgres"])
+def test_template_export_keeps_the_decoded_fields_of_broken_records(tmp_path: Path, template_args: list[str]) -> None:
+    dbdir = partly_broken_records_database(tmp_path / "db")
+
+    result = run_croconvert([*template_args, dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert_partly_broken_record_warnings(result.stderr)
+    assert "intact" in result.stdout
+    assert "after" in result.stdout

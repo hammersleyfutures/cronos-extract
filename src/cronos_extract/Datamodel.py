@@ -254,14 +254,34 @@ class Record:
         # the system number, in russian: Системный номер.
         self.fields = [Field(tabledef[0], str(recno))]
 
+        # (field name, description of the error) for every field that could not be decoded.
+        # Those fields are kept with empty content, so the record still has one field per field definition.
+        self.errors = []
+
         rd = ByteReader(data)
         for fielddef in tabledef[1:]:
-            if not rd.eof() and rd.testbyte(0x1B):
-                # read complex record indicated by b"\x1b"
-                rd.readbyte()
-                size = rd.readdword()
-                fielddata = rd.readbytes(size)
-            else:
-                fielddata = rd.readtoseperator(b"\x1e")
+            try:
+                if not rd.eof() and rd.testbyte(0x1B):
+                    # read complex record indicated by b"\x1b"
+                    rd.readbyte()
+                    size = rd.readdword()
+                    fielddata = rd.readbytes(size)
+                else:
+                    fielddata = rd.readtoseperator(b"\x1e")
+            except Exception as e:
+                # Without this field's length, the start of the next field is unknown: leave the rest empty too.
+                self.errors.append((fielddef.name, f"{describe_error(e)}; the fields after it are left empty too"))
+                self.fields.extend(Field(emptydef, b"") for emptydef in tabledef[len(self.fields) :])
+                return
 
-            self.fields.append(Field(fielddef, fielddata))
+            try:
+                self.fields.append(Field(fielddef, fielddata))
+            except Exception as e:
+                self.errors.append((fielddef.name, describe_error(e)))
+                self.fields.append(Field(fielddef, b""))
+
+
+def describe_error(error):
+    """Return the type and, when it has one, the message of `error`, such as "EOFError" or "ValueError: bad"."""
+    message = str(error)
+    return f"{type(error).__name__}: {message}" if message else type(error).__name__

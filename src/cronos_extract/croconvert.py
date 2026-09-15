@@ -36,6 +36,17 @@ def referenced_file(db, tablename, recno, field, asbase64=False):
     return content
 
 
+def report_incomplete_records(db):
+    """Print how many records had fields that could not be decoded, when there were any."""
+    if db.incomplete_records:
+        records = "record" if db.incomplete_records == 1 else "records"
+        print(
+            f"Warning: {db.incomplete_records} {records} had fields that could not be decoded; "
+            "those fields are empty in the output",
+            file=sys.stderr,
+        )
+
+
 def template_convert(kod, args):
     """looks up template to convert to, parses the database and passes it to jinja2"""
     try:
@@ -50,6 +61,7 @@ def template_convert(kod, args):
     j2_env = Environment(loader=FileSystemLoader(template_dir), autoescape=lambda name: name == "html.j2")
     j2_templ = j2_env.get_template(args.template + ".j2")
     stdout.writelines(j2_templ.generate(db=db, base64=base64, referenced_file=referenced_file))
+    report_incomplete_records(db)
 
 
 def safepathname(name):
@@ -107,6 +119,7 @@ def csv_output(kod, args):
                 )
 
     if args.nofiles:
+        report_incomplete_records(db)
         return
 
     # Write all files from the file table. This is useful for unreferenced files
@@ -136,6 +149,8 @@ def csv_output(kod, args):
                 continue
             with open(join("Files-Referenced", filesafename), "wb") as binfile:
                 binfile.write(content)
+
+    report_incomplete_records(db)
 
 
 def main():

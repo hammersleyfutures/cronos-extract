@@ -18,6 +18,9 @@ from .readers import ByteReader
 class Database:
     """represent the entire database, consisting of Stru, Index and Bank files"""
 
+    # The number of records enumerate_records yielded with fields that could not be decoded.
+    incomplete_records = 0
+
     def __init__(self, dbdir, compact, kod=koddecoder.new()):
         """
         `dbdir` is the directory containing the Cro*.dat and Cro*.tad files.
@@ -229,12 +232,16 @@ class Database:
         for i in range(self.bank.nrofrecords):
             data = self.bank.readrec(i + 1)
             if data and data[0] == table.tableid:
-                try:
-                    yield Record(i + 1, table.fields, data[1:])
-                except EOFError:
-                    print(f"Record {i + 1:d} too short: -- {ashex(data)}", file=sys.stderr)
-                except Exception as e:
-                    print(f"Record {i + 1:d} broken: ERROR '{e}' -- {ashex(data)}", file=sys.stderr)
+                record = Record(i + 1, table.fields, data[1:])
+                if record.errors:
+                    self.incomplete_records += 1
+                for fieldname, error in record.errors:
+                    print(
+                        f'Warning: record {i + 1:d} in table "{table.tablename}": field "{fieldname}" could not be '
+                        f"decoded ({error}) and is left empty -- {ashex(data)}",
+                        file=sys.stderr,
+                    )
+                yield record
             del data
 
     def enumerate_files(self, table):
