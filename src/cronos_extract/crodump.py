@@ -222,7 +222,6 @@ def kod_from_xref(xref):
             continue
 
         #       Display the confidence, matches under 3 usually are unreliable
-        #       print("%02x :: %02x :: %d" % (i, k, v))
         KOD[k] = i
         KOD_CONFIDENCE[k] = v
     return KOD, KOD_CONFIDENCE
@@ -254,18 +253,12 @@ def derive_kod_from_stru(db, args):
 
     KOD, KOD_CONFIDENCE = kod_from_xref(xref)
 
-    #       Test deducted KOD against the default one, for debugging purposes
-    #        if KOD[k] != INITIAL_KOD[k]:
-    #            print("# KOD[%02x] == %02x, should be %02x" % (i, KOD[i], INITIAL_KOD[i]))
-    #            KOD[k] = -1
-
     # Entries the user forced with --fix or --text keep their value when they duplicate another entry
     KOD_FORCED = [False] * 256
     for i, o, c in args.fix or []:
         KOD[i] = (c + o) % 256
         KOD_CONFIDENCE[i] = 255
         KOD_FORCED[i] = True
-        # print("%02x %02x %02x" % ((c + o) % 256, i, o))
 
     # For chunks of text where record and offset is known, set the KOD
     for record, dataoff, text in args.text or []:
@@ -352,7 +345,6 @@ def derive_kod_from_stru(db, args):
 
         for s, min_matching, deststring, destoffset in known_strings:
             incomplete_matches = match_with_mismatches(candidate, candidate_confidence, s, min_matching)
-            # print(sisnm)
             for ofix in incomplete_matches:
                 do = ofix[0]
                 print(f"Found {asasc(candidate[do : do + len(s)])} which looks a lot like {asasc(s)} ")
