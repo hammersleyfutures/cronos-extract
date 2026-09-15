@@ -1,0 +1,9 @@
+# ABOUTME: Commits that only reformat code, skipped by git blame so lines stay attributed to their authors.
+# ABOUTME: GitHub applies this file automatically; locally run: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# Format code with ruff
+8cf86e443b36b8e75cee017b7c4a81035d60885b
+# Replace printf-style formatting that ruff converts safely
+66d936e7f6d8f71a369e49e7bc5b549a1a9e0a31
+# Use f-strings instead of str.format calls
+cc9fc5ea98b2b8031ddf73f15e55a77070040ecb
