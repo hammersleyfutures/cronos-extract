@@ -108,7 +108,7 @@ class Datafile:
             self.nrdeleted, self.firstdeleted = struct.unpack("<2L", hdrdata)
         elif self.isv4():
             hdrdata = self.tad.read(4 * 4)
-            _unk1, self.nrdeleted, self.firstdeleted, _unk2 = struct.unpack("<4L", hdrdata)
+            _, self.nrdeleted, self.firstdeleted, _ = struct.unpack("<4L", hdrdata)
         else:
             raise Exception("unsupported .tad version")
 
@@ -164,7 +164,7 @@ class Datafile:
         """
         if idx == 0:
             raise Exception("recnum must be a positive number")
-        ofs, ln, _chk = self.tadidx(idx - 1)
+        ofs, ln, _ = self.tadidx(idx - 1)
         if ln == 0xFFFFFFFF:
             # deleted record
             return None
@@ -363,8 +363,7 @@ class Datafile:
         o = 0
         while o < len(data) - 3:
             # note the mix of bigendian and little endian numbers here.
-            size, _flag = struct.unpack_from(">HH", data, o)
-            (_storedcrc,) = struct.unpack_from("<L", data, o + 4)
+            size, _ = struct.unpack_from(">HH", data, o)
 
             C = zlib.decompressobj(-15)
             result += C.decompress(data[o + 8 : o + 8 + size - 6])
