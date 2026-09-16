@@ -26,6 +26,34 @@ By default it creates a `cronodump-YYYY-mm-DD-HH-MM-SS-ffffff/` directory contai
 When you get an error message, or just unreadable data, chances are your database is protected. You may need to look into the `--dbcrack` or `--strucrack` options, explained below.
 
 
+# Surveying databases
+
+Before exporting anything, `cronos-extract survey` reports which CronosPro version each database uses. It reads only
+the 19-byte header of every `Cro*.dat` file: no records, no file contents.
+
+```bash
+cronos-extract survey /path/to/databases            # a block per database
+cronos-extract survey --counts /path/to/databases   # totals only, naming no directories
+cronos-extract survey --jsonl /path/to/databases    # one JSON object per database, for scripts
+```
+
+`--counts` totals the files found for each version and generation, and ends with an `unreadable files: N` line when
+any header could not be read.
+
+To survey databases kept in several places, name them in a text file, one path per line, and survey them as one
+group. Blank lines and lines starting with `#` are ignored, and a relative path is taken from the current
+directory. A path that is no longer a directory, and a directory that cannot be listed, are each reported on stderr
+and skipped. A database found under two of the paths is reported once.
+
+```bash
+cronos-extract survey --list /path/to/list.txt --counts
+```
+
+Versions `01.02`–`01.05` are v3, `01.11`, `01.13` and `01.14` are v4, and `01.19` is v7. The survey reports whichever
+version it finds, including v7 and versions it does not recognise. The export and inspection commands read v3 and v4,
+and do not read v7 yet.
+
+
 # Templates
 
 The croconvert command uses the [jinja templating framework](https://jinja.palletsprojects.com/) to render more file formats like PostgreSQL and HTML.
@@ -99,8 +127,8 @@ The `--dbcrack` option will do this.
 
 cronos-extract requires Python 3.12 or later and installs the `Jinja2` templating engine as its only dependency.
 
- * Install the `crodump` and `croconvert` commands with `uv tool install git+https://github.com/hammersleyfutures/cronos-extract`.
- * Or run them from a clone of this repository with `uv run crodump ...` and `uv run croconvert ...`.
+ * Install the `cronos-extract`, `crodump` and `croconvert` commands with `uv tool install git+https://github.com/hammersleyfutures/cronos-extract`.
+ * Or run them from a clone of this repository with `uv run cronos-extract ...`, `uv run crodump ...` and `uv run croconvert ...`.
 
 
 # Development

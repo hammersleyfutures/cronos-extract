@@ -85,7 +85,7 @@ with cronos_extract.open(path, kod=..., compact=False, on_diagnostic=None) as ba
 cronos-extract [--kod HEX | --nokod | --crack strucrack|dbcrack] [--compact] <subcommand>
 ```
 
-- `survey [--counts|--jsonl] DIR...`
+- `survey [--list FILE] [--counts|--jsonl] [DIR...]`
 - `export --csv|--postgres|--jsonl [-o PATH] [--delimiter ,] [--no-files] DB`
 - `inspect strudump|recdump|crodump|destruct|kodump [options] DB`
 - `crack strucrack|dbcrack [--noninteractive] [--silent] DB`
@@ -100,16 +100,18 @@ A `.dat` file starts with a 19-byte header, `struct.unpack("<8sH5sHH", ...)`: ma
 
 ### Behaviour
 
-- `cronos-extract survey [--counts | --jsonl] DIR...` walks each directory recursively without following symlinks, and treats every directory containing `Cro*.dat` files as one database. File names are matched case-insensitively.
+- `cronos-extract survey [--list FILE] [--counts | --jsonl] [DIR...]` walks each directory recursively without following symlinks, and treats every directory containing `Cro*.dat` files as one database. File names are matched case-insensitively.
+- **`--list FILE`:** survey the directories named in a text file, one per line, as one group, alone or alongside directories given as arguments. Blank lines and lines starting with `#` are ignored, and a relative path is taken from the current directory. A database found under more than one root is reported once, so `--counts` totals count it once.
 - **Default output:** a block per database — its path, then one line per file with the name (`Stru`, `Bank`, `Index`, `Sys` or another), version, generation (`v3`, `v4`, `v7`, or `unknown`), 32- or 64-bit, and whether it is KOD-encoded, compressed and encrypted with its own KOD.
 - **`--counts`:** totals per version and generation only, with no paths, for sensitive directory names.
 - **`--jsonl`:** one JSON object per database, for scripts and agents.
 - **Problems** (a file shorter than 19 bytes, an unknown magic, an unreadable file, an unknown version) are reported as a problem line for that file, and the walk continues. No tracebacks. Exit status 0 when the walk completes, 2 for a missing directory or a usage error.
+- **A list entry that is not a directory** is a warning on stderr and the run continues with exit status 0: the file is data, and a database may have moved since it was written. A directory given as an argument, a `--list` file that cannot be read, and giving neither a directory nor a list are usage errors with exit status 2.
 
 ### Files
 
 - `src/cronos_extract/cli.py` — the `cronos-extract` entry point: an argparse parser whose only subcommand is `survey` for now; Phase 2 adds the rest here.
-- `src/cronos_extract/survey.py` — finding databases, and the three output formats.
+- `src/cronos_extract/survey.py` — finding databases, reading a `--list` file, surveying several roots as one group without reporting a database twice, and the three output formats.
 - `src/cronos_extract/_format/header.py` — a frozen, annotated `DatHeader` and `read_dat_header(file) -> DatHeader`, raising `ValueError` for a short file or an unknown magic. `Datafile.readdathdr` is changed to use it, so the header is parsed in one place. This creates the internal `_format` package that Phase 3 fills.
 - `pyproject.toml` — adds the console script `cronos-extract = "cronos_extract.cli:main"`. The `crodump` and `croconvert` scripts stay until Phase 2.
 - New modules are fully annotated and ty-clean.

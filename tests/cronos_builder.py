@@ -58,6 +58,13 @@ def write_raw_datafile(
     (directory / f"Cro{name}.tad").write_bytes(tad)
 
 
+def write_header_only_datafile(directory: Path, name: str, version: bytes = b"01.19", encoding: int = 0) -> None:
+    """Write Cro<name>.dat holding only a file header, for versions this builder cannot write records for."""
+    directory.mkdir(parents=True, exist_ok=True)
+    header = DAT_HEADER.pack(b"CroFile\x00", 0, version, encoding, BLOCKSIZE)
+    (directory / f"Cro{name}.dat").write_bytes(header)
+
+
 def write_datafile(
     directory: Path, name: str, records: Sequence[bytes | None], kod: Sequence[int] | None = None
 ) -> None:
