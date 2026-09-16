@@ -16,7 +16,7 @@ This API promises:
 - Iteration is lazy: ``Table.records()`` and ``Bank.files()`` read one CroBank record per step. Each
   ``records()`` call walks all of CroBank.
 - A ``Bank`` is not thread-safe. Generators from one bank may be interleaved on one thread.
-- The library never prints. Problems reading survives are ``Diagnostic``s: ``bank.diagnostics`` keeps the first
+- The library never prints. Problems that reading survives are ``Diagnostic``s: ``bank.diagnostics`` keeps the first
   1,000, ``bank.diagnostic_counts`` counts every one, and ``on_diagnostic`` receives every one. Diagnostics from
   decoding a record are recorded each time the record is decoded. Later versions may add ``DiagnosticKind`` members.
 - ``Field.value`` is ``str``, ``datetime.date``, ``datetime.time``, ``FileReference`` or ``None``; later versions may

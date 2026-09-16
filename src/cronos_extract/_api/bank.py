@@ -109,7 +109,11 @@ class Bank:
 
     @property
     def diagnostic_counts(self) -> Mapping[DiagnosticKind, int]:
-        """The number of diagnostics of each kind that occurred, counting every one."""
+        """
+        The number of diagnostics of each kind that occurred, counting every one.
+
+        A kind that never occurred reads as 0, but is not `in` the mapping and is not among its keys.
+        """
         return self._log.counts
 
     @property

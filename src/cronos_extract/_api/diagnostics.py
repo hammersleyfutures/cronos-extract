@@ -85,6 +85,7 @@ class DiagnosticLog:
         self._callback_error: BaseException | None = None
         self._guarding = False
         self.kept: Sequence[Diagnostic] = DiagnosticsView(self._kept)
+        # A read-only view of a Counter: a kind that never occurred reads as 0 but is not a key.
         self.counts: Mapping[DiagnosticKind, int] = MappingProxyType(self._counts)
 
     def record(self, diagnostic: Diagnostic) -> None:

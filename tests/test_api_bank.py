@@ -162,6 +162,17 @@ def test_the_bank_keeps_the_first_diagnostics_and_counts_them_all(tmp_path: Path
 
 
 @pytest.mark.usefixtures("prints_nothing")
+def test_a_diagnostic_kind_that_never_occurred_counts_zero_but_is_not_a_key(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [person()])
+
+    with cronos_extract.open(dbdir) as bank:
+        counts = bank.diagnostic_counts
+        assert counts[DiagnosticKind.CORRUPT_RECORD] == 0
+        assert DiagnosticKind.CORRUPT_RECORD not in counts
+        assert dict(counts) == {DiagnosticKind.UNEXPECTED_STRUCTURE: 2}
+
+
+@pytest.mark.usefixtures("prints_nothing")
 def test_an_exception_from_on_diagnostic_stops_reading_and_the_bank_still_closes(tmp_path: Path) -> None:
     class StopReading(Exception):
         pass
