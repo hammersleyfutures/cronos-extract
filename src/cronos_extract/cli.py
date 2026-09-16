@@ -60,12 +60,14 @@ def collect_roots(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
     return roots
 
 
+def warn_unlistable(problem: OSError) -> None:
+    """Report on stderr a directory the survey cannot list."""
+    print(f"warning: {problem.filename} cannot be listed: {problem.strerror}; skipping it", file=sys.stderr)
+
+
 def run_survey(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     """Survey every directory given, printing the format the options ask for."""
-    problems: list[OSError] = []
-    databases = survey.survey_roots(collect_roots(args, parser), problems)
-    for problem in problems:
-        print(f"warning: {problem.filename} cannot be listed: {problem.strerror}; skipping it", file=sys.stderr)
+    databases = survey.survey_roots(collect_roots(args, parser), warn_unlistable)
     if args.counts:
         lines = survey.format_counts(databases)
     elif args.jsonl:

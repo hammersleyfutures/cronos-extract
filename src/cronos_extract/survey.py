@@ -3,7 +3,7 @@
 import json
 import os
 from collections import Counter
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,7 +24,7 @@ def is_dat_file(filename: str) -> bool:
     return lowered.startswith("cro") and lowered.endswith(".dat")
 
 
-def survey_databases(root: Path, problems: list[OSError] | None = None) -> Iterator[SurveyedDatabase]:
+def survey_databases(root: Path, on_problem: Callable[[OSError], object] | None = None) -> Iterator[SurveyedDatabase]:
     """
     Yield a SurveyedDatabase for every directory under `root` that holds Cro*.dat files.
 
@@ -32,11 +32,10 @@ def survey_databases(root: Path, problems: list[OSError] | None = None) -> Itera
     of a directory in sorted order. This is not the same as sorted path order: `a/b` comes before `a-b`,
     because the walk descends into `a` before going on to its sibling `a-b`.
     Symbolic links are not followed, so a link loop cannot make this walk forever. A directory that cannot be
-    listed is appended to `problems` when one is given; without it such a directory is passed over in silence.
+    listed is passed to `on_problem` when the walk reaches it; without `on_problem` such a directory is passed
+    over in silence.
     """
-    for directory, subdirectories, filenames in os.walk(
-        root, onerror=None if problems is None else problems.append, followlinks=False
-    ):
+    for directory, subdirectories, filenames in os.walk(root, onerror=on_problem, followlinks=False):
         subdirectories.sort()
         # Subdirectories named like a data file are surveyed too, so that a directory called CroStru.dat is
         # reported as the problem it is instead of being passed over without a word.
@@ -127,19 +126,19 @@ def read_path_list(path: Path) -> list[Path]:
     return [Path(entry) for line in lines if (entry := line.strip()) and not entry.startswith("#")]
 
 
-def survey_roots(roots: Iterable[Path], problems: list[OSError] | None = None) -> list[SurveyedDatabase]:
+def survey_roots(
+    roots: Iterable[Path], on_problem: Callable[[OSError], object] | None = None
+) -> Iterator[SurveyedDatabase]:
     """
-    Survey every directory in `roots` in order, returning the databases found.
+    Survey every directory in `roots` in order, yielding each database as the walk finds it.
 
-    A database found under more than one root, because the roots overlap or repeat, is returned once.
-    Directories that cannot be listed are appended to `problems` when one is given.
+    A database found under more than one root, because the roots overlap or repeat, is yielded once.
+    A directory that cannot be listed is passed to `on_problem` when the walk reaches it.
     """
     seen: set[Path] = set()
-    databases: list[SurveyedDatabase] = []
     for root in roots:
-        for database in survey_databases(root, problems):
+        for database in survey_databases(root, on_problem):
             resolved = database.directory.resolve()
             if resolved not in seen:
                 seen.add(resolved)
-                databases.append(database)
-    return databases
+                yield database

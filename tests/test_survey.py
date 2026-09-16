@@ -9,7 +9,7 @@ import pytest
 from cli import run_command
 from cronos_builder import write_database, write_header_only_datafile
 
-from cronos_extract.survey import survey_databases
+from cronos_extract.survey import survey_databases, survey_roots
 
 
 def test_survey_describes_a_built_database(tmp_path: Path) -> None:
@@ -76,13 +76,50 @@ def test_survey_reports_a_directory_it_cannot_list(tmp_path: Path) -> None:
     problems: list[OSError] = []
 
     try:
-        databases = list(survey_databases(tmp_path, problems))
+        databases = list(survey_databases(tmp_path, problems.append))
     finally:
         (tmp_path / "locked").chmod(0o700)
 
     assert databases == []
     (problem,) = problems
     assert problem.filename == str(tmp_path / "locked")
+
+
+def test_survey_roots_yields_a_database_before_walking_the_roots_after_it(tmp_path: Path) -> None:
+    write_database(tmp_path / "first" / "db", [])
+    (tmp_path / "second").mkdir()
+
+    databases = survey_roots([tmp_path / "first", tmp_path / "second"])
+    first = next(databases)
+    write_database(tmp_path / "second" / "db", [])
+    rest = list(databases)
+
+    assert first.directory == tmp_path / "first" / "db"
+    assert [database.directory for database in rest] == [tmp_path / "second" / "db"]
+
+
+@pytest.mark.skipif(os.getuid() == 0, reason="root can list a directory whatever its permissions are")
+def test_survey_roots_reports_an_unlistable_directory_when_the_walk_reaches_it(tmp_path: Path) -> None:
+    write_database(tmp_path / "a" / "db", [])
+    write_header_only_datafile(tmp_path / "b" / "locked", "Stru")
+    write_database(tmp_path / "c" / "db", [])
+    (tmp_path / "b" / "locked").chmod(0o000)
+    events: list[tuple[str, str]] = []
+
+    try:
+        for database in survey_roots(
+            [tmp_path / "a", tmp_path / "b", tmp_path / "c"],
+            lambda problem: events.append(("problem", str(problem.filename))),
+        ):
+            events.append(("database", str(database.directory)))
+    finally:
+        (tmp_path / "b" / "locked").chmod(0o700)
+
+    assert events == [
+        ("database", str(tmp_path / "a" / "db")),
+        ("problem", str(tmp_path / "b" / "locked")),
+        ("database", str(tmp_path / "c" / "db")),
+    ]
 
 
 def test_survey_command_prints_a_line_for_each_file(tmp_path: Path) -> None:
