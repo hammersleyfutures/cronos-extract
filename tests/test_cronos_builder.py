@@ -244,11 +244,10 @@ def test_a_patched_table_definition_changes_only_the_table_id_bytes() -> None:
     assert [index for index in range(len(original)) if patched[index] != original[index]] == [14, 15, 16, 17]
 
 
-@pytest.mark.xfail(reason="TableDefinition takes warn from Task 2", strict=True)
 def test_a_table_definition_without_fields_decodes_to_a_table_with_no_fields() -> None:
     messages: list[str] = []
 
-    table = TableDefinition(table_definition_without_fields(tableid=2), warn=messages.append)  # ty: ignore[unknown-argument]
+    table = TableDefinition(table_definition_without_fields(tableid=2), warn=messages.append)
 
     assert (table.tableid, table.tablename, table.abbrev, table.fields, messages) == (2, "erdgeist", "ER", [], [])
 

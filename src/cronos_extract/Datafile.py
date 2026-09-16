@@ -2,13 +2,12 @@
 # ABOUTME: Handles v3/v4 headers, extension blocks, KOD decoding and zlib decompression.
 import io
 import struct
-import sys
 import zlib
 from typing import NamedTuple
 
 from . import koddecoder
 from ._format.header import read_dat_header
-from .hexdump import tohex, toout
+from .hexdump import tohex, toout, warn_on_stderr
 
 
 class ExtendedRecord(NamedTuple):
@@ -28,7 +27,8 @@ class ExtendedRecord(NamedTuple):
 class Datafile:
     """Represent a single .dat with it's .tad index file"""
 
-    def __init__(self, name, dat, tad, compact, kod):
+    def __init__(self, name, dat, tad, compact, kod, warn=warn_on_stderr):
+        self.warn = warn
         self.name = name
         self.dat = dat
         self.tad = tad
@@ -114,7 +114,7 @@ class Datafile:
         self.tadsize = self.tad.tell() - self.tadhdrlen
         self.nrofrecords = self.tadsize // self.tadentrysize
         if self.tadsize % self.tadentrysize:
-            print("WARN: leftover data in .tad", file=sys.stderr)
+            self.warn("WARN: leftover data in .tad")
 
     def tadidx(self, idx):
         """

@@ -12,6 +12,7 @@ from cronos_builder import (
     DAT_PREFIX_SIZE,
     INLINE_RECORD_FLAGS,
     corrupt_compressed_record,
+    write_datafile,
     write_raw_datafile,
 )
 
@@ -113,3 +114,29 @@ def test_crodump_reports_a_corrupt_record_and_dumps_the_next(tmp_path: Path) -> 
     first, second = [line for line in result.stdout.splitlines() if line.startswith(("    1:", "    2:"))]
     assert "shorter than its 8-byte extended record header" in first
     assert inline.hex() in second
+
+
+def test_leftover_tad_bytes_are_reported_through_the_warn_hook(
+    tmp_path: Path, capfd: pytest.CaptureFixture[str]
+) -> None:
+    write_datafile(tmp_path, "Bank", [b"\x01abc"])
+    with (tmp_path / "CroBank.tad").open("ab") as tad:
+        tad.write(b"\x00")
+    messages: list[str] = []
+
+    with (tmp_path / "CroBank.dat").open("rb") as dat, (tmp_path / "CroBank.tad").open("rb") as tad:
+        Datafile("Bank", dat, tad, False, None, warn=messages.append)
+
+    assert messages == ["WARN: leftover data in .tad"]
+    assert capfd.readouterr().err == ""
+
+
+def test_leftover_tad_bytes_are_printed_without_a_warn_hook(tmp_path: Path, capfd: pytest.CaptureFixture[str]) -> None:
+    write_datafile(tmp_path, "Bank", [b"\x01abc"])
+    with (tmp_path / "CroBank.tad").open("ab") as tad:
+        tad.write(b"\x00")
+
+    with (tmp_path / "CroBank.dat").open("rb") as dat, (tmp_path / "CroBank.tad").open("rb") as tad:
+        Datafile("Bank", dat, tad, False, None)
+
+    assert capfd.readouterr().err == "WARN: leftover data in .tad\n"
