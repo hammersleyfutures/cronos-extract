@@ -28,7 +28,7 @@ Every decision below was made with Ben on 2026-09-15.
 
 Each phase is a separate spec, plan and pull request, in this order.
 
-**Status (2026-09-16):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below.
+**Status (2026-09-16):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below, and implemented on branch `phase1-public-api`, awaiting Ben's review before a pull request.
 
 ### Phase 0 — version survey
 
@@ -62,9 +62,19 @@ KOD recovery that chooses the best whole permutation (an assignment problem, e.g
 
 Found during Phase 0 and its reviews and not fixed there, each with the phase that owns it. The older backlog in Appendix A of `docs/superpowers/plans/2026-09-15-pr2-bug-fixes.md` is still the input for Phases 2 to 5.
 
-- **Phase 1:** `survey.survey_roots` returns a list, so nothing prints until the whole walk finishes. The API contract promises lazy iteration, and a survey of network storage would benefit from streaming too.
+- **Phase 1 (done):** `survey.survey_roots` streams its results (Phase 1 plan, Task 6).
 - **Phase 2:** `cli.main` calls `run_survey` directly; the `run_*(args, parser) -> int` signature is the seam for a dispatch once `export`, `inspect` and `crack` exist. `cli.collect_roots` calls `parser.error` on the top-level parser, so its usage line names `cronos-extract` rather than `survey`, which will mislead once there are four subcommands. `dumpdbfields.py` matches `Cro*.dat` names its own way; Phase 2 deletes that file.
-- **Phase 3:** `Datafile.isv3`, `isv4`, `isv7` and `isencrypted` keep their own copies of the version lists that `_format/header.py` now holds. The regular-file check in `survey.survey_file` stats and then opens, so a path swapped for a FIFO between the two calls would still block; opening with `O_NONBLOCK` and checking with `fstat` closes that window.
+- **Phase 3:** `Datafile.isv3`, `isv4`, `isv7` and `isencrypted` keep their own copies of the version lists that `_format/header.py` now holds. (The survey's stat-then-open window is closed: every Cro file is opened by `_format/files.open_regular_file`, which checks `fstat` on the open descriptor.)
+- **Phase 3, from Phase 1:**
+  - `Datafile.decompress` does not limit the decompressed size, so a crafted record can exhaust memory; do it with CRC checking.
+  - With `compact=False`, the default, `open()` reads the whole CroBank `.tad` into memory; one real database's reached 4.1 GB. Decide whether the default should change, or the index be read lazily.
+  - v4 deleted records: no real `01.11` `.tad` entry uses the `0xFFFFFFFF` length `readrec` treats as deleted, while many carry flag `02`, which `docs/cronos-research.md` calls deleted; today they are read as live records. One real v4 database's `.tad` entries hold what look like 2024 Unix timestamps in their third field.
+  - KOD recovery fails on the real v4 databases whose CroBank and CroIndex headers are not KOD-encoded (both crack methods return `None`); how those databases encode records needs investigating. `tests/test_realdata.py` marks this as a strict xfail.
+  - KOD selection: an own-KOD file read with `Kod.default()` is decoded with the wrong table and no diagnostic; `kod=None` on a KOD-encoded file gives a `DatabaseDefinitionError` whose hint suggests cracking.
+  - Before removing `Database.enumerate_records`, turn the parity tests into golden output of the façade.
+  - Add a committed, seeded random-damage test of the reading path, and the builder gaps the Phase 1 reviews noted (32-bit v3 flag placement, `01.02`/`01.03` written KOD-encoded).
+- **Phase 2, from Phase 1:** escape diagnostic and exception text before printing (surrogate-escaped names; garbage key names from a wrong KOD). Decide whether a date or time field holding only NUL bytes should have `value` `None` rather than `""` plus `invalid_value`, with a realdata count, before the JSON shape freezes. Interactive `strucrack` still reads records through `enumrecords` and can stop on a record that `--noninteractive` skips.
+- **Before 1.0, from Phase 1:** `FileInfo` does not enforce that either `problem` or the header fields are set; `Generation` is a PEP 695 alias, so `typing.get_args(Generation)` is empty; `bank.diagnostic_counts[kind]` reads 0 for a kind that never occurred (documented).
 - **Cosmetic, no phase:** an unreadable directory reachable from two overlapping roots is warned about twice. A directory named `Cro*.dat` that itself holds databases is reported as a problem under its parent and as its own database, so `--counts` also scores it as one unreadable file. `--jsonl` writes undecodable path bytes as `\udcXX` escapes, which strict JSON parsers may reject. The README's sentence about unreadable directories sits in the `--list` paragraph, though the warning applies to any root.
 - **Decided, not open:** `survey_file` follows symlinks (`stat`, not `lstat`) on purpose, and each plan keeps its pre-implementation wording as the record of what was planned.
 

@@ -4562,3 +4562,24 @@ Append `## Outcome (YYYY-MM-DD)` to this plan: the commits, where the code diver
 - [ ] **Step 3: Stop for Ben**
 
 Report to Ben and wait for his approval before pushing and opening the PR.
+
+## Outcome (2026-09-16)
+
+Implemented on branch `phase1-public-api` in 23 commits after the spec and plan (`c9fc439`..`efab745`), with subagent-driven development: a sonnet or opus implementer per task, a task review after each, and a whole-branch review by Fable. The plan above is kept as written; where it and the code differ, the code is right. Default suite: 421 passed; ruff, ruff format and ty clean; `tests/golden` unchanged.
+
+**Before execution.** Fable reviewed the plan by applying every task to a copy of the repository. It found an ABOUTME line Python read as an encoding declaration (`decoding: each`), `Database` attributes typed `Unknown | None` by an explicit `else None`, `Unknown` values meeting annotations under ty's `unsound-*` rules, a test renamed out of collection by a global replace, and an import form ruff's isort rejects. All were corrected in `c854388`.
+
+**Divergences and fixes during execution:**
+
+- Task 1: the xfail test also needed `# ty: ignore[unknown-argument]`, removed with the mark in Task 2.
+- Task 7: the plan's `parse_date` let `OverflowError` escape for a year beyond `datetime`'s range (`b"99999999990101"`); it now keeps the text with `invalid_value`.
+- Task 9: an exception raised by `on_diagnostic` was swallowed by `TableDefinition`'s own handler, or turned into `DatabaseDefinitionError`. `DiagnosticLog.guard_callback_errors()` now wraps calls into internal readers, remembers a callback's exception only inside the guard, and re-raises it unchanged. Table keys must be `Base` followed by ASCII digits.
+- Task 11: `crodump dbcrack` skips unreadable CroBank and CroIndex records as well as `strucrack`'s CroStru records, as P12 says.
+- Task 12: list entries are survey roots, not databases (three listed directories hold databases below them); the listed roots hold 30 databases, 6 of them v4. Tests that open without walking records use `compact=True` (one real CroBank index took 4.1 GB otherwise). The dbcrack test is a strict xfail only for v4 databases whose CroBank header is not KOD-encoded, because one v4 database does crack.
+- Task 10's plan hand-check corrupted nothing (the built CroBank is 255 bytes); the implementer ran 600 randomly damaged v3 and v4 databases instead, with no traceback.
+
+**Whole-branch review (Fable).** It ran a hostile-input battery (FIFOs, sockets and dangling symlinks for every Cro file, non-UTF-8 names, garbage and truncated files, random definitions, wrong and absent KODs, table id 70000, thousands of corrupt records, raising callbacks, `crack_kod` on garbage) with no traceback, hang, leaked descriptor or printed output. It found, and the fix wave corrected: `Datafile.readrec` accepted a short read, so a `.tad` entry past the end of the `.dat` became an empty record and a `CroStru.dat` cut to its header opened with no tables (`11e1262`, now `corrupt_record` or `DatabaseDefinitionError`, and a warning in `croconvert`); the parity tests did not compare the set of tables (`548aa92`); `tests/test_realdata.py` walked the real databases at import on every default run (`b9c94cc`); `diagnostic_counts` returning 0 for a kind never recorded is now documented and tested (`efab745`).
+
+**Real databases** (`uv run pytest -m realdata`, run per test function): 104 passed, 23 skipped (large CroBank indexes, or databases that do not open with the default KOD), 5 xfailed (v4 KOD recovery), 0 failed. The short-read fix produced no `corrupt_record` on any real database that opens.
+
+**Open items** found in this phase are recorded in the roadmap's "Open items carried forward": decompression size, the `compact=False` default, v4 deleted-record flags, v4 KOD recovery, KOD selection, parity tests before `enumerate_records` goes, a seeded damage test, NUL-only date values, escaping text for output, and `FileInfo` invariants.

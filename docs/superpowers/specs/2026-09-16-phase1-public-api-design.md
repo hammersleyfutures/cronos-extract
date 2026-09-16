@@ -1,7 +1,7 @@
 # Phase 1 design: the public façade API
 
 **Date:** 2026-09-16
-**Status:** design approved section by section in brainstorming with Ben (2026-09-16); written spec awaiting Ben's review
+**Status:** design approved by Ben section by section (2026-09-16), written spec reviewed by Fable; implemented on branch `phase1-public-api` (see the plan's Outcome)
 **Builds on:** `2026-09-15-modernisation-roadmap-design.md`, its decisions 1–11 and its "Public API contract"
 
 ## Goal and scope
@@ -203,8 +203,8 @@ Internally a `Kod` becomes a `koddecoder.KODcoding` for `Datafile`.
 
 The automatic cracking steps move from `crodump.py` into the private `_api/crack.py`: the CroStru and the
 CroBank/CroIndex byte-count builders, `kod_from_xref`, filling a single missing entry, and the permutation check.
-`crack_kod(path, method)` opens only the files its method reads (CroStru for `strucrack`; CroBank and CroIndex for
-`dbcrack`), raises `NotACronosFile` when one is missing, prints nothing and returns `Kod | None`. `crodump strucrack`
+`crack_kod(path, method)` opens CroStru and CroBank, and CroIndex for `dbcrack`, never CroSys; P12 refines what it
+raises and returns. It prints nothing and returns `Kod | None`. `crodump strucrack`
 and `crodump dbcrack` keep `--fix`, `--text`, the known-string hints and the dumps, and use the shared steps;
 `tests/test_crack.py` and the golden files show their output unchanged.
 
