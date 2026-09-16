@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 from cronos_builder import (
+    DAT_PREFIX_SIZE,
+    INLINE_RECORD_FLAGS,
     TEST_TABLE_FILE_FIELD_INDEX,
     TEST_TABLE_ID,
     bank_record,
@@ -16,6 +18,7 @@ from cronos_builder import (
     patched_table_definition,
     random_kod,
     write_database,
+    write_raw_datafile,
 )
 
 import cronos_extract
@@ -69,6 +72,31 @@ def test_records_are_read_one_crobank_record_per_step(tmp_path: Path) -> None:
         assert counts(bank, DiagnosticKind.CORRUPT_RECORD) == 0
         assert next(records).number == 3
         assert counts(bank, DiagnosticKind.CORRUPT_RECORD) == 1
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_records_the_dat_file_does_not_hold_are_corrupt(tmp_path: Path) -> None:
+    dbdir = Path(write_database(tmp_path / "db", []))
+    data = person()
+    inline = INLINE_RECORD_FLAGS << 24
+    write_raw_datafile(
+        dbdir,
+        "Bank",
+        data,
+        [
+            (DAT_PREFIX_SIZE, len(data) | inline),
+            (DAT_PREFIX_SIZE + 10_000, len(data) | inline),
+            (DAT_PREFIX_SIZE, (len(data) + 100) | inline),
+            (DAT_PREFIX_SIZE, len(data) | inline),
+        ],
+    )
+
+    with cronos_extract.open(dbdir) as bank:
+        assert [record.number for record in bank.tables[0].records()] == [1, 4]
+        corrupt = [d for d in bank.diagnostics if d.kind == DiagnosticKind.CORRUPT_RECORD]
+
+    assert [(d.file, d.record) for d in corrupt] == [("CroBank.dat", 2), ("CroBank.dat", 3)]
+    assert all("past the end" in d.message for d in corrupt)
 
 
 @pytest.mark.usefixtures("prints_nothing")

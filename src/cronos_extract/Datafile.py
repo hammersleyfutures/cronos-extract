@@ -154,6 +154,7 @@ class Datafile:
     def readrec(self, idx):
         """
         Extract and decode a single record.
+        Raises ValueError when the .dat file does not hold all of the record's bytes.
         """
         if idx == 0:
             raise Exception("recnum must be a positive number")
@@ -172,6 +173,11 @@ class Datafile:
             raise ValueError(f"unsupported Cronos file version {self.version!r} in Cro{self.name}.dat")
 
         dat = self.readdata(ofs, ln)
+        if len(dat) < ln:
+            raise ValueError(
+                f"record {idx} in Cro{self.name}.dat has {ln} bytes at offset {ofs:#x}, "
+                f"which runs past the end of the file"
+            )
 
         if not dat:
             # empty record

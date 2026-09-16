@@ -91,6 +91,23 @@ def test_extension_block_past_the_end_of_the_file_is_reported(tmp_path: Path) ->
         bank.readrec(1)
 
 
+@pytest.mark.parametrize(
+    ("offset", "length"), [(FIRST_BLOCK + 10_000, 5), (FIRST_BLOCK, 105)], ids=["past-the-end", "overrunning-the-end"]
+)
+def test_record_that_the_dat_file_does_not_hold_is_reported(tmp_path: Path, offset: int, length: int) -> None:
+    write_raw_datafile(tmp_path, "Bank", bytes(100), [(offset, length | INLINE_RECORD_FLAGS << 24)])
+
+    with open_bank(tmp_path) as bank, pytest.raises(ValueError, match=r"record 1 in CroBank\.dat .* past the end"):
+        bank.readrec(1)
+
+
+def test_record_of_length_zero_is_empty(tmp_path: Path) -> None:
+    write_raw_datafile(tmp_path, "Bank", b"", [(FIRST_BLOCK + 10_000, 0)])
+
+    with open_bank(tmp_path) as bank:
+        assert bank.readrec(1) == b""
+
+
 def test_corrupt_compressed_record_is_reported_as_a_value_error(tmp_path: Path) -> None:
     data = corrupt_compressed_record()
     write_raw_datafile(tmp_path, "Bank", data, [(FIRST_BLOCK, len(data) | INLINE_RECORD_FLAGS << 24)])
