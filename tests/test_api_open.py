@@ -15,7 +15,7 @@ from cronos_builder import (
     write_database,
 )
 
-from cronos_extract._api.bank import Bank
+from cronos_extract._api.bank import Bank, is_table_key
 from cronos_extract._api.bank import open as open_bank
 from cronos_extract._api.diagnostics import Diagnostic, DiagnosticKind
 from cronos_extract._api.errors import DatabaseDefinitionError, NotACronosFile, UnsupportedVersion
@@ -225,6 +225,50 @@ def test_an_exception_from_on_diagnostic_during_open_reaches_the_caller(tmp_path
 
     with pytest.raises(StopReading):
         open_bank(write_database(tmp_path / "db", []), on_diagnostic=on_diagnostic)
+
+
+class StopReading(Exception):
+    pass
+
+
+def test_an_exception_from_a_table_definition_warning_reaches_the_caller(tmp_path: Path) -> None:
+    seen: list[Diagnostic] = []
+
+    def on_diagnostic(diagnostic: Diagnostic) -> None:
+        seen.append(diagnostic)
+        if len(seen) == 1:
+            raise StopReading
+
+    with pytest.raises(StopReading):
+        open_bank(write_database(tmp_path / "db", []), on_diagnostic=on_diagnostic)
+    assert seen == SECTION_2_WARNINGS[:1]
+
+
+def test_an_exception_from_a_database_definition_warning_reaches_the_caller(tmp_path: Path) -> None:
+    dbdir = database_with_extra_definition_key(tmp_path / "db", "BankName", b"again")
+
+    def on_diagnostic(diagnostic: Diagnostic) -> None:
+        if diagnostic.message == "duplicate key: BankName":
+            raise StopReading
+
+    with pytest.raises(StopReading):
+        open_bank(dbdir, on_diagnostic=on_diagnostic)
+
+
+@pytest.mark.parametrize(
+    ("key", "is_table"),
+    [
+        ("Base000", True),
+        ("Base002", True),
+        ("BaseImage001", False),
+        ("Base", False),
+        ("Base\u0662", False),
+        ("Base\u00b2", False),
+        ("Base\u0660\u0660\u0662", False),
+    ],
+)
+def test_only_base_followed_by_ascii_digits_names_a_table(key: str, is_table: bool) -> None:
+    assert is_table_key(key) is is_table
 
 
 def test_on_diagnostic_receives_the_diagnostics_of_open(tmp_path: Path) -> None:

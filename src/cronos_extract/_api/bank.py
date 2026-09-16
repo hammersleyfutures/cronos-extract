@@ -25,6 +25,11 @@ DEFINITION_HINT = (
 )
 
 
+def is_table_key(key: str) -> bool:
+    """Whether a database definition key names a table definition: "Base" followed by digits."""
+    return key.startswith("Base") and key[4:].isascii() and key[4:].isdigit()
+
+
 class Table:
     """A table of a bank: its id, names and field definitions, and its records, read lazily."""
 
@@ -139,19 +144,21 @@ class Bank:
         except OSError:
             raise
         except Exception as e:
+            self._log.raise_callback_error()
             raise DatabaseDefinitionError(
                 f"the database definition in {STRU_FILE} of {self._directory} cannot be decoded: "
                 f"{describe_error(e)}. {DEFINITION_HINT}"
             ) from e
         tables = []
         for key, value in definition.items():
-            if not (key.startswith("Base") and key[4:].isnumeric()):
+            if not is_table_key(key):
                 continue
             try:
                 table_definition = TableDefinition(
                     value, definition.get("BaseImage" + key[4:], b""), warn_into(self._log, STRU_FILE, f"{key}: ")
                 )
             except Exception as e:
+                self._log.raise_callback_error()
                 self._log.record(
                     Diagnostic(
                         DiagnosticKind.UNDECODABLE_TABLE,
@@ -160,6 +167,7 @@ class Bank:
                     )
                 )
                 continue
+            self._log.raise_callback_error()
             if key[4:] == "000":
                 self._files_table_id = table_definition.tableid
                 self._files_abbreviation = table_definition.abbrev

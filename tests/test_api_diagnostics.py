@@ -1,5 +1,6 @@
 # ABOUTME: Tests for the diagnostics of the cronos_extract API: their kinds, the capped log and the record number set.
 # ABOUTME: Pins the kind names Phase 2's JSON output relies on and the memory bounds on hostile databases.
+import contextlib
 import dataclasses
 from collections.abc import Sequence
 
@@ -79,6 +80,51 @@ def test_an_exception_from_the_callback_reaches_the_caller_after_the_diagnostic_
         log.record(corrupt(1))
 
     assert log.counts[DiagnosticKind.CORRUPT_RECORD] == 1
+
+
+def test_a_remembered_callback_exception_is_raised_again_once() -> None:
+    class StopReading(Exception):
+        pass
+
+    stop = StopReading()
+
+    def on_diagnostic(diagnostic: Diagnostic) -> None:
+        raise stop
+
+    log = DiagnosticLog(on_diagnostic)
+    # An internal reader that catches broad exceptions swallows the first raise.
+    with contextlib.suppress(StopReading):
+        log.record(corrupt(1))
+
+    with pytest.raises(StopReading) as raised:
+        log.raise_callback_error()
+    assert raised.value is stop
+    log.raise_callback_error()
+
+
+def test_while_a_callback_exception_is_remembered_recording_raises_it_again_and_keeps_nothing() -> None:
+    class StopReading(Exception):
+        pass
+
+    calls: list[Diagnostic] = []
+
+    def on_diagnostic(diagnostic: Diagnostic) -> None:
+        calls.append(diagnostic)
+        raise StopReading
+
+    log = DiagnosticLog(on_diagnostic)
+    with pytest.raises(StopReading):
+        log.record(corrupt(1))
+    with pytest.raises(StopReading):
+        log.record(corrupt(2))
+
+    assert (list(log.kept), calls) == ([corrupt(1)], [corrupt(1)])
+
+
+def test_raise_callback_error_does_nothing_when_the_callback_did_not_raise() -> None:
+    log = DiagnosticLog(None)
+    log.record(corrupt(1))
+    log.raise_callback_error()
 
 
 def test_the_kept_diagnostics_are_a_read_only_sequence_that_grows() -> None:

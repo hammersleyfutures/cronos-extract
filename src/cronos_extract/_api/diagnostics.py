@@ -81,16 +81,41 @@ class DiagnosticLog:
         self._kept: list[Diagnostic] = []
         self._counts: Counter[DiagnosticKind] = Counter()
         self._on_diagnostic = on_diagnostic
+        self._callback_error: BaseException | None = None
         self.kept: Sequence[Diagnostic] = DiagnosticsView(self._kept)
         self.counts: Mapping[DiagnosticKind, int] = MappingProxyType(self._counts)
 
     def record(self, diagnostic: Diagnostic) -> None:
-        """Keep `diagnostic` while fewer than DIAGNOSTICS_KEPT are kept, count it, and pass it to the callback."""
+        """
+        Keep `diagnostic` while fewer than DIAGNOSTICS_KEPT are kept, count it, and pass it to the callback.
+
+        An exception from the callback is remembered before it is raised, because the internal readers catch broad
+        exceptions; raise_callback_error raises it again after them. While it is remembered, recording raises it again
+        and keeps nothing, so a reader's handler cannot add a diagnostic after the caller asked to stop.
+        """
+        if self._callback_error is not None:
+            raise self._callback_error
         if len(self._kept) < DIAGNOSTICS_KEPT:
             self._kept.append(diagnostic)
         self._counts[diagnostic.kind] += 1
         if self._on_diagnostic is not None:
-            self._on_diagnostic(diagnostic)
+            try:
+                self._on_diagnostic(diagnostic)
+            except BaseException as e:
+                self._callback_error = e
+                raise
+
+    def raise_callback_error(self) -> None:
+        """
+        Raise the remembered exception from the callback, if any, and forget it.
+
+        Internal readers catch broad exceptions, so code that calls them uses this to pass a caller's request to stop
+        on to the caller unchanged.
+        """
+        error = self._callback_error
+        if error is not None:
+            self._callback_error = None
+            raise error
 
 
 class RecordNumbers:
