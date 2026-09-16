@@ -1,6 +1,7 @@
 # ABOUTME: Checks the cronos_extract API against Ben's real CronosPro databases, found under roots listed in local/.
 # ABOUTME: Deselected by default; run with `uv run pytest -m realdata`. Test ids are indexes, never paths.
 import contextlib
+import functools
 import io
 import itertools
 import struct
@@ -27,8 +28,19 @@ MAX_BANK_TAD_BYTES = 32_000_000
 RECORDS_COMPARED = 500
 # The number of .tad entries checked per file in the v4 deleted-length check.
 TAD_ENTRIES_CHECKED = 1_000_000
+DBCRACK_TEST = "test_dbcrack_recovers_a_kod_that_opens_a_v4_database"
+# The tests that run on the 01.11 databases only.
+V4_TESTS = ("test_v4_tad_entries_never_use_the_v3_deleted_length", DBCRACK_TEST)
+# dbcrack recovers the KOD of the v4 databases whose CroBank header says KOD-encoded. Neither crack method
+# recovers it for the others.
+V4_CRACK_XFAIL = pytest.mark.xfail(
+    strict=True,
+    reason="neither crack method recovers the KOD of a real 01.11 database whose CroBank header is not "
+    "KOD-encoded; how v4 encodes records is an open item",
+)
 
 
+@functools.cache
 def found_databases() -> list[SurveyedDatabase]:
     """The databases under every listed root, each directory once, in the order the survey finds them."""
     roots = [path for path in read_path_list(LIST_FILE) if path.is_dir()] if LIST_FILE.exists() else []
@@ -39,10 +51,8 @@ def found_databases() -> list[SurveyedDatabase]:
     return list(found.values())
 
 
-SURVEYED = found_databases()
-DATABASES = [surveyed.directory for surveyed in SURVEYED]
-SURVEYED_BY_DIRECTORY = {surveyed.directory: surveyed for surveyed in SURVEYED}
-IDS = [f"db{index:02d}" for index in range(len(DATABASES))]
+def survey_of(directory: Path) -> SurveyedDatabase:
+    return next(database for database in found_databases() if database.directory == directory)
 
 
 def named(directory: Path, filename: str) -> Path | None:
@@ -60,11 +70,37 @@ def is_v4(directory: Path) -> bool:
     return dat is not None and read_file_info("Stru", dat).version == "01.11"
 
 
-V4 = [(database, IDS[index]) for index, database in enumerate(DATABASES) if is_v4(database)]
-every_database = pytest.mark.parametrize("dbdir", DATABASES, ids=IDS)
+def bank_header_is_kod_encoded(directory: Path) -> bool:
+    return any(info.name.lower() == "bank" and info.kod_encoded for info in survey_of(directory).files)
 
 
-@every_database
+def realdata_is_selected(config: pytest.Config) -> bool:
+    markexpr = str(config.getoption("markexpr"))
+    return "realdata" in markexpr and "not realdata" not in markexpr
+
+
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    """
+    Parametrise each test over the real databases, with ids db00, db01, and so on.
+
+    The listed roots are walked only when the realdata marker is selected, so a default run never reads them.
+    """
+    if "dbdir" not in metafunc.fixturenames:
+        return
+    databases = [database.directory for database in found_databases()] if realdata_is_selected(metafunc.config) else []
+    name = metafunc.function.__name__
+    cases = [
+        pytest.param(
+            database,
+            id=f"db{index:02d}",
+            marks=V4_CRACK_XFAIL if name == DBCRACK_TEST and not bank_header_is_kod_encoded(database) else (),
+        )
+        for index, database in enumerate(databases)
+        if name not in V4_TESTS or is_v4(database)
+    ]
+    metafunc.parametrize("dbdir", cases)
+
+
 def test_open_reads_every_table_or_raises_a_cronos_error(dbdir: Path, capfd: pytest.CaptureFixture[str]) -> None:
     if not bank_is_small(dbdir):
         pytest.skip("CroBank is too large to walk once per table")
@@ -82,7 +118,6 @@ def test_open_reads_every_table_or_raises_a_cronos_error(dbdir: Path, capfd: pyt
     assert (captured.out, captured.err) == ("", "")
 
 
-@every_database
 def test_field_text_matches_database_enumerate_records(dbdir: Path) -> None:
     if not bank_is_small(dbdir):
         pytest.skip("CroBank is too large to walk once per table")
@@ -105,25 +140,23 @@ def test_field_text_matches_database_enumerate_records(dbdir: Path) -> None:
             assert actual == expected, f"table id {table.id} differs"
 
 
-@every_database
 def test_bank_info_agrees_with_the_survey(dbdir: Path) -> None:
-    surveyed = SURVEYED_BY_DIRECTORY[dbdir]
+    survey = survey_of(dbdir)
     try:
         # compact=True reads .tad entries on demand, so a multi-GB CroBank.tad is not loaded into memory.
         bank = cronos_extract.open(dbdir, compact=True)
     except cronos_extract.CronosError:
         pytest.skip("the database does not open with the default KOD")
     with bank:
-        by_path = {info.path: info for info in surveyed.files}
+        by_path = {info.path: info for info in survey.files}
         for info in bank.info:
             if info.problem is None:
                 assert info == by_path[info.path]
 
 
-@every_database
 def test_tad_layout_matches_what_the_builder_writes(dbdir: Path) -> None:
     checked = 0
-    for info in SURVEYED_BY_DIRECTORY[dbdir].files:
+    for info in survey_of(dbdir).files:
         if info.version is None or info.version not in ("01.02", "01.03", "01.11"):
             continue
         tad = named(dbdir, f"Cro{info.name}.tad")
@@ -139,7 +172,6 @@ def test_tad_layout_matches_what_the_builder_writes(dbdir: Path) -> None:
     assert checked > 0
 
 
-@pytest.mark.parametrize("dbdir", [database for database, _ in V4], ids=[test_id for _, test_id in V4])
 def test_v4_tad_entries_never_use_the_v3_deleted_length(dbdir: Path) -> None:
     for base in ("Stru", "Bank", "Index"):
         tad = named(dbdir, f"Cro{base}.tad")
@@ -153,29 +185,6 @@ def test_v4_tad_entries_never_use_the_v3_deleted_length(dbdir: Path) -> None:
         assert 0xFFFFFFFF not in lengths, f"Cro{base}.tad"
 
 
-def bank_header_is_kod_encoded(directory: Path) -> bool:
-    return any(info.name.lower() == "bank" and info.kod_encoded for info in SURVEYED_BY_DIRECTORY[directory].files)
-
-
-# dbcrack recovers the KOD of the v4 databases whose CroBank header says KOD-encoded. Neither crack method
-# recovers it for the others.
-V4_CRACK_CASES = [
-    pytest.param(
-        database,
-        id=test_id,
-        marks=()
-        if bank_header_is_kod_encoded(database)
-        else pytest.mark.xfail(
-            strict=True,
-            reason="neither crack method recovers the KOD of a real 01.11 database whose CroBank header is not "
-            "KOD-encoded; how v4 encodes records is an open item",
-        ),
-    )
-    for database, test_id in V4
-]
-
-
-@pytest.mark.parametrize("dbdir", V4_CRACK_CASES)
 def test_dbcrack_recovers_a_kod_that_opens_a_v4_database(dbdir: Path) -> None:
     kod = cronos_extract.crack_kod(dbdir, "dbcrack")
 
