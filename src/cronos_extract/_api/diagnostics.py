@@ -50,10 +50,12 @@ class DiagnosticsView(Sequence[Diagnostic]):
         self._diagnostics = diagnostics
 
     @overload
-    def __getitem__(self, index: int) -> Diagnostic: ...
+    def __getitem__(self, index: int) -> Diagnostic:
+        """The diagnostic at `index`."""
 
     @overload
-    def __getitem__(self, index: slice) -> tuple[Diagnostic, ...]: ...
+    def __getitem__(self, index: slice) -> tuple[Diagnostic, ...]:
+        """The diagnostics in `index`, as a tuple."""
 
     @override
     def __getitem__(self, index: int | slice) -> Diagnostic | tuple[Diagnostic, ...]:
@@ -96,8 +98,9 @@ class DiagnosticLog:
         recording raises it again and keeps nothing, so a reader's handler cannot add a diagnostic after the caller
         asked to stop.
         """
-        if self._callback_error is not None:
-            raise self._callback_error
+        error = self._callback_error
+        if error is not None:
+            raise error
         if len(self._kept) < DIAGNOSTICS_KEPT:
             self._kept.append(diagnostic)
         self._counts[diagnostic.kind] += 1
