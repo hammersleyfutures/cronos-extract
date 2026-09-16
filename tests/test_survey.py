@@ -302,10 +302,10 @@ def test_survey_command_reports_a_fifo_instead_of_blocking_on_it(tmp_path: Path)
         result = run_command("cli", ["survey", str(tmp_path)], timeout=30)
     except subprocess.TimeoutExpired:
         pytest.fail("the survey blocked on the FIFO instead of reporting it")
-
-    assert result.returncode == 0, result.stderr
-    assert "Bank  CroBank.dat is not a regular file" in result.stdout
-    assert "Stru  01.19" in result.stdout
+    else:
+        assert result.returncode == 0, result.stderr
+        assert "Bank  CroBank.dat is not a regular file" in result.stdout
+        assert "Stru  01.19" in result.stdout
 
 
 def test_survey_command_counts_a_fifo_as_unreadable_instead_of_blocking_on_it(tmp_path: Path) -> None:
@@ -316,9 +316,9 @@ def test_survey_command_counts_a_fifo_as_unreadable_instead_of_blocking_on_it(tm
         result = run_command("cli", ["survey", "--counts", str(tmp_path)], timeout=30)
     except subprocess.TimeoutExpired:
         pytest.fail("the survey blocked on the FIFO instead of counting it")
-
-    assert result.returncode == 0, result.stderr
-    assert "unreadable files: 1" in result.stdout
+    else:
+        assert result.returncode == 0, result.stderr
+        assert "unreadable files: 1" in result.stdout
 
 
 def test_survey_command_reports_a_directory_named_like_a_datafile(tmp_path: Path) -> None:

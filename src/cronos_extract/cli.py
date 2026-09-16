@@ -49,11 +49,12 @@ def collect_roots(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
             listed = survey.read_path_list(args.list_file)
         except OSError as e:
             parser.error(f"cannot read {args.list_file}: {e}")
-        for directory in listed:
-            if directory.is_dir():
-                roots.append(directory)
-            else:
-                print(f"warning: {directory} is not a directory; skipping it", file=sys.stderr)
+        else:
+            for directory in listed:
+                if directory.is_dir():
+                    roots.append(directory)
+                else:
+                    print(f"warning: {directory} is not a directory; skipping it", file=sys.stderr)
     if not roots:
         parser.error("give at least one directory, or --list with a file naming them")
     return roots
