@@ -160,8 +160,9 @@ observed shape.
 ### P5. `bank.info` is a sequence of a public `FileInfo`, which the survey uses too (2026-09-16)
 
 `Bank.info: Sequence[FileInfo]` has one entry per Cro file pair found, in the order Stru, Bank, Index, Sys. `FileInfo`
-is frozen, with `name`, `path`, `version: str`, `generation: Literal["v3", "v4", "v7", "unknown"]`, `use64bit`,
-`kod_encoded`, `compressed`, `own_kod` and `problem: str | None`; the flags are `None` when `problem` is set. It is
+is frozen, with `name`, `path`, `version: str | None`, `generation: Literal["v3", "v4", "v7", "unknown"] | None`,
+`use64bit`, `kod_encoded`, `compressed`, `own_kod` and `problem: str | None`; the version, generation and flags are
+`None` when `problem` is set, as the survey's JSON already reports them. It is
 built from `_format/header.py`'s `DatHeader`, which stays private. The survey's `SurveyedFile` is replaced by
 `FileInfo`; the survey's text, `--counts` and `--jsonl` output do not change.
 

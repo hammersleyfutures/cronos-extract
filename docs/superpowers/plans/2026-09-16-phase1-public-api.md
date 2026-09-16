@@ -16,9 +16,9 @@
 - Work in the repository root, `<repo-root>` below, on branch `phase1-public-api` (it exists and holds the spec). Never push to `master`. GitHub is `hammersleyfutures/cronos-extract`; always pass `-R hammersleyfutures/cronos-extract` to `gh pr` commands. Never open anything against `alephdata/cronodump`.
 - Test-first for every change: write the test, run it, confirm it fails for the stated reason, write the code, run it green. Real crafted databases from `tests/cronos_builder.py` and real files only. Never mock.
 - One logical change per commit. Subject in imperative mood, ≤ 72 characters; the body says what and why. Every commit message ends with exactly `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>` — use this line verbatim, never your own model name.
-- Every new code file starts with two comment lines beginning `# ABOUTME: `.
-- New code is fully type-annotated and ty-clean. Names and comments describe what code is, never its history. Never delete a comment unless it is false.
-- Before every commit, all clean, each checked by exit code: `uv run pytest -q`, `uv run ruff check`, `uv run ruff format --check`, `uv run ty check`. The pre-commit hook runs them too.
+- Every new code file starts with two comment lines beginning `# ABOUTME: `. Neither line may contain `coding:` or `coding=` (as in "decoding: x"): Python reads that as a source encoding declaration and refuses to import the file.
+- New code is fully type-annotated and ty-clean. The internal readers are unannotated, so their values are `Unknown` to ty, and ty's `unsound-*` rules report an `Unknown` value returned, yielded or assigned where an annotation expects a type. Narrow at that boundary: `int(...)` or `str(...)` where a conversion is natural, otherwise `typing.cast(...)` naming the type the reader returns. Names and comments describe what code is, never its history. Never delete a comment unless it is false.
+- Run `uv run ruff format` on changed files before checking: it wraps long signatures and calls, though not long comments. Before every commit, all clean, each checked by exit code: `uv run pytest -q`, `uv run ruff check`, `uv run ruff format --check`, `uv run ty check`. The pre-commit hook runs them too.
 - Bash tool: `set -e` does not stop a multi-line command. Guard commits with explicit checks, e.g. `fail() { echo "STOPPED: $*"; exit 1; }` and `uv run pytest -q > /tmp/<task>-pytest.txt 2>&1 || fail pytest`. Never pipe a checked command through `tail`.
 - Never run `git checkout -- <file>` or `git restore` on a file holding uncommitted work. To try a temporary mutation, copy the file aside and copy it back.
 - `tests/golden/` must not change. `git diff master -- tests/golden` must be empty after every task. If a golden file changes, stop and report.
@@ -103,7 +103,11 @@ VERSIONS_AND_KODS = [
 ]
 
 
-@pytest.mark.parametrize(("version", "kod"), VERSIONS_AND_KODS, ids=lambda value: repr(value)[:12])
+@pytest.mark.parametrize(
+    ("version", "kod"),
+    VERSIONS_AND_KODS,
+    ids=lambda value: value.decode() if isinstance(value, bytes) else ("kod" if value else "default"),
+)
 def test_a_database_of_each_version_reads_back_through_database(
     tmp_path: Path, version: bytes, kod: list[int] | None
 ) -> None:
@@ -253,7 +257,7 @@ TABLE_ID_OFFSET = 14
 FIELD_COUNT_OFFSET = 34
 ```
 
-Replace `write_raw_datafile` and `write_datafile` with:
+Add `from typing import cast` to the imports of `tests/cronos_builder.py`. Replace `write_raw_datafile` and `write_datafile` with:
 
 ```python
 def tad_layout(version: bytes) -> tuple[bytes, struct.Struct]:
@@ -356,7 +360,7 @@ Add after `key_referencing_a_deleted_record`:
 def erdgeist_table_definition() -> bytes:
     """Return the definition bytes of TEST_DB's table "erdgeist", the value of its Base001 key."""
     with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD)) as db:
-        return db.read_db_definition()["Base001"]
+        return cast(bytes, db.read_db_definition()["Base001"])
 
 
 def patched_table_definition(*, tableid: int) -> bytes:
@@ -553,7 +557,7 @@ Expected: collection fails with `ModuleNotFoundError: No module named 'cronos_ex
 Create `src/cronos_extract/_format/files.py`:
 
 ```python
-# ABOUTME: Opens Cro*.dat and Cro*.tad files for reading without blocking on FIFOs, and only when they are regular files.
+# ABOUTME: Opens Cro*.dat and Cro*.tad files for reading without blocking on FIFOs, and only if they are regular files.
 # ABOUTME: A FIFO, socket, device or directory raises NotARegularFile, an OSError, instead of hanging or being read.
 import os
 import stat
@@ -677,7 +681,7 @@ In `tests/test_cronos_builder.py`, remove the `xfail` mark from `test_a_table_de
 Append to `tests/test_datamodel.py` (add `from cronos_builder import erdgeist_table_definition` and `from cronos_extract.Datamodel import TableDefinition`, sorted into the existing imports):
 
 ```python
-def erdgeist_table_definition_warnings_go_through_the_warn_hook(capfd: pytest.CaptureFixture[str]) -> None:
+def test_table_definition_warnings_go_through_the_warn_hook(capfd: pytest.CaptureFixture[str]) -> None:
     messages: list[str] = []
 
     TableDefinition(erdgeist_table_definition(), warn=messages.append)
@@ -791,16 +795,17 @@ Replace `__init__`'s signature, docstring and file opening with:
         self.dbdir = dbdir
         self.compact = compact
         self.kod = kod
+        self.files = files
         self.warn = warn
 
         # Stru+Index+Bank for the components for most databases
-        self.stru = self.getfile("Stru") if "Stru" in files else None
-        self.index = self.getfile("Index") if "Index" in files else None
-        self.bank = self.getfile("Bank") if "Bank" in files else None
+        self.stru = self.getfile("Stru")
+        self.index = self.getfile("Index")
+        self.bank = self.getfile("Bank")
 
         # the Sys file resides in the "Program Files\Cronos" directory, and
         # contains an index of all known databases.
-        self.sys = self.getfile("Sys") if "Sys" in files else None
+        self.sys = self.getfile("Sys")
 
     @classmethod
     def from_datafiles(cls, dbdir, compact, kod, stru, bank, warn):
@@ -814,6 +819,7 @@ Replace `__init__`'s signature, docstring and file opening with:
         return db
 ```
 
+In `getfile`, add `if name not in self.files: return None` (as two lines) before the `try:`, and add to its docstring: "A component not named in `files` is not opened, and None is returned." Keep the four assignments in `__init__` as plain `self.getfile(...)` calls: an explicit `... else None` there would make ty type every `self.stru` and `self.bank` as possibly `None` and report each attribute access in `Database.py` and `dumpdbfields.py`.
 In `opendatafile`, pass the hook: `datafile = Datafile(name, dat, tad, self.compact, self.kod, self.warn)`.
 In `decode_db_definition`, replace the two prints with `self.warn(f"WARN: duplicate key: {keyname}")` and `self.warn("WARN: expected refdata to start with 0x04")`. In `read_db_definition`, replace the print with `self.warn("WARN: expected dbinfo to start with 0x03")`. Leave every other `print` in `Database.py` alone.
 
@@ -1503,7 +1509,7 @@ in place of `assert bank.header is not None` / `assert (bank.header.version_text
 - [ ] **Step 2: Run them to verify they fail**
 
 Run: `uv run pytest -q tests/test_api_info.py tests/test_survey.py`
-Expected: `test_api_info.py` fails to collect with `ModuleNotFoundError: No module named 'cronos_extract._api.info'`; the two changed survey tests FAIL with `AttributeError: 'SurveyedFile' object has no attribute 'generation'`.
+Expected: `test_api_info.py` fails to collect with `ModuleNotFoundError: No module named 'cronos_extract._api.info'`; the two changed survey tests FAIL with `AttributeError: 'SurveyedFile' object has no attribute 'generation'` (or `'version'`).
 
 - [ ] **Step 3: Implement**
 
@@ -1831,7 +1837,7 @@ Spec: P4, P6 (eager decoding), P8, P12 "Data types".
 Create `tests/test_api_values.py`:
 
 ```python
-# ABOUTME: Tests for the API's record decoding: each field type's value, text and raw bytes, and field diagnostics.
+# ABOUTME: Tests for how the API decodes records, with each field type's value, text, raw bytes and diagnostics.
 # ABOUTME: Decodes records laid out by tests/cronos_builder.py against the real "erdgeist" table definition.
 import dataclasses
 import datetime
@@ -2043,6 +2049,7 @@ import datetime
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import cast
 
 from ..Datamodel import Field as DecodedField
 from ..Datamodel import FieldDefinition as DecodedFieldDefinition
@@ -2163,8 +2170,8 @@ def record_number(text: str) -> int | None:
 
 def convert_field(definition: FieldDefinition, decoded: DecodedField) -> tuple[Field, str | None]:
     """The public Field for the field `decoded` described by `definition`, and the problem with its value, if any."""
-    raw: bytes = decoded.data
-    text: str = decoded.content
+    raw = cast(bytes, decoded.data)
+    text = cast(str, decoded.content)
     if not raw:
         return Field(definition, None, "", b""), None
     if definition.type == FIELD_TYPE_DATE:
@@ -2744,7 +2751,8 @@ from cronos_builder import (
     write_database,
 )
 
-from cronos_extract._api.bank import Bank, open as open_bank
+from cronos_extract._api.bank import Bank
+from cronos_extract._api.bank import open as open_bank
 from cronos_extract._api.diagnostics import Diagnostic, DiagnosticKind
 from cronos_extract._api.errors import DatabaseDefinitionError, NotACronosFile, UnsupportedVersion
 from cronos_extract._api.kod import Kod
@@ -2990,7 +2998,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack
 from pathlib import Path
 from types import TracebackType
-from typing import Self, override
+from typing import Self, cast, override
 
 from ..Database import Database
 from ..Datamodel import TableDefinition, describe_error
@@ -3021,15 +3029,15 @@ class Table:
     @property
     def id(self) -> int:
         """The table id, which the first byte of each of its CroBank records holds."""
-        return self._definition.tableid
+        return int(self._definition.tableid)
 
     @property
     def name(self) -> str:
-        return self._definition.tablename
+        return str(self._definition.tablename)
 
     @property
     def abbreviation(self) -> str:
-        return self._definition.abbrev
+        return str(self._definition.abbrev)
 
     @property
     def fields(self) -> tuple[FieldDefinition, ...]:
@@ -3276,7 +3284,8 @@ from cronos_builder import (
     write_database,
 )
 
-from cronos_extract._api.bank import Bank, open as open_bank
+from cronos_extract._api.bank import Bank
+from cronos_extract._api.bank import open as open_bank
 from cronos_extract._api.diagnostics import DIAGNOSTICS_KEPT, Diagnostic, DiagnosticKind
 from cronos_extract._api.kod import Kod
 from cronos_extract._api.values import EmbeddedFile, FileReference
@@ -3518,7 +3527,11 @@ PARITY_CASES = [
 ]
 
 
-@pytest.mark.parametrize(("version", "kod"), PARITY_CASES, ids=lambda value: repr(value)[:12])
+@pytest.mark.parametrize(
+    ("version", "kod"),
+    PARITY_CASES,
+    ids=lambda value: value.decode() if isinstance(value, bytes) else ("kod" if value else "default"),
+)
 def test_field_text_matches_database_enumerate_records(
     tmp_path: Path, capfd: pytest.CaptureFixture[str], version: bytes, kod: list[int] | None
 ) -> None:
@@ -3631,7 +3644,7 @@ Replace the `_records` placeholder with these methods of `Bank`:
         """
         self._check_open()
         try:
-            return self._database.bank.readrec(number)
+            return cast(bytes | None, self._database.bank.readrec(number))
         except OSError:
             raise
         except Exception as e:
@@ -3914,7 +3927,7 @@ Create `src/cronos_extract/_api/crack.py`:
 import os
 from collections.abc import Iterator
 from contextlib import ExitStack
-from typing import Literal
+from typing import Literal, cast
 
 from ..Datafile import Datafile
 from .datafiles import database_directory, list_directory, open_datafile
@@ -3936,7 +3949,7 @@ def readable_records(datafile: Datafile, limit: int | None = None) -> Iterator[t
     count = datafile.nrofrecords if limit is None else min(limit, datafile.nrofrecords)
     for recno in range(1, count + 1):
         try:
-            data = datafile.readrec(recno)
+            data = cast(bytes | None, datafile.readrec(recno))
         except OSError:
             raise
         except Exception:
@@ -4117,7 +4130,7 @@ filterwarnings = ["error"]
 Create `tests/test_realdata.py`:
 
 ```python
-# ABOUTME: Checks the cronos_extract API against Ben's real CronosPro databases, listed in the git-ignored local/ directory.
+# ABOUTME: Checks the cronos_extract API against Ben's real CronosPro databases, listed in the git-ignored local/.
 # ABOUTME: Deselected by default; run with `uv run pytest -m realdata`. Test ids are list indexes, never paths.
 import contextlib
 import io
@@ -4508,7 +4521,7 @@ In `CLAUDE.md`, under "## Architecture", add as the first bullet of the layer li
 and under "## Commands", after `uv run pytest -q`:
 
 ```bash
-uv run pytest -q -m realdata                # the real databases listed in local/, deselected by default
+uv run pytest -q -m realdata                # the real databases listed in local/, deselected by default; a node id needs -m realdata too
 ```
 
 - [ ] **Step 6: Run the suite and linters, then commit**
