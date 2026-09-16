@@ -92,6 +92,10 @@ command's `--strucrack`/`--dbcrack` goes through `crodump.crack_kod(method, dbdi
 - Command tests run the real command in a subprocess via `tests/cli.py::run_command(module, args, cwd=None, stdin=None)`
   and assert on stdout, stderr and the exit status.
 - `tests/test_cli_characterisation.py` compares full command output with `tests/golden/`.
+- `local/` is gitignored and holds machine-local test assets. `local/mash_datasets_with_CroIndex_dat.txt` lists
+  real CronosPro database directories (v3 `01.02` and `01.03`, v4 `01.11`, no v7) for
+  `cronos-extract survey --list` and for trying the readers on real data. Never commit its contents or quote its
+  entries: they name datasets that are not ours to publish.
 - `docs/cronos-research.md` documents the file format (`.dat`/`.tad` layout, CroStru, CroBank, table and field
   definitions, compressed records, v4).
 
@@ -105,5 +109,7 @@ command's `--strucrack`/`--dbcrack` goes through `crodump.crack_kod(method, dbdi
 - CI (`.github/workflows/ci.yml`) runs lint, ty and pip-audit, and pytest on Python 3.12, 3.13 and 3.14. CodeQL
   (`codeql.yml`) runs security-and-quality queries. CodeQL alert `py/clear-text-logging-sensitive-data` (strudump
   printing the NS1 password) is intended and was dismissed.
-- Plans and specs live in `docs/superpowers/` (untracked); the modernisation backlog is Appendix A of
+- Plans and specs are committed under `docs/superpowers/`. The modernisation roadmap, its decisions, the public API
+  contract and the open items carried forward between phases are in
+  `docs/superpowers/specs/2026-09-15-modernisation-roadmap-design.md`; the older backlog is Appendix A of
   `docs/superpowers/plans/2026-09-15-pr2-bug-fixes.md`.
