@@ -34,9 +34,10 @@ with cronos_extract.open(path, kod=cronos_extract.Kod.default(), compact=False, 
 - **`Bank`**: `tables: Sequence[Table]` (the Files table excluded), `read_file(FileReference) -> EmbeddedFile | None`,
   `files() -> Iterator[EmbeddedFile]`, `info: Sequence[FileInfo]`, `diagnostics: Sequence[Diagnostic]` (the first
   1,000), `diagnostic_counts: Mapping[DiagnosticKind, int]`, `close()`, and the context manager protocol.
+- **`Bank.files_abbreviation: str | None`** and **`Table.abbreviation: str`** (P12).
 - **`Table`**, **`Record`**, **`Field`**, **`FieldDefinition`**, **`FileReference`**, **`EmbeddedFile`**: P8, with
   `Field.value` as P4 gives it.
-- **`FileInfo`**: P5. **`Kod`** and **`crack_kod(path, method) -> Kod | None`**: P7.
+- **`FileInfo`**: P5. **`Kod`** and **`crack_kod(path, method) -> Kod | None`**: P7 and P12.
 - **`Diagnostic`** and **`DiagnosticKind`**: P3, P8 and P9. The kinds are `corrupt_record`, `undecodable_field`,
   `invalid_value`, `undecodable_table`, `unsupported_table`, `unexpected_structure`, `unresolved_file_reference`,
   `unreadable_file` and `unused_kod`.
@@ -98,8 +99,8 @@ they are; Phase 3 moves them into `_format/` as it restructures them. A `py.type
 
 | Exception | When |
 |---|---|
-| `OSError`, not wrapped | the path does not exist, or the directory cannot be listed |
-| `NotACronosFile` | the path is not a directory; no `CroStru` pair or no `CroBank` pair; a CroStru or CroBank file that is not a regular file or cannot be opened (the `OSError` is chained); a CroStru or CroBank `.dat` shorter than its header or with an unknown magic |
+| `OSError`, not wrapped | the path does not exist, is not a directory (`NotADirectoryError`), or cannot be listed (P12) |
+| `NotACronosFile` | no `CroStru` pair or no `CroBank` pair; a CroStru or CroBank file that is not a regular file or cannot be opened (the `OSError` is chained); a CroStru or CroBank `.dat` shorter than its header or with an unknown magic; a CroStru or CroBank `.tad` shorter than its header (P12) |
 | `UnsupportedVersion` | CroStru or CroBank is v7 or an unknown version |
 | `DatabaseDefinitionError` | CroStru record 1 is missing, deleted, cut off, or refers to records CroStru does not hold; the message includes the KOD hint |
 
@@ -177,7 +178,9 @@ bytes and the raw `unknown` and `blocksize` integers, which only the internal re
 - `Table.records()` and `Bank.files()` are generators that read one CroBank record per step and keep no list of
   records. Each `records()` call walks all of CroBank, filtering on the table id, as `enumerate_records` does today.
 - `corrupt_record` is reported once per bank: the bank remembers the record numbers it has reported.
-- A generator whose bank has been closed raises `ValueError` naming the closed bank at its next step.
+- `close()` is idempotent. After it, `records()`, `files()` and `read_file` raise `ValueError` naming the closed
+  bank, and a running generator raises it at its next step; the check runs before each read, so a closed file is
+  never reported as `corrupt_record` (P12).
 - A record's fields, including every `value`, are decoded before `records()` yields it, so `record.diagnostics` and
   `bank.diagnostics` are complete for that record whichever views the caller reads.
 - **Carried-forward item:** `survey.survey_roots` becomes a generator, and `run_survey` prints each database as it is
@@ -268,7 +271,7 @@ keeping every diagnostic always.
 
 `pyproject.toml` deselects the `realdata` marker by default (`addopts = "-m 'not realdata'"`), so CI and ordinary runs
 never collect those tests; `uv run pytest -m realdata` runs them. They read `local/mash_datasets_with_CroIndex_dat.txt`
-at run time. Test ids are indexes such as `db07`, and failure messages name the index, never a path; the committed
+at run time. Test ids are indexes such as `db07`, and the committed
 code holds no paths and no dataset names. For every listed database:
 
 - `open` succeeds or raises a `CronosError` subclass, never anything else;
@@ -300,6 +303,88 @@ written backwards. `01.13` and `01.14` are left out: there are no real files to 
 machine to guard them.
 
 **Rejected:** checking other versions only in `realdata`; leaving the builder work to Phase 3.
+
+### P12. Refinements from Fable's review of the written spec (2026-09-16)
+
+Fable reviewed this spec against the code. Each finding below was checked against the source before it was adopted.
+
+**Opening and errors**
+
+- A CroStru or CroBank `.tad` shorter than its header raises `struct.error` in `Datafile.readtad`; `open()` turns it
+  into `NotACronosFile`. A `.dat` without a `.tad`, or a `.tad` without a `.dat`, is a missing pair: `NotACronosFile`
+  for Stru or Bank, and a `FileInfo` whose `problem` says which half is missing (with `unreadable_file`) for Index or
+  Sys.
+- `open()` lets `NotADirectoryError` propagate for a path that is a file, as it does other `OSError`s, and raises
+  `TypeError` for a `bytes` path, which `os.listdir` would answer with `bytes` names that never match.
+- `open()` reads headers through its own `O_NONBLOCK`-and-`fstat` opener, not `survey.survey_file`, whose
+  stat-then-open window is a Phase 3 item.
+- `DiagnosticKind` may gain members in later versions; the documentation tells callers to handle unknown kinds.
+- `__all__` includes `open` on purpose, as the roadmap contract names it; `from cronos_extract import *` therefore
+  shadows the built-in `open`, and the documentation recommends `import cronos_extract`.
+
+**Diagnostics**
+
+- `TableDefinition.decode`'s two catch-all warnings ("Error … parsing FieldDefinitions" and "Error … parsing
+  Tabledefinition") are `unexpected_structure`: today the table is kept, with the fields read so far.
+- `unused_kod` fires when `kod` is not `None`, its table differs from `Kod.default()`'s (so
+  `Kod.from_table(INITIAL_KOD)` counts as the default), and neither CroStru nor CroBank is both `own_kod` and
+  `kod_encoded`.
+- Diagnostics from decoding a record (`undecodable_field`, `invalid_value`) are recorded each time the record is
+  decoded, so iterating a table twice records them twice. Only `corrupt_record` and `unsupported_table` are
+  deduplicated per bank. Phase 2 documents what its summary counts.
+- The corrupt record numbers already reported are kept in a `bytearray` bit set sized from the CroBank `.tad`, not a
+  `set[int]`, so a CroBank where every record is corrupt costs one bit per record.
+- No diagnostic message embeds record data; today's `undecodable_field` warning appends the whole record in hex,
+  which would let 1,000 kept diagnostics hold gigabytes.
+- A diagnostic is appended to `bank.diagnostics` (while under the cap) and counted before `on_diagnostic` is called.
+  `bank.diagnostics` and `bank.diagnostic_counts` are read-only views that grow; `diagnostic_counts` holds only kinds
+  that occurred.
+- `Diagnostic.file` is the canonical name, such as `"CroBank.dat"`, whatever the case on disk; `FileInfo.path` keeps
+  the on-disk spelling.
+
+**Data types**
+
+- `Field.raw` is the field payload: without the `0x1e` separator, and without a complex field's `0x1b` marker and
+  length. The system number's `raw` is `b""`.
+- `FileReference.record` is an `int` only when the stored text is ASCII decimal digits; `" 12 "`, `"+12"` and `"1_2"`,
+  which `int()` accepts, give `None`.
+- `Table` gains `abbreviation: str`, and `Bank` gains `files_abbreviation: str | None` (the Files table's, `None`
+  without a `Base000` key), because today's CSV export names its directory `Files-<abbreviation>` and Phase 2 must be
+  able to keep that layout.
+- `Table.fields[0]` is the system number; `record.fields[i]` is described by `table.fields[i]`, and every record has
+  exactly `len(table.fields)` fields. `bank.tables` is in database-definition order. Generators from different tables,
+  or two from one table, may be interleaved on one thread.
+- Without a `Base000` key, `files()` yields nothing and every `read_file` returns `None` with
+  `unresolved_file_reference`.
+- `FileInfo.path` is a `pathlib.Path`; `generation` is narrowed to its `Literal` when `FileInfo` is built.
+- `Kod.from_hex` accepts exactly 512 hex digits in either case and nothing else, not even whitespace.
+
+**Cracking**
+
+- `crack_kod(path, method: Literal["strucrack", "dbcrack"])` raises `NotACronosFile` only when the directory has no
+  CroStru or CroBank pair. A missing CroIndex makes `dbcrack` return `None`, as today, since that database is
+  legitimate.
+- A record that cannot be read while cracking is skipped, not raised: reading encrypted records without a KOD can make
+  a record look compressed by chance, and today the resulting `ValueError` ends the crack.
+
+**Builder and tests**
+
+- The builder rejects a `kod` for `01.02` and `01.03`, whose records `Datafile` always decodes with the default KOD.
+- The builder writes no deleted entries for `01.11`, because how v4 marks a deleted record is unsettled (see the open
+  items); the `realdata` tests record the flag values found in real `.tad` files.
+- `realdata` guarantees that committed code and test ids hold no paths. Failure output may name paths, which is
+  acceptable because the tests run only on Ben's machine.
+- Until the `__init__` commit, tests import from `cronos_extract._api`; that commit moves them to `cronos_extract`.
+- Parity tests capture the stderr that `Database.enumerate_records` prints separately from the assertion that the
+  façade prints nothing. The 1,000-cap test builds a CroBank with more than 1,000 corrupt records and is not marked
+  slow.
+- The documentation recommends `compact=True` for a very large `.tad`, which is otherwise read into memory.
+
+**Declined:**
+
+- An exception `path` attribute: the message names the path, and an attribute can be added later without breaking
+  callers.
+- A `compact` option on `crack_kod`: it can also be added later without breaking callers.
 
 ## Architecture
 
@@ -358,9 +443,10 @@ all of them. The README gains a short "Python API" section with the example abov
 | Input | Result |
 |---|---|
 | the path does not exist or cannot be listed | `OSError` |
-| the path is a file, not a directory | `NotACronosFile` |
-| a `Cro*.dat` or `Cro*.tad` that is a FIFO, socket, device or directory | not a regular file: `NotACronosFile` for Stru or Bank, `unreadable_file` for Index or Sys. Files are opened with `O_NONBLOCK` and checked with `fstat` on the open descriptor, so there is no window between check and open |
-| a dangling symlink named like a Cro file | `NotACronosFile` naming the file and the `OSError`; other symlinks are followed, as the survey follows them |
+| the path is a file, not a directory | `NotADirectoryError` (P12) |
+| the path is `bytes` | `TypeError` (P12) |
+| a `Cro*.dat` or `Cro*.tad` that is a FIFO, socket, device or directory | not a regular file: `NotACronosFile` for Stru or Bank, `unreadable_file` for Index or Sys. Files are opened with `getattr(os, "O_NONBLOCK", 0)` (Windows has no `O_NONBLOCK`) and checked with `fstat` on the open descriptor, so there is no window between check and open |
+| a dangling symlink named like a Cro file | for Stru or Bank, `NotACronosFile` naming the file and chaining the `OSError`; for Index or Sys, `unreadable_file`; other symlinks are followed, as the survey follows them |
 | two names differing only in case, such as `CroStru.dat` and `crostru.dat` | the first in sorted order is used, and `unexpected_structure` names the other |
 | a path, table or field name that is not valid UTF-8 or CP-1251 | kept surrogate-escaped or with replacement characters, as today; never a traceback |
 | a truncated `.tad`, looping extension blocks, a corrupt zlib chunk, a `.tad` offset past the end of the `.dat` | `corrupt_record`, or `unexpected_structure` for leftover `.tad` bytes |
@@ -408,6 +494,14 @@ with the roadmap's status and open items updated. Ben approves before the PR is 
 is dismissed, before merging, and before the branch is deleted.
 
 ## Open items this phase records
+
+- **Phase 3, v4 deleted records:** `Datafile.readrec` treats a record as deleted only when its `.tad` length is
+  `0xFFFFFFFF`, but a read-only count over Ben's 11 real `01.11` files found no such entry, and found 51 CroBank and
+  117,768 CroIndex entries with flag `02`, which `docs/cronos-research.md` calls deleted. Today those are read as live
+  records. Phase 1 keeps today's behaviour (the parity tests hold it) and the v4 reader in Phase 3 settles it.
+- **Phase 3, KOD selection:** an own-KOD file read with `Kod.default()` is decoded with the default table, which is not its
+  own, and no diagnostic says so; and `kod=None` on a KOD-encoded file raises `DatabaseDefinitionError` whose hint suggests cracking a KOD
+  the caller turned off. The "one KOD-selection function" item covers both.
 
 - **Phase 3:** `Datafile.decompress` does not limit the decompressed size. Each chunk's size is a uint16, but a record
   may chain any number of chunks and each can inflate about a thousandfold, so a crafted record can exhaust memory.

@@ -85,7 +85,7 @@ with cronos_extract.open(path, kod=..., compact=False, on_diagnostic=None) as ba
 - **`Kod`** — `Kod.default()`, `Kod.from_hex(str)`, `Kod.from_table(Sequence[int])`. A valid table is a permutation of 0–255.
 - **`crack_kod(path, method="strucrack" | "dbcrack") -> Kod | None`** — returns `None` when it cannot recover a permutation.
 - **`Bank`** — `tables: Sequence[Table]` (the Files table excluded), `read_file(FileReference) -> EmbeddedFile | None`, `files() -> Iterator[EmbeddedFile]`, `info: Sequence[FileInfo]` (per-file versions and flags, as the survey reports them), `diagnostics: Sequence[Diagnostic]` (the first 1,000), `diagnostic_counts: Mapping[DiagnosticKind, int]`, `close()`.
-- **`Table`** — `id: int`, `name: str`, `fields: Sequence[FieldDefinition]`, `records() -> Iterator[Record]` (lazy).
+- **`Table`** — `id: int`, `name: str`, `abbreviation: str`, `fields: Sequence[FieldDefinition]`, `records() -> Iterator[Record]` (lazy).
 - **`Record`** — `number: int`, `fields: Sequence[Field]`, `__getitem__(name)`, `diagnostics`.
 - **`Field`** — `definition`, `value`, `text: str`, `raw: bytes`. `value` is `str`, `datetime.date`, `datetime.time`, `FileReference` or `None`; a value that does not parse as its type falls back to the text and records a diagnostic.
 - **`FileReference`** — `name`, `extension`, `record`. **`EmbeddedFile`** — `record: int`, `data: bytes`, `name: str | None` (`None` from `files()`, where the Files table stores no name).
