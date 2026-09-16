@@ -2,6 +2,7 @@
 # ABOUTME: Uses databases from tests/cronos_builder.py and header-only files for v4 and v7.
 import json
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -273,3 +274,96 @@ def test_survey_command_counts_the_files_it_could_not_read(tmp_path: Path) -> No
     assert result.returncode == 0, result.stderr
     assert "unreadable files: 2" in result.stdout
     assert len(result.stdout.splitlines()) == 2
+
+
+def test_survey_names_a_file_called_cro_dat_after_its_filename(tmp_path: Path) -> None:
+    write_header_only_datafile(tmp_path / "db", "")
+
+    (database,) = survey_databases(tmp_path)
+
+    (file,) = database.files
+    assert file.name == "Cro.dat"
+
+
+def test_survey_does_not_follow_a_symlink_loop_back_to_the_parent(tmp_path: Path) -> None:
+    write_header_only_datafile(tmp_path / "db", "Bank")
+    (tmp_path / "db" / "loop").symlink_to(tmp_path / "db", target_is_directory=True)
+
+    databases = list(survey_databases(tmp_path))
+
+    assert [database.directory for database in databases] == [tmp_path / "db"]
+
+
+def test_survey_command_reports_a_fifo_instead_of_blocking_on_it(tmp_path: Path) -> None:
+    write_header_only_datafile(tmp_path / "db", "Stru")
+    os.mkfifo(tmp_path / "db" / "CroBank.dat")
+
+    try:
+        result = run_command("cli", ["survey", str(tmp_path)], timeout=30)
+    except subprocess.TimeoutExpired:
+        pytest.fail("the survey blocked on the FIFO instead of reporting it")
+
+    assert result.returncode == 0, result.stderr
+    assert "Bank  CroBank.dat is not a regular file" in result.stdout
+    assert "Stru  01.19" in result.stdout
+
+
+def test_survey_command_counts_a_fifo_as_unreadable_instead_of_blocking_on_it(tmp_path: Path) -> None:
+    write_header_only_datafile(tmp_path / "db", "Stru")
+    os.mkfifo(tmp_path / "db" / "CroBank.dat")
+
+    try:
+        result = run_command("cli", ["survey", "--counts", str(tmp_path)], timeout=30)
+    except subprocess.TimeoutExpired:
+        pytest.fail("the survey blocked on the FIFO instead of counting it")
+
+    assert result.returncode == 0, result.stderr
+    assert "unreadable files: 1" in result.stdout
+
+
+def test_survey_command_reports_a_directory_named_like_a_datafile(tmp_path: Path) -> None:
+    write_header_only_datafile(tmp_path / "db", "Bank")
+    (tmp_path / "db" / "CroStru.dat").mkdir()
+
+    result = run_command("cli", ["survey", str(tmp_path)])
+
+    assert result.returncode == 0, result.stderr
+    assert "Stru  CroStru.dat is not a regular file" in result.stdout
+    assert "Bank  01.19" in result.stdout
+
+
+def test_survey_command_prints_a_directory_name_that_is_not_valid_utf8(tmp_path: Path) -> None:
+    directory = os.fsdecode(bytes(tmp_path) + b"/db\xff\xfe")
+    os.mkdir(os.fsencode(directory))
+    write_header_only_datafile(Path(directory), "Bank")
+
+    result = run_command("cli", ["survey", str(tmp_path)])
+
+    assert result.returncode == 0, result.stderr
+    assert "Traceback" not in result.stderr
+    assert "db" in result.stdout
+    assert "Bank  01.19" in result.stdout
+
+
+def test_survey_command_rejects_a_list_file_that_is_not_text(tmp_path: Path) -> None:
+    list_file = tmp_path / "databases.bin"
+    list_file.write_bytes(bytes(range(256)) * 16)
+
+    result = run_command("cli", ["survey", "--list", str(list_file)])
+
+    assert result.returncode == 2
+    assert "Traceback" not in result.stderr
+
+
+def test_survey_command_reads_a_list_file_of_cp1251_paths(tmp_path: Path) -> None:
+    directory = os.fsdecode(bytes(tmp_path) + "/база".encode("cp1251"))
+    os.mkdir(os.fsencode(directory))
+    write_header_only_datafile(Path(directory), "Bank")
+    list_file = tmp_path / "databases.txt"
+    list_file.write_bytes(os.fsencode(directory) + b"\n")
+
+    result = run_command("cli", ["survey", "--list", str(list_file)])
+
+    assert result.returncode == 0, result.stderr
+    assert "Traceback" not in result.stderr
+    assert "Bank  01.19" in result.stdout

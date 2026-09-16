@@ -1,6 +1,7 @@
 # ABOUTME: The cronos-extract command: an argparse parser whose subcommands read CronosPro databases.
 # ABOUTME: Its survey subcommand reports the format version of every database under the directories given.
 import argparse
+import io
 import sys
 from pathlib import Path
 
@@ -77,6 +78,11 @@ def run_survey(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int
 
 def main(argv: list[str] | None = None) -> int:
     """Run the cronos-extract command, returning its exit status."""
+    for stream in (sys.stdout, sys.stderr):
+        # A path that is not valid UTF-8 reaches here surrogate-escaped, which printing cannot encode. Showing
+        # it as escapes keeps the name visible and lets the rest of the survey finish.
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(errors="backslashreplace")
     parser = build_parser()
     args = parser.parse_args(argv)
     return run_survey(args, parser)

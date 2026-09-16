@@ -56,3 +56,10 @@ def test_read_dat_header_rejects_another_file_format() -> None:
 def test_read_dat_header_rejects_a_file_shorter_than_the_header() -> None:
     with pytest.raises(ValueError, match=r"CroStru\.dat is shorter than its 19-byte header"):
         read_dat_header(io.BytesIO(b"CroFile\x00" + bytes(5)), where="CroStru.dat")
+
+
+def test_version_text_replaces_bytes_that_are_not_ascii() -> None:
+    header = read_dat_header(io.BytesIO(header_bytes(version=b"\xff\xfe.04")), where="CroBank.dat")
+
+    assert header.version_text == "��.04"
+    assert header.generation == "unknown"

@@ -2,6 +2,7 @@
 # ABOUTME: Reads only the 19-byte .dat header of every file, never a .tad file or a record.
 import json
 import os
+import stat
 from collections import Counter
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
@@ -36,8 +37,12 @@ def is_dat_file(filename: str) -> bool:
 
 def survey_file(path: Path) -> SurveyedFile:
     """Read `path`'s header, returning the problem that stopped it instead of raising."""
-    name = path.name[3:-4]
+    name = path.name[3:-4] or path.name
     try:
+        # Anything that is not a regular file is reported rather than opened: opening a FIFO waits for a
+        # writer that never comes, and a directory or a device is not a database file either.
+        if not stat.S_ISREG(path.stat().st_mode):
+            raise ValueError(f"{path.name} is not a regular file")
         with path.open("rb") as file:
             return SurveyedFile(name=name, path=path, header=read_dat_header(file, where=path.name), problem=None)
     except (ValueError, OSError) as e:
@@ -46,8 +51,10 @@ def survey_file(path: Path) -> SurveyedFile:
 
 def survey_databases(root: Path, problems: list[OSError] | None = None) -> Iterator[SurveyedDatabase]:
     """
-    Yield a SurveyedDatabase for every directory under `root` that holds Cro*.dat files, in path order.
+    Yield a SurveyedDatabase for every directory under `root` that holds Cro*.dat files.
 
+    Directories are visited depth-first, each one before the subdirectories it holds, and the subdirectories
+    of a directory in sorted order. This is not the same as sorted path order: `a/z` comes before `ab/a`.
     Symbolic links are not followed, so a link loop cannot make this walk forever. A directory that cannot be
     listed is appended to `problems` when one is given; without it such a directory is passed over in silence.
     """
@@ -55,10 +62,12 @@ def survey_databases(root: Path, problems: list[OSError] | None = None) -> Itera
         root, onerror=None if problems is None else problems.append, followlinks=False
     ):
         subdirectories.sort()
-        dat_files = sorted((filename for filename in filenames if is_dat_file(filename)), key=str.lower)
+        # Subdirectories named like a data file are surveyed too, so that a directory called CroStru.dat is
+        # reported as the problem it is instead of being passed over without a word.
+        dat_files = sorted((name for name in (*filenames, *subdirectories) if is_dat_file(name)), key=str.lower)
         if dat_files:
             path = Path(directory)
-            yield SurveyedDatabase(directory=path, files=tuple(survey_file(path / filename) for filename in dat_files))
+            yield SurveyedDatabase(directory=path, files=tuple(survey_file(path / name) for name in dat_files))
 
 
 def describe_file(file: SurveyedFile) -> str:
@@ -133,9 +142,10 @@ def read_path_list(path: Path) -> list[Path]:
     Return the directories named in `path`, one per line.
 
     Blank lines and lines starting with # are ignored, surrounding whitespace is stripped, and a relative
-    path is taken from the current directory. Raises OSError when the list itself cannot be read.
+    path is taken from the current directory. A name that is not valid UTF-8, as a list written on a Russian
+    Windows machine holds, is kept as the bytes on disk. Raises OSError when the list itself cannot be read.
     """
-    lines = path.read_text(encoding="utf-8").splitlines()
+    lines = path.read_text(encoding="utf-8", errors="surrogateescape").splitlines()
     return [Path(entry) for line in lines if (entry := line.strip()) and not entry.startswith("#")]
 
 
