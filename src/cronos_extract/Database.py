@@ -10,6 +10,7 @@ from contextlib import ExitStack
 from functools import cached_property
 
 from . import koddecoder
+from ._format.files import open_regular_file
 from .Datafile import Datafile
 from .Datamodel import Record, TableDefinition, describe_error
 from .hexdump import ashex, strescape, toout
@@ -65,7 +66,8 @@ class Database:
         """
         Returns a Datafile object for `name`.
         this function expects a `Cro<name>.dat` and a `Cro<name>.tad` file.
-        When no such files exist, or only one, then None is returned.
+        When no such files exist, only one of them does, or one cannot be opened or is not a regular file,
+        then None is returned.
 
         `name` is matched case insensitively
         """
@@ -82,8 +84,8 @@ class Database:
         Open a .dat/.tad pair as a Datafile, closing both files again if it can't be read.
         """
         with ExitStack() as stack:
-            dat = stack.enter_context(open(datname, "rb"))
-            tad = stack.enter_context(open(tadname, "rb"))
+            dat = stack.enter_context(open_regular_file(datname))
+            tad = stack.enter_context(open_regular_file(tadname))
             datafile = Datafile(name, dat, tad, self.compact, self.kod)
             stack.pop_all()
         return datafile

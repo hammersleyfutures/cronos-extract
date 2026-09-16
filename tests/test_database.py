@@ -1,8 +1,10 @@
 # ABOUTME: Tests for cronos_extract.Database: opening and closing a database's files and decoding its definition.
 # ABOUTME: Uses the sample database in test_data, small hand-written files and databases from tests/cronos_builder.py.
+import os
 from pathlib import Path
 
 import pytest
+from cli import run_command
 from cronos_builder import TEST_DB, random_kod, write_database
 
 from cronos_extract.Database import Database
@@ -55,3 +57,13 @@ def test_decode_db_definition_rejects_a_record_number_crostru_does_not_hold(tmp_
             assert dbinfo is not None
             with pytest.raises(ValueError):
                 db.decode_db_definition(dbinfo[1:])
+
+
+def test_croconvert_passes_over_a_fifo_named_like_the_index_instead_of_blocking(tmp_path: Path) -> None:
+    dbdir = Path(write_database(tmp_path / "db", []))
+    os.mkfifo(dbdir / "CroIndex.dat")
+    (dbdir / "CroIndex.tad").write_bytes(bytes(8))
+
+    result = run_command("croconvert", ["--csv", "-o", str(tmp_path / "out"), str(dbdir)], timeout=60)
+
+    assert result.returncode == 0, result.stderr
