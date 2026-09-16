@@ -106,6 +106,20 @@ def test_a_date_with_only_a_zero_day_is_its_text_with_a_diagnostic() -> None:
     assert [diagnostic.kind for diagnostic in record.diagnostics] == [DiagnosticKind.INVALID_VALUE]
 
 
+def test_a_date_past_the_largest_year_is_its_text_with_a_diagnostic() -> None:
+    record = decode(with_field(DATE, b"99999999990101"))
+
+    assert record["Entry #4"].value == "10000001899-01-01"
+    assert record.diagnostics == (invalid_value("Entry #4", "the value is not a valid date; it is kept as text"),)
+
+
+def test_a_date_before_year_one_is_its_text_with_a_diagnostic() -> None:
+    record = decode(with_field(DATE, b"-19050101"))
+
+    assert record["Entry #4"].value == "-005-01-01"
+    assert record.diagnostics == (invalid_value("Entry #4", "the value is not a valid date; it is kept as text"),)
+
+
 def test_a_time_is_a_time() -> None:
     record = decode(with_field(TIME, b"0930"))
 
@@ -137,7 +151,11 @@ def test_a_file_reference_is_a_file_reference_whose_raw_bytes_omit_the_complex_f
     assert field.raw == stored[5:]
 
 
-@pytest.mark.parametrize("record_text", ["+12", " 12", "1_2", "x", "", "9" * 5000])
+@pytest.mark.parametrize(
+    "record_text",
+    ["+12", " 12", "1_2", "x", "", "9" * 5000],
+    ids=["plus", "space", "underscore", "letter", "empty", "5000-digits"],
+)
 def test_a_file_reference_whose_record_is_not_ascii_digits_has_no_record(record_text: str) -> None:
     field = decode(with_field(FILE, file_reference_field("report", "pdf", record_text)))["Entry #6"]
 

@@ -98,7 +98,8 @@ def parse_date(text: str) -> tuple[FieldValue, str | None]:
         if month == 0 and day == 0:
             return text, None
         return datetime.date(year, month, day), None
-    except ValueError:
+    # A year with more digits than a C long makes datetime.date raise OverflowError instead of ValueError.
+    except (ValueError, OverflowError):
         return text, "the value is not a valid date; it is kept as text"
 
 
