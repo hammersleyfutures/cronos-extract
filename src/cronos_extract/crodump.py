@@ -3,6 +3,7 @@
 import argparse
 import sys
 
+from ._api.crack import bank_and_index_xref, fill_single_gap, kod_from_xref, kod_is_resolved, stru_xref
 from .Database import Database
 from .Datamodel import TableDefinition
 from .hexdump import as1251, asambigoushex, asasc, tohex, unhex
@@ -205,28 +206,6 @@ def strucrack(kod, args):
         return derive_kod_from_stru(db, args)
 
 
-def kod_from_xref(xref):
-    """
-    Build a KOD table and its confidence from `xref`, where xref[shift][encrypted byte] counts how often that
-    encrypted byte was seen at that shift where the plaintext is assumed to be zero.
-
-    Each shift claims the encrypted byte it saw most, with that count as the confidence. When two shifts claim
-    the same byte, the higher count keeps it, and on an equal count the first claim stays. Shifts that saw
-    no data claim nothing, so their entries keep confidence 0.
-    """
-    KOD = [0] * 256
-    KOD_CONFIDENCE = [0] * 256
-    for i, xx in enumerate(xref):
-        k, v = max(enumerate(xx), key=lambda kv: kv[1])
-        if v <= KOD_CONFIDENCE[k]:
-            continue
-
-        #       Display the confidence, matches under 3 usually are unreliable
-        KOD[k] = i
-        KOD_CONFIDENCE[k] = v
-    return KOD, KOD_CONFIDENCE
-
-
 def derive_kod_from_stru(db, args):
     """
     Derive the KOD table from the encrypted CroStru or CroSys records of `db`, as strucrack describes.
@@ -244,12 +223,7 @@ def derive_kod_from_stru(db, args):
                 print(f"no CroStru.dat file found in {args.dbdir}")
             return None
 
-    xref = [[0] * 256 for _ in range(256)]
-    for i, data in enumerate(table.enumrecords()):
-        if not data:
-            continue
-        for ofs, byte in enumerate(data):
-            xref[(ofs + i + 1) % 256][byte] += 1
+    xref = stru_xref(table)
 
     KOD, KOD_CONFIDENCE = kod_from_xref(xref)
 
@@ -281,16 +255,7 @@ def derive_kod_from_stru(db, args):
             KOD_CONFIDENCE[d] = 255
             KOD_FORCED[d] = True
 
-    kod_set = set([v for o, v in enumerate(KOD) if KOD_CONFIDENCE[o] > 0])
-    unset_entries = [o for o, v in enumerate(KOD) if KOD_CONFIDENCE[o] == 0]
-    unused_values = [v for v in sorted(set(range(0, 256)).difference(kod_set))]
-
-    # if there's only one mapping missing in KOD and only one value not used, we
-    # just assume those to belong together with a low confidence
-    if len(unset_entries) == 1 and len(unused_values) == 1:
-        entry = unset_entries[0]
-        KOD[entry] = unused_values[0]
-        KOD_CONFIDENCE[entry] = 1
+    fill_single_gap(KOD, KOD_CONFIDENCE)
 
     # Show duplicates that may arise by the user forcing KOD entries from command line
     kod_set = [v for o, v in enumerate(KOD) if KOD_CONFIDENCE[o] > 0]
@@ -320,7 +285,7 @@ def derive_kod_from_stru(db, args):
     # The KOD is resolved when every entry has a positive confidence and it is a permutation of 0..255,
     # because a KOD with duplicate values can't decode the database.
     unset_count = len([o for o in KOD_CONFIDENCE if o <= 0])
-    is_resolved = unset_count == 0 and sorted(KOD) == list(range(256))
+    is_resolved = kod_is_resolved(KOD, KOD_CONFIDENCE)
     if not is_resolved and args.noninteractive:
         if not args.silent:
             print(
@@ -445,24 +410,17 @@ def derive_kod_from_bank_and_index(db, args):
     """
     Derive the KOD table from the encrypted CroBank and CroIndex records of `db`, as dbcrack describes.
     """
-    xref = [[0] * 256 for _ in range(256)]
-
     for dbfile in db.bank, db.index:
         if not dbfile:
             if not args.silent:
                 print(f"no data file found in {args.dbdir}")
             return None
-        # records are numbered from 1 to nrofrecords; read at most the first 10000
-        for i in range(1, min(10000, dbfile.nrofrecords) + 1):
-            rec = dbfile.readrec(i)
-            if rec and len(rec) > 11:
-                xref[(i + 3) % 256][rec[3]] += 1
 
-    KOD, KOD_CONFIDENCE = kod_from_xref(xref)
+    KOD, KOD_CONFIDENCE = kod_from_xref(bank_and_index_xref(db.bank, db.index))
 
     # Rows that found no data, or lost their byte to another row, leave entries unresolved.
     unset_count = len([o for o in KOD_CONFIDENCE if o <= 0])
-    if unset_count > 0 or sorted(KOD) != list(range(256)):
+    if not kod_is_resolved(KOD, KOD_CONFIDENCE):
         if not args.silent:
             print(f"Ambigous result when cracking. {unset_count:d} entries unsolved: too few CroBank/CroIndex records")
         return None

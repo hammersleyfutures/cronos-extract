@@ -6,7 +6,9 @@ import pytest
 from cli import run_command
 from cronos_builder import (
     TEST_TABLE_ID,
+    UNUSED_TABLE_ID,
     bank_record,
+    corrupt_compressed_record,
     crackable_database,
     random_kod,
     write_database,
@@ -15,6 +17,7 @@ from cronos_builder import (
 
 from cronos_extract.crodump import build_parser, crack_kod, derive_kod_from_bank_and_index, derive_kod_from_stru
 from cronos_extract.Database import Database
+from cronos_extract.koddecoder import KODcoding
 
 KOD = random_kod(seed=7)
 PERSON_FIELDS = [b"42", b"Hammersley", b"", b"1240315", b"0930", b"", b"", b"", b"", b"", b""]
@@ -315,3 +318,17 @@ def test_dumpdbfields_decodes_with_a_cracked_kod(encrypted_db: str, flag: str) -
 
     assert result.returncode == 0, result.stderr
     assert "-- Hammersley" in result.stdout
+
+
+def test_crodump_strucrack_skips_a_stru_record_it_cannot_read(tmp_path: Path) -> None:
+    zero_byte_records = [bytes([UNUSED_TABLE_ID]) + bytes(11)] * 300
+    looks_compressed = KODcoding(KOD).decode(4 + 8 + 1, corrupt_compressed_record())
+    dbdir = write_database(
+        tmp_path / "db",
+        [bank_record(TEST_TABLE_ID, PERSON_FIELDS), *zero_byte_records],
+        KOD,
+        extra_stru_records=[*[bytes(256)] * 8, looks_compressed],
+        index_records=zero_byte_records,
+    )
+
+    assert crack_kod("strucrack", dbdir, False) == KOD
