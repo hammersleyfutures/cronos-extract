@@ -78,8 +78,8 @@ def open_or_skip(dbdir: Path, *, compact: bool = False) -> cronos_extract.Bank:
     """The bank in `dbdir`, opened with the default KOD, or a skip when it does not open."""
     try:
         return cronos_extract.open(dbdir, compact=compact)
-    except cronos_extract.CronosError:
-        pytest.skip("the database does not open with the default KOD")
+    except cronos_extract.CronosError as error:
+        raise pytest.skip.Exception("the database does not open with the default KOD") from error
 
 
 def realdata_is_selected(config: pytest.Config) -> bool:
