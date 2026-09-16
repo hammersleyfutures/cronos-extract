@@ -22,6 +22,7 @@ Every decision below was made with Ben on 2026-09-15.
 8. **Exports in 1.0:** CSV, PostgreSQL and JSON Lines. The HTML export and its template are removed.
 9. **Release:** nothing is published to PyPI before 1.0, and the repository stays private until then. If Phase 4 finds no real v7 file, 1.0 labels v7 as experimental; if v7 hits a blocker, the release plan is revisited with Ben.
 10. **Specs and plans** are committed to the repository.
+11. **v7 test files (decided 2026-09-16):** the Phase 0 survey of Ben's databases found no v7 — only `01.02` and `01.03` (v3) and `01.11` (v4). v7 samples will come from a file found online or one made with the CronosPro 7 trial software. Without one, decision 9 applies and 1.0 labels v7 as experimental.
 
 ## Roadmap
 
@@ -45,7 +46,7 @@ Type annotations throughout; one record-decoding path in place of the copies in 
 
 ### Phase 4 — v7 reader
 
-A `01.19` reader behind the façade, from the research in alephdata/cronodump#24 (record envelope, plaintext CroBank, per-bank KOD, known-plaintext recovery) and whatever the survey finds, with v7 support in `tests/cronos_builder.py` for crafted databases.
+A `01.19` reader behind the façade, from the research in alephdata/cronodump#24 (record envelope, plaintext CroBank, per-bank KOD, known-plaintext recovery) and a real v7 file (decision 11), with v7 support in `tests/cronos_builder.py` for crafted databases.
 
 ### Phase 5 — 1.0 release
 
@@ -123,3 +124,5 @@ Real files only, no mocks: v3 databases from `tests/cronos_builder.py`; v4 and v
 ### Exit criterion
 
 Ben runs the survey on his own databases and reports which versions appear. That decides whether Phase 4 can confirm v7 against real files or must label it experimental.
+
+**Result (2026-09-16):** no v7 among Ben's databases. The survey counted 62 `01.02` files, 8 `01.03` files and 20 `01.11` files; see decision 11.
