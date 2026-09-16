@@ -1,5 +1,5 @@
 # ABOUTME: Runs the cronos_extract commands in a subprocess for tests, using the interpreter running pytest.
-# ABOUTME: Shared by every test that runs crodump, croconvert or dumpdbfields.
+# ABOUTME: Shared by every test that runs cli, crodump, croconvert or dumpdbfields.
 import subprocess
 import sys
 from pathlib import Path

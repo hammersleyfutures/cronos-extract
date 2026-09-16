@@ -54,7 +54,8 @@ def survey_databases(root: Path, problems: list[OSError] | None = None) -> Itera
     Yield a SurveyedDatabase for every directory under `root` that holds Cro*.dat files.
 
     Directories are visited depth-first, each one before the subdirectories it holds, and the subdirectories
-    of a directory in sorted order. This is not the same as sorted path order: `a/z` comes before `ab/a`.
+    of a directory in sorted order. This is not the same as sorted path order: `a/b` comes before `a-b`,
+    because the walk descends into `a` before going on to its sibling `a-b`.
     Symbolic links are not followed, so a link loop cannot make this walk forever. A directory that cannot be
     listed is appended to `problems` when one is given; without it such a directory is passed over in silence.
     """
