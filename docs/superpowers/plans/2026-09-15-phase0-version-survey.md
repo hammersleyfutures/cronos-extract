@@ -915,3 +915,18 @@ uv run cronos-extract survey --counts /path/to/his/databases
 Ask for the counts output, or the full output if the directory names aren't sensitive. Record the versions found in the
 Phase 4 spec when it is written: they decide whether v7 support can be confirmed against real files or must ship as
 experimental.
+
+---
+
+## Outcome (2026-09-16)
+
+Merged as PR #6 (`d24afe9`), eleven commits. The plan above is kept as written; where it and the code differ, the code is right.
+
+- `--list` was added to this plan and to the spec before execution began (`3428592`).
+- The plan had three errors that implementers caught and corrected against the code: Task 3's pinned sample line assumed a KOD-encoded fixture, its `{generation:<8}` padding contradicted that sample, and Task 4's "`01.11`–`01.14` are v4" included `01.12`, which is not v4. The generation column is padded to 7.
+- Review additions: a database's files are sorted case-insensitively while each name keeps its on-disk case; a directory that cannot be listed is reported rather than skipped; the install instructions and `CLAUDE.md` name the new command.
+- The whole-branch review found two defects that tests over crafted databases had not: a FIFO named `Cro*.dat` hung the survey forever, and a path that is not valid UTF-8 ended the run with a traceback. Only regular files are opened now, stdout and stderr escape undecodable bytes, and a `--list` file is decoded with `surrogateescape`.
+- CodeQL flagged three variables assigned in a `try` and used after a handler that never returns. Each use moved into the `try`'s `else:` clause; no alert was dismissed.
+- Two Copilot findings were declined with evidence: `Path.is_dir()` returns `False` for a path containing a NUL byte rather than raising, and following symlinks with `stat()` is deliberate.
+
+The survey of Ben's databases found no v7 (decision 11 in the spec). Items left open are listed under "Open items carried forward" in the spec's roadmap.

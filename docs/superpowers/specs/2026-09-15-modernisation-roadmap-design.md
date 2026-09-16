@@ -28,6 +28,8 @@ Every decision below was made with Ben on 2026-09-15.
 
 Each phase is a separate spec, plan and pull request, in this order.
 
+**Status (2026-09-16):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is next and has no spec or plan yet.
+
 ### Phase 0 — version survey
 
 A `cronos-extract survey` command that reports the CronosPro version of every database under a directory, reading only file headers. Ben runs it on his own databases; the result tells us whether v7 support can be confirmed against real files. Designed in full below.
@@ -55,6 +57,16 @@ Version 1.0, API documentation, PyPI publishing, making the repository public, d
 ### After 1.0
 
 KOD recovery that chooses the best whole permutation (an assignment problem, e.g. the Hungarian algorithm) instead of deciding each entry independently; link, dictionary, external-file and multi-valued fields; numeric value types; `crodump destruct` error handling; interactive crack exit statuses.
+
+### Open items carried forward
+
+Found during Phase 0 and its reviews and not fixed there, each with the phase that owns it. The older backlog in Appendix A of `docs/superpowers/plans/2026-09-15-pr2-bug-fixes.md` is still the input for Phases 2 to 5.
+
+- **Phase 1:** `survey.survey_roots` returns a list, so nothing prints until the whole walk finishes. The API contract promises lazy iteration, and a survey of network storage would benefit from streaming too.
+- **Phase 2:** `cli.main` calls `run_survey` directly; the `run_*(args, parser) -> int` signature is the seam for a dispatch once `export`, `inspect` and `crack` exist. `cli.collect_roots` calls `parser.error` on the top-level parser, so its usage line names `cronos-extract` rather than `survey`, which will mislead once there are four subcommands. `dumpdbfields.py` matches `Cro*.dat` names its own way; Phase 2 deletes that file.
+- **Phase 3:** `Datafile.isv3`, `isv4`, `isv7` and `isencrypted` keep their own copies of the version lists that `_format/header.py` now holds. The regular-file check in `survey.survey_file` stats and then opens, so a path swapped for a FIFO between the two calls would still block; opening with `O_NONBLOCK` and checking with `fstat` closes that window.
+- **Cosmetic, no phase:** an unreadable directory reachable from two overlapping roots is warned about twice. A directory named `Cro*.dat` that itself holds databases is reported as a problem under its parent and as its own database, so `--counts` also scores it as one unreadable file. `--jsonl` writes undecodable path bytes as `\udcXX` escapes, which strict JSON parsers may reject. The README's sentence about unreadable directories sits in the `--list` paragraph, though the warning applies to any root.
+- **Decided, not open:** `survey_file` follows symlinks (`stat`, not `lstat`) on purpose, and each plan keeps its pre-implementation wording as the record of what was planned.
 
 ## Public API contract (Phases 1 and 2 build to this)
 
