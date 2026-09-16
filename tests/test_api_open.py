@@ -33,6 +33,10 @@ SECTION_2_WARNINGS = [
 ]
 
 
+class StopReading(Exception):
+    pass
+
+
 @pytest.fixture(autouse=True)
 def prints_nothing(capfd: pytest.CaptureFixture[str]):
     yield
@@ -217,18 +221,11 @@ def test_a_kod_that_no_file_uses_is_reported(
 
 
 def test_an_exception_from_on_diagnostic_during_open_reaches_the_caller(tmp_path: Path) -> None:
-    class StopReading(Exception):
-        pass
-
     def on_diagnostic(diagnostic: Diagnostic) -> None:
         raise StopReading
 
     with pytest.raises(StopReading):
         open_bank(write_database(tmp_path / "db", []), on_diagnostic=on_diagnostic)
-
-
-class StopReading(Exception):
-    pass
 
 
 def test_an_exception_from_a_table_definition_warning_reaches_the_caller(tmp_path: Path) -> None:

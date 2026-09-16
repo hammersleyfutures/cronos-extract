@@ -1,7 +1,8 @@
 # ABOUTME: Diagnostics: the problems the cronos_extract API survives while reading, such as a corrupt record.
 # ABOUTME: DiagnosticLog keeps the first few, counts all and passes each to a callback, so memory stays bounded.
 from collections import Counter
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
@@ -82,6 +83,7 @@ class DiagnosticLog:
         self._counts: Counter[DiagnosticKind] = Counter()
         self._on_diagnostic = on_diagnostic
         self._callback_error: BaseException | None = None
+        self._guarding = False
         self.kept: Sequence[Diagnostic] = DiagnosticsView(self._kept)
         self.counts: Mapping[DiagnosticKind, int] = MappingProxyType(self._counts)
 
@@ -89,9 +91,9 @@ class DiagnosticLog:
         """
         Keep `diagnostic` while fewer than DIAGNOSTICS_KEPT are kept, count it, and pass it to the callback.
 
-        An exception from the callback is remembered before it is raised, because the internal readers catch broad
-        exceptions; raise_callback_error raises it again after them. While it is remembered, recording raises it again
-        and keeps nothing, so a reader's handler cannot add a diagnostic after the caller asked to stop.
+        Inside guard_callback_errors, an exception from the callback is also remembered, and while it is remembered
+        recording raises it again and keeps nothing, so a reader's handler cannot add a diagnostic after the caller
+        asked to stop.
         """
         if self._callback_error is not None:
             raise self._callback_error
@@ -102,20 +104,27 @@ class DiagnosticLog:
             try:
                 self._on_diagnostic(diagnostic)
             except BaseException as e:
-                self._callback_error = e
+                if self._guarding:
+                    self._callback_error = e
                 raise
 
-    def raise_callback_error(self) -> None:
+    @contextmanager
+    def guard_callback_errors(self) -> Iterator[None]:
         """
-        Raise the remembered exception from the callback, if any, and forget it.
+        Pass an exception from the callback through an internal reader unchanged.
 
-        Internal readers catch broad exceptions, so code that calls them uses this to pass a caller's request to stop
-        on to the caller unchanged.
+        The internal readers catch broad exceptions, so they can swallow or relabel a caller's request to stop. On exit,
+        a callback exception raised inside the block is forgotten and raised in place of whatever the block raised or
+        returned.
         """
-        error = self._callback_error
-        if error is not None:
-            self._callback_error = None
-            raise error
+        self._guarding = True
+        try:
+            yield
+        finally:
+            self._guarding = False
+            error, self._callback_error = self._callback_error, None
+            if error is not None:
+                raise error
 
 
 class RecordNumbers:

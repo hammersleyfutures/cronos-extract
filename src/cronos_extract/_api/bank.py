@@ -139,35 +139,34 @@ class Bank:
 
     def _load_tables(self) -> None:
         """Decode the database definition and every table definition in it."""
-        try:
-            definition = self._database.read_db_definition()
-        except OSError:
-            raise
-        except Exception as e:
-            self._log.raise_callback_error()
-            raise DatabaseDefinitionError(
-                f"the database definition in {STRU_FILE} of {self._directory} cannot be decoded: "
-                f"{describe_error(e)}. {DEFINITION_HINT}"
-            ) from e
+        with self._log.guard_callback_errors():
+            try:
+                definition = self._database.read_db_definition()
+            except OSError:
+                raise
+            except Exception as e:
+                raise DatabaseDefinitionError(
+                    f"the database definition in {STRU_FILE} of {self._directory} cannot be decoded: "
+                    f"{describe_error(e)}. {DEFINITION_HINT}"
+                ) from e
         tables = []
         for key, value in definition.items():
             if not is_table_key(key):
                 continue
-            try:
-                table_definition = TableDefinition(
-                    value, definition.get("BaseImage" + key[4:], b""), warn_into(self._log, STRU_FILE, f"{key}: ")
-                )
-            except Exception as e:
-                self._log.raise_callback_error()
-                self._log.record(
-                    Diagnostic(
-                        DiagnosticKind.UNDECODABLE_TABLE,
-                        f"{key} cannot be decoded and is left out: {describe_error(e)}",
-                        file=STRU_FILE,
+            with self._log.guard_callback_errors():
+                try:
+                    table_definition = TableDefinition(
+                        value, definition.get("BaseImage" + key[4:], b""), warn_into(self._log, STRU_FILE, f"{key}: ")
                     )
-                )
-                continue
-            self._log.raise_callback_error()
+                except Exception as e:
+                    self._log.record(
+                        Diagnostic(
+                            DiagnosticKind.UNDECODABLE_TABLE,
+                            f"{key} cannot be decoded and is left out: {describe_error(e)}",
+                            file=STRU_FILE,
+                        )
+                    )
+                    continue
             if key[4:] == "000":
                 self._files_table_id = table_definition.tableid
                 self._files_abbreviation = table_definition.abbrev

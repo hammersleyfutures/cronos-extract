@@ -2,7 +2,7 @@
 # ABOUTME: Pins the kind names Phase 2's JSON output relies on and the memory bounds on hostile databases.
 import contextlib
 import dataclasses
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import pytest
 
@@ -82,49 +82,96 @@ def test_an_exception_from_the_callback_reaches_the_caller_after_the_diagnostic_
     assert log.counts[DiagnosticKind.CORRUPT_RECORD] == 1
 
 
-def test_a_remembered_callback_exception_is_raised_again_once() -> None:
-    class StopReading(Exception):
-        pass
-
-    stop = StopReading()
-
-    def on_diagnostic(diagnostic: Diagnostic) -> None:
-        raise stop
-
-    log = DiagnosticLog(on_diagnostic)
-    # An internal reader that catches broad exceptions swallows the first raise.
-    with contextlib.suppress(StopReading):
-        log.record(corrupt(1))
-
-    with pytest.raises(StopReading) as raised:
-        log.raise_callback_error()
-    assert raised.value is stop
-    log.raise_callback_error()
+class StopReading(Exception):
+    pass
 
 
-def test_while_a_callback_exception_is_remembered_recording_raises_it_again_and_keeps_nothing() -> None:
-    class StopReading(Exception):
-        pass
-
-    calls: list[Diagnostic] = []
+def stopping_callback(calls: list[Diagnostic], stop: BaseException) -> Callable[[Diagnostic], None]:
+    """A callback that notes each diagnostic and raises `stop` on the first only."""
 
     def on_diagnostic(diagnostic: Diagnostic) -> None:
         calls.append(diagnostic)
-        raise StopReading
+        if len(calls) == 1:
+            raise stop
 
-    log = DiagnosticLog(on_diagnostic)
+    return on_diagnostic
+
+
+def test_outside_the_guard_a_caught_callback_exception_leaves_recording_unchanged() -> None:
+    calls: list[Diagnostic] = []
+    log = DiagnosticLog(stopping_callback(calls, StopReading()))
     with pytest.raises(StopReading):
         log.record(corrupt(1))
-    with pytest.raises(StopReading):
-        log.record(corrupt(2))
 
-    assert (list(log.kept), calls) == ([corrupt(1)], [corrupt(1)])
+    log.record(corrupt(2))
+
+    assert (list(log.kept), log.counts[DiagnosticKind.CORRUPT_RECORD], calls) == (
+        [corrupt(1), corrupt(2)],
+        2,
+        [corrupt(1), corrupt(2)],
+    )
 
 
-def test_raise_callback_error_does_nothing_when_the_callback_did_not_raise() -> None:
+def test_the_guard_raises_a_swallowed_callback_exception_on_exit() -> None:
+    stop = StopReading()
+    log = DiagnosticLog(stopping_callback([], stop))
+
+    # contextlib.suppress stands for an internal reader that catches broad exceptions and swallows the callback's.
+    with pytest.raises(StopReading) as raised, log.guard_callback_errors(), contextlib.suppress(Exception):
+        log.record(corrupt(1))
+
+    assert raised.value is stop
+
+
+def test_the_guard_raises_the_callback_exception_in_place_of_what_the_reader_raised() -> None:
+    stop = StopReading()
+    log = DiagnosticLog(stopping_callback([], stop))
+
+    with pytest.raises(StopReading) as raised, log.guard_callback_errors():
+        try:
+            log.record(corrupt(1))
+        except StopReading as e:
+            raise ValueError("the reader relabels it") from e
+
+    assert raised.value is stop
+
+
+def test_inside_the_guard_recording_after_a_callback_exception_raises_it_again_and_keeps_nothing() -> None:
+    calls: list[Diagnostic] = []
+    stop = StopReading()
+    log = DiagnosticLog(stopping_callback(calls, stop))
+
+    with pytest.raises(StopReading), log.guard_callback_errors():
+        with contextlib.suppress(StopReading):
+            log.record(corrupt(1))
+        with pytest.raises(StopReading) as raised:
+            log.record(corrupt(2))
+        assert raised.value is stop
+
+    assert (list(log.kept), dict(log.counts), calls) == ([corrupt(1)], {DiagnosticKind.CORRUPT_RECORD: 1}, [corrupt(1)])
+
+
+def test_after_the_guard_exits_with_a_callback_exception_the_log_records_normally() -> None:
+    calls: list[Diagnostic] = []
+    log = DiagnosticLog(stopping_callback(calls, StopReading()))
+    with pytest.raises(StopReading), log.guard_callback_errors():
+        log.record(corrupt(1))
+
+    log.record(corrupt(2))
+    with log.guard_callback_errors():
+        log.record(corrupt(3))
+
+    assert (list(log.kept), calls) == ([corrupt(1), corrupt(2), corrupt(3)], [corrupt(1), corrupt(2), corrupt(3)])
+
+
+def test_the_guard_lets_a_reader_exception_through_when_the_callback_did_not_raise() -> None:
     log = DiagnosticLog(None)
-    log.record(corrupt(1))
-    log.raise_callback_error()
+
+    with pytest.raises(ValueError, match="corrupt"), log.guard_callback_errors():
+        log.record(corrupt(1))
+        raise ValueError("corrupt")
+
+    assert list(log.kept) == [corrupt(1)]
 
 
 def test_the_kept_diagnostics_are_a_read_only_sequence_that_grows() -> None:
