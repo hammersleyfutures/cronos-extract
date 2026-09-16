@@ -28,7 +28,7 @@ Every decision below was made with Ben on 2026-09-15.
 
 Each phase is a separate spec, plan and pull request, in this order.
 
-**Status (2026-09-16):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is next and has no spec or plan yet.
+**Status (2026-09-16):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below.
 
 ### Phase 0 — version survey
 
@@ -70,6 +70,8 @@ Found during Phase 0 and its reviews and not fixed there, each with the phase th
 
 ## Public API contract (Phases 1 and 2 build to this)
 
+As refined by the Phase 1 design (`2026-09-16-phase1-public-api-design.md`, decisions P1–P11), which gives the full detail.
+
 ```python
 import cronos_extract
 
@@ -82,15 +84,15 @@ with cronos_extract.open(path, kod=..., compact=False, on_diagnostic=None) as ba
 - **`open(path, *, kod=Kod.default(), compact=False, on_diagnostic=None) -> Bank`** — `kod=None` reads without KOD decoding. `Bank` is a context manager that closes its files.
 - **`Kod`** — `Kod.default()`, `Kod.from_hex(str)`, `Kod.from_table(Sequence[int])`. A valid table is a permutation of 0–255.
 - **`crack_kod(path, method="strucrack" | "dbcrack") -> Kod | None`** — returns `None` when it cannot recover a permutation.
-- **`Bank`** — `tables: Sequence[Table]` (the Files table excluded), `read_file(FileReference) -> EmbeddedFile`, `files() -> Iterator[EmbeddedFile]`, `info` (per-file versions and flags, as the survey reports them), `diagnostics: Sequence[Diagnostic]`, `close()`.
+- **`Bank`** — `tables: Sequence[Table]` (the Files table excluded), `read_file(FileReference) -> EmbeddedFile | None`, `files() -> Iterator[EmbeddedFile]`, `info: Sequence[FileInfo]` (per-file versions and flags, as the survey reports them), `diagnostics: Sequence[Diagnostic]` (the first 1,000), `diagnostic_counts: Mapping[DiagnosticKind, int]`, `close()`.
 - **`Table`** — `id: int`, `name: str`, `fields: Sequence[FieldDefinition]`, `records() -> Iterator[Record]` (lazy).
 - **`Record`** — `number: int`, `fields: Sequence[Field]`, `__getitem__(name)`, `diagnostics`.
 - **`Field`** — `definition`, `value`, `text: str`, `raw: bytes`. `value` is `str`, `datetime.date`, `datetime.time`, `FileReference` or `None`; a value that does not parse as its type falls back to the text and records a diagnostic.
-- **`FileReference`** — `name`, `extension`, `record`. **`EmbeddedFile`** — `name`, `data: bytes`.
-- **`Diagnostic`** — frozen: `kind` (enum, e.g. `corrupt_record`, `undecodable_field`, `unresolved_file_reference`, `unused_kod`), `message`, `file`, `table`, `record`, `field`.
+- **`FileReference`** — `name`, `extension`, `record`. **`EmbeddedFile`** — `record: int`, `data: bytes`, `name: str | None` (`None` from `files()`, where the Files table stores no name).
+- **`Diagnostic`** — frozen: `kind` (`DiagnosticKind`: `corrupt_record`, `undecodable_field`, `invalid_value`, `undecodable_table`, `unsupported_table`, `unexpected_structure`, `unresolved_file_reference`, `unreadable_file`, `unused_kod`), `message`, `file`, `table`, `record`, `field`.
 - **Exceptions** — `CronosError` base; `NotACronosFile`, `UnsupportedVersion`, `DatabaseDefinitionError`. Anything survivable (one record, field or file reference) is a diagnostic, not an exception.
 
-**Documented promises:** iteration is lazy, and `bank.diagnostics` grows while reading; a `Bank` is not thread-safe; the set of `Field.value` types may grow in later versions.
+**Documented promises:** iteration is lazy, and `bank.diagnostics` grows while reading, up to its first 1,000 entries; a `Bank` is not thread-safe; the set of `Field.value` types may grow in later versions.
 
 ## Command line (Phase 2 builds to this)
 
