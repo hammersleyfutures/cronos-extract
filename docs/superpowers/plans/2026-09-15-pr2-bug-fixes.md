@@ -285,6 +285,14 @@ Expected: `state=MERGED`; `master` contains the merge; tests pass on `master`.
 
 ---
 
+## Outcome (2026-09-16)
+
+- **Task 6:** PR #2 merged (`46b159f`); `tooling`, `successor-base` and `bug-fixes` deleted. Copilot's review failed and Ben chose to skip it. Five fixes from the Fable review landed in PR #2 before the merge. The task review's deferred minor findings became PR #3 (`ed02fe6`, plan `2026-09-15-review-minors.md`).
+- **Task 7:** `CLAUDE.md` merged as PR #4 (`a10d51a`).
+- **Task 8:** the modernisation brainstorm produced `docs/superpowers/specs/2026-09-15-modernisation-roadmap-design.md`, merged with the plans as PR #5 (`c4a4dba`). Phase 0 of that roadmap merged as PR #6 (`d24afe9`); PR #7 (`9a5562b`) recorded the survey result and ignored `local/`.
+- The repository was still public on 2026-09-15; making it private remains intended before the PyPI release.
+- Appendix A remains the input backlog for the roadmap's later phases; items raised during Phase 0 are carried forward in the spec.
+
 ## Appendix A: Modernisation backlog (not part of PR 2)
 
 Collected from the reviews, the agents' reports and CodeQL; each needs a decision in the modernisation brainstorm.

@@ -407,3 +407,16 @@ for i in $(seq 1 30); do out=$(gh pr checks $PR -R $REPO 2>&1); if [ -n "$out" ]
 Expected: all checks pass. List code-scanning alerts on `refs/pull/<PR>/merge` and bot review threads; verify each before acting, fix test-first, ask Ben before dismissing any alert.
 
 - [ ] **Step 3: Ask Ben for approval to merge** (report CI, alerts, threads). Only then: `gh pr merge <PR> -R hammersleyfutures/cronos-extract --merge`, update local `master`, run `uv run pytest -q` on it, and ask Ben before deleting `review-minors`.
+
+---
+
+## Outcome (2026-09-16)
+
+Merged as PR #3 (`ed02fe6`). Beyond Tasks 1 to 4, the final whole-branch review and Copilot led to:
+
+- key record numbers checked against the number of CroStru records. The plan's wrong-KOD analysis had used only `test_data`, whose files ignore `--kod`; on a genuinely encrypted database a wrong KOD still raised `struct.error` for about half of the wrong tables tried;
+- one `Database.read_db_definition()`, with clear errors for a deleted or missing CroStru record 1 instead of a `TypeError`;
+- exact assertions in the wrong-KOD builder test, and corrupt-compressed-record tests that no longer pin zlib's own wording;
+- a corrected header comment in `tests/test_database.py`.
+
+Copilot's suggestion to derive record 5 from `nrofrecords` in the fixture test was declined: the test data is committed, and other tests assert the same record number.
