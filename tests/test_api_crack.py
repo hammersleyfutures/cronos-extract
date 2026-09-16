@@ -14,10 +14,7 @@ from cronos_builder import (
     write_database,
 )
 
-from cronos_extract import crodump
-from cronos_extract._api.crack import crack_kod
-from cronos_extract._api.errors import NotACronosFile
-from cronos_extract._api.kod import Kod
+from cronos_extract import Kod, NotACronosFile, crack_kod, crodump
 from cronos_extract.koddecoder import KODcoding
 
 KOD = random_kod(seed=7)

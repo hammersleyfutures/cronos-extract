@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from cronos_builder import write_database, write_header_only_datafile
 
+from cronos_extract import Diagnostic, DiagnosticKind, NotACronosFile, UnsupportedVersion
 from cronos_extract._api.datafiles import (
     database_directory,
     list_directory,
@@ -14,8 +15,7 @@ from cronos_extract._api.datafiles import (
     optional_file_info,
     warn_into,
 )
-from cronos_extract._api.diagnostics import Diagnostic, DiagnosticKind, DiagnosticLog
-from cronos_extract._api.errors import NotACronosFile, UnsupportedVersion
+from cronos_extract._api.diagnostics import DiagnosticLog
 from cronos_extract._format.files import NotARegularFile
 
 

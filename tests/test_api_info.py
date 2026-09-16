@@ -7,7 +7,8 @@ from pathlib import Path
 import pytest
 from cronos_builder import random_kod, write_database, write_header_only_datafile
 
-from cronos_extract._api.info import FileInfo, read_file_info
+from cronos_extract import FileInfo
+from cronos_extract._api.info import read_file_info
 
 
 def test_file_info_reports_a_v3_header(tmp_path: Path) -> None:

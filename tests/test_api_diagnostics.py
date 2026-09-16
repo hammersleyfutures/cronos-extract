@@ -6,14 +6,15 @@ from collections.abc import Callable, Sequence
 
 import pytest
 
-from cronos_extract._api.diagnostics import (
-    DIAGNOSTICS_KEPT,
+from cronos_extract import (
+    CronosError,
+    DatabaseDefinitionError,
     Diagnostic,
     DiagnosticKind,
-    DiagnosticLog,
-    RecordNumbers,
+    NotACronosFile,
+    UnsupportedVersion,
 )
-from cronos_extract._api.errors import CronosError, DatabaseDefinitionError, NotACronosFile, UnsupportedVersion
+from cronos_extract._api.diagnostics import DIAGNOSTICS_KEPT, DiagnosticLog, RecordNumbers
 
 
 def corrupt(number: int) -> Diagnostic:

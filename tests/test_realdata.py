@@ -9,10 +9,8 @@ from pathlib import Path
 import pytest
 from cronos_builder import tad_layout
 
+import cronos_extract
 from cronos_extract import koddecoder
-from cronos_extract._api.bank import open as open_bank
-from cronos_extract._api.crack import crack_kod
-from cronos_extract._api.errors import CronosError
 from cronos_extract._api.info import read_file_info
 from cronos_extract.Database import Database
 from cronos_extract.survey import SurveyedDatabase, read_path_list, survey_databases
@@ -71,8 +69,8 @@ def test_open_reads_every_table_or_raises_a_cronos_error(dbdir: Path, capfd: pyt
     if not bank_is_small(dbdir):
         pytest.skip("CroBank is too large to walk once per table")
     try:
-        bank = open_bank(dbdir)
-    except CronosError:
+        bank = cronos_extract.open(dbdir)
+    except cronos_extract.CronosError:
         pass
     else:
         with bank:
@@ -89,8 +87,8 @@ def test_field_text_matches_database_enumerate_records(dbdir: Path) -> None:
     if not bank_is_small(dbdir):
         pytest.skip("CroBank is too large to walk once per table")
     try:
-        bank = open_bank(dbdir)
-    except CronosError:
+        bank = cronos_extract.open(dbdir)
+    except cronos_extract.CronosError:
         pytest.skip("the database does not open with the default KOD")
     with bank, contextlib.redirect_stderr(io.StringIO()), Database(str(dbdir), False, koddecoder.new()) as db:
         internal = {(table.tableid, table.tablename): table for table in db.enumerate_tables()}
@@ -111,8 +109,8 @@ def test_bank_info_agrees_with_the_survey(dbdir: Path) -> None:
     surveyed = SURVEYED_BY_DIRECTORY[dbdir]
     try:
         # compact=True reads .tad entries on demand, so a multi-GB CroBank.tad is not loaded into memory.
-        bank = open_bank(dbdir, compact=True)
-    except CronosError:
+        bank = cronos_extract.open(dbdir, compact=True)
+    except cronos_extract.CronosError:
         pytest.skip("the database does not open with the default KOD")
     with bank:
         by_path = {info.path: info for info in surveyed.files}
@@ -178,9 +176,9 @@ V4_CRACK_CASES = [
 
 @pytest.mark.parametrize("dbdir", V4_CRACK_CASES)
 def test_dbcrack_recovers_a_kod_that_opens_a_v4_database(dbdir: Path) -> None:
-    kod = crack_kod(dbdir, "dbcrack")
+    kod = cronos_extract.crack_kod(dbdir, "dbcrack")
 
     assert kod is not None
     # compact=True reads .tad entries on demand, so a multi-GB CroBank.tad is not loaded into memory.
-    with open_bank(dbdir, kod=kod, compact=True) as bank:
+    with cronos_extract.open(dbdir, kod=kod, compact=True) as bank:
         assert bank.tables

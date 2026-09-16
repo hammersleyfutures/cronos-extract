@@ -15,12 +15,18 @@ from cronos_builder import (
     write_database,
 )
 
-from cronos_extract._api.bank import Bank, is_table_key
-from cronos_extract._api.bank import open as open_bank
-from cronos_extract._api.diagnostics import Diagnostic, DiagnosticKind
-from cronos_extract._api.errors import DatabaseDefinitionError, NotACronosFile, UnsupportedVersion
-from cronos_extract._api.kod import Kod
-from cronos_extract._api.values import FieldDefinition
+import cronos_extract
+from cronos_extract import (
+    Bank,
+    DatabaseDefinitionError,
+    Diagnostic,
+    DiagnosticKind,
+    FieldDefinition,
+    Kod,
+    NotACronosFile,
+    UnsupportedVersion,
+)
+from cronos_extract._api.bank import is_table_key
 from cronos_extract.koddecoder import INITIAL_KOD
 
 SECTION_2_WARNINGS = [
@@ -49,7 +55,7 @@ def kinds(bank: Bank) -> list[DiagnosticKind]:
 
 
 def test_open_reads_the_tables_of_a_database(tmp_path: Path) -> None:
-    with open_bank(write_database(tmp_path / "db", [])) as bank:
+    with cronos_extract.open(write_database(tmp_path / "db", [])) as bank:
         (table,) = bank.tables
         assert (table.id, table.name, table.abbreviation) == (1, "erdgeist", "ER")
         assert table.fields[0] == FieldDefinition("Системный номер", 0)
@@ -59,20 +65,20 @@ def test_open_reads_the_tables_of_a_database(tmp_path: Path) -> None:
 
 
 def test_open_reports_the_section_2_warning_of_each_table_definition(tmp_path: Path) -> None:
-    with open_bank(write_database(tmp_path / "db", [])) as bank:
+    with cronos_extract.open(write_database(tmp_path / "db", [])) as bank:
         assert list(bank.diagnostics) == SECTION_2_WARNINGS
         assert dict(bank.diagnostic_counts) == {DiagnosticKind.UNEXPECTED_STRUCTURE: 2}
 
 
 def test_open_accepts_a_path_object(tmp_path: Path) -> None:
-    with open_bank(Path(write_database(tmp_path / "db", []))) as bank:
+    with cronos_extract.open(Path(write_database(tmp_path / "db", []))) as bank:
         assert [table.name for table in bank.tables] == ["erdgeist"]
 
 
 def test_bank_info_lists_the_files_found_in_order(tmp_path: Path) -> None:
     dbdir = Path(write_database(tmp_path / "db", [], index_records=[]))
 
-    with open_bank(dbdir) as bank:
+    with cronos_extract.open(dbdir) as bank:
         assert [(info.name, info.path, info.version, info.problem) for info in bank.info] == [
             ("Stru", dbdir / "CroStru.dat", "01.04", None),
             ("Bank", dbdir / "CroBank.dat", "01.04", None),
@@ -82,7 +88,7 @@ def test_bank_info_lists_the_files_found_in_order(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("version", [b"01.02", b"01.03", b"01.04", b"01.05", b"01.11"])
 def test_open_reads_every_version_the_builder_writes(tmp_path: Path, version: bytes) -> None:
-    with open_bank(write_database(tmp_path / "db", [], version=version)) as bank:
+    with cronos_extract.open(write_database(tmp_path / "db", [], version=version)) as bank:
         assert [table.name for table in bank.tables] == ["erdgeist"]
         assert bank.info[0].version == version.decode()
 
@@ -91,7 +97,7 @@ def test_an_unreadable_index_is_reported_and_reading_goes_on(tmp_path: Path) -> 
     dbdir = Path(write_database(tmp_path / "db", [], index_records=[]))
     (dbdir / "CroIndex.dat").write_bytes(b"NotACronosFile" + bytes(20))
 
-    with open_bank(dbdir) as bank:
+    with cronos_extract.open(dbdir) as bank:
         assert [table.name for table in bank.tables] == ["erdgeist"]
         assert bank.info[2].problem is not None
         assert kinds(bank) == [DiagnosticKind.UNREADABLE_FILE, *(d.kind for d in SECTION_2_WARNINGS)]
@@ -101,26 +107,26 @@ def test_a_directory_name_that_is_not_valid_utf8_opens(tmp_path: Path) -> None:
     dbdir = tmp_path / os.fsdecode(b"db-\xff\xfe")
     write_database(dbdir, [])
 
-    with open_bank(dbdir) as bank:
+    with cronos_extract.open(dbdir) as bank:
         assert [table.name for table in bank.tables] == ["erdgeist"]
         assert bank.info[0].path == dbdir / "CroStru.dat"
 
 
 def test_a_missing_directory_raises_file_not_found(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
-        open_bank(tmp_path / "missing")
+        cronos_extract.open(tmp_path / "missing")
 
 
 def test_a_file_path_raises_not_a_directory(tmp_path: Path) -> None:
     (tmp_path / "file").write_bytes(b"")
 
     with pytest.raises(NotADirectoryError):
-        open_bank(tmp_path / "file")
+        cronos_extract.open(tmp_path / "file")
 
 
 def test_a_bytes_path_raises_type_error(tmp_path: Path) -> None:
     with pytest.raises(TypeError):
-        open_bank(bytes(tmp_path))  # ty: ignore[invalid-argument-type]
+        cronos_extract.open(bytes(tmp_path))  # ty: ignore[invalid-argument-type]
 
 
 def test_a_directory_without_a_bank_is_not_a_cronos_file(tmp_path: Path) -> None:
@@ -129,7 +135,7 @@ def test_a_directory_without_a_bank_is_not_a_cronos_file(tmp_path: Path) -> None
     (dbdir / "CroBank.tad").unlink()
 
     with pytest.raises(NotACronosFile, match=r"no CroBank\.dat and CroBank\.tad"):
-        open_bank(dbdir)
+        cronos_extract.open(dbdir)
 
 
 def test_a_v7_bank_is_unsupported(tmp_path: Path) -> None:
@@ -139,34 +145,34 @@ def test_a_v7_bank_is_unsupported(tmp_path: Path) -> None:
     (dbdir / "CroBank.dat").write_bytes(bytes(data))
 
     with pytest.raises(UnsupportedVersion, match=r"01\.19 \(v7\)"):
-        open_bank(dbdir)
+        cronos_extract.open(dbdir)
 
 
 def test_a_database_without_records_in_stru_has_no_definition(tmp_path: Path) -> None:
     dbdir = database_with_missing_definition(tmp_path / "db", [])
 
     with pytest.raises(DatabaseDefinitionError, match=r"holds no records.*cronos_extract\.crack_kod"):
-        open_bank(dbdir)
+        cronos_extract.open(dbdir)
 
 
 def test_a_deleted_definition_record_is_a_definition_error(tmp_path: Path) -> None:
     dbdir = database_with_missing_definition(tmp_path / "db", [None, *stru_records_from_test_db()[1:]])
 
     with pytest.raises(DatabaseDefinitionError, match="is deleted"):
-        open_bank(dbdir)
+        cronos_extract.open(dbdir)
 
 
 def test_a_wrong_kod_is_a_definition_error(tmp_path: Path) -> None:
     dbdir, wrong_kod_hex = database_with_wrong_kod_record_out_of_range(tmp_path / "db")
 
     with pytest.raises(DatabaseDefinitionError, match="does not hold"):
-        open_bank(dbdir, kod=Kod.from_hex(wrong_kod_hex))
+        cronos_extract.open(dbdir, kod=Kod.from_hex(wrong_kod_hex))
 
 
 def test_a_table_definition_that_cannot_be_decoded_is_left_out(tmp_path: Path) -> None:
     dbdir = database_with_extra_definition_key(tmp_path / "db", "Base002", b"\x00")
 
-    with open_bank(dbdir) as bank:
+    with cronos_extract.open(dbdir) as bank:
         assert [table.name for table in bank.tables] == ["erdgeist"]
         (diagnostic,) = [d for d in bank.diagnostics if d.kind == DiagnosticKind.UNDECODABLE_TABLE]
         assert (diagnostic.file, diagnostic.message.startswith("Base002 cannot be decoded")) == ("CroStru.dat", True)
@@ -175,7 +181,7 @@ def test_a_table_definition_that_cannot_be_decoded_is_left_out(tmp_path: Path) -
 def test_a_table_without_the_system_number_field_is_left_out(tmp_path: Path) -> None:
     dbdir = database_with_extra_definition_key(tmp_path / "db", "Base002", table_definition_without_fields(tableid=2))
 
-    with open_bank(dbdir) as bank:
+    with cronos_extract.open(dbdir) as bank:
         assert [table.id for table in bank.tables] == [1]
         (diagnostic,) = [d for d in bank.diagnostics if d.kind == DiagnosticKind.UNDECODABLE_TABLE]
         assert (diagnostic.table, diagnostic.message) == (
@@ -187,14 +193,14 @@ def test_a_table_without_the_system_number_field_is_left_out(tmp_path: Path) -> 
 def test_a_table_with_an_id_above_255_is_kept(tmp_path: Path) -> None:
     dbdir = database_with_extra_definition_key(tmp_path / "db", "Base002", patched_table_definition(tableid=300))
 
-    with open_bank(dbdir) as bank:
+    with cronos_extract.open(dbdir) as bank:
         assert [table.id for table in bank.tables] == [1, 300]
 
 
 def test_a_duplicate_definition_key_is_an_unexpected_structure(tmp_path: Path) -> None:
     dbdir = database_with_extra_definition_key(tmp_path / "db", "BankName", b"again")
 
-    with open_bank(dbdir) as bank:
+    with cronos_extract.open(dbdir) as bank:
         assert Diagnostic(DiagnosticKind.UNEXPECTED_STRUCTURE, "duplicate key: BankName", file="CroStru.dat") in list(
             bank.diagnostics
         )
@@ -216,7 +222,7 @@ def test_a_kod_that_no_file_uses_is_reported(
 ) -> None:
     dbdir = write_database(tmp_path / "db", [], written_with, version=version)
 
-    with open_bank(dbdir, kod=opened_with) as bank:
+    with cronos_extract.open(dbdir, kod=opened_with) as bank:
         assert (DiagnosticKind.UNUSED_KOD in kinds(bank)) is reported
 
 
@@ -225,7 +231,7 @@ def test_an_exception_from_on_diagnostic_during_open_reaches_the_caller(tmp_path
         raise StopReading
 
     with pytest.raises(StopReading):
-        open_bank(write_database(tmp_path / "db", []), on_diagnostic=on_diagnostic)
+        cronos_extract.open(write_database(tmp_path / "db", []), on_diagnostic=on_diagnostic)
 
 
 def test_an_exception_from_a_table_definition_warning_reaches_the_caller(tmp_path: Path) -> None:
@@ -237,7 +243,7 @@ def test_an_exception_from_a_table_definition_warning_reaches_the_caller(tmp_pat
             raise StopReading
 
     with pytest.raises(StopReading):
-        open_bank(write_database(tmp_path / "db", []), on_diagnostic=on_diagnostic)
+        cronos_extract.open(write_database(tmp_path / "db", []), on_diagnostic=on_diagnostic)
     assert seen == SECTION_2_WARNINGS[:1]
 
 
@@ -249,7 +255,7 @@ def test_an_exception_from_a_database_definition_warning_reaches_the_caller(tmp_
             raise StopReading
 
     with pytest.raises(StopReading):
-        open_bank(dbdir, on_diagnostic=on_diagnostic)
+        cronos_extract.open(dbdir, on_diagnostic=on_diagnostic)
 
 
 @pytest.mark.parametrize(
@@ -271,12 +277,12 @@ def test_only_base_followed_by_ascii_digits_names_a_table(key: str, is_table: bo
 def test_on_diagnostic_receives_the_diagnostics_of_open(tmp_path: Path) -> None:
     seen: list[Diagnostic] = []
 
-    with open_bank(write_database(tmp_path / "db", []), on_diagnostic=seen.append):
+    with cronos_extract.open(write_database(tmp_path / "db", []), on_diagnostic=seen.append):
         assert seen == SECTION_2_WARNINGS
 
 
 def test_closing_twice_is_harmless_and_a_closed_bank_refuses_to_read(tmp_path: Path) -> None:
-    bank = open_bank(write_database(tmp_path / "db", []))
+    bank = cronos_extract.open(write_database(tmp_path / "db", []))
     table = bank.tables[0]
 
     bank.close()

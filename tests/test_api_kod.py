@@ -3,7 +3,8 @@
 import pytest
 from cronos_builder import random_kod
 
-from cronos_extract._api.kod import Kod, kod_coder
+from cronos_extract import Kod
+from cronos_extract._api.kod import kod_coder
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
 
 
