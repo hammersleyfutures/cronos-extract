@@ -50,3 +50,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Machine-local test assets, such as lists of real CronosPro databases to test against. Their contents name
+# datasets that must never be committed, so the whole directory is ignored.
+/local/
