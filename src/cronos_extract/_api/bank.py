@@ -5,19 +5,22 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack
 from pathlib import Path
 from types import TracebackType
-from typing import Self, override
+from typing import Self, cast, override
 
 from ..Database import Database
 from ..Datamodel import TableDefinition, describe_error
 from .datafiles import database_directory, list_directory, open_datafile, optional_file_info, warn_into
-from .diagnostics import Diagnostic, DiagnosticKind, DiagnosticLog
+from .diagnostics import Diagnostic, DiagnosticKind, DiagnosticLog, RecordNumbers
 from .errors import DatabaseDefinitionError
 from .info import FileInfo
 from .kod import Kod, kod_coder
-from .values import FieldDefinition, Record
+from .values import EmbeddedFile, FieldDefinition, FileReference, Record, decode_record
 
 DEFAULT_KOD = Kod.default()
 STRU_FILE = "CroStru.dat"
+BANK_FILE = "CroBank.dat"
+# Record data holds the table id in one byte.
+LARGEST_TABLE_ID = 255
 FIELD_TYPE_SYSTEM_NUMBER = 0
 DEFINITION_HINT = (
     "If the KOD used to read this database is not its own, the definition decodes as garbage; "
@@ -86,6 +89,8 @@ class Bank:
         self._tables: tuple[Table, ...] = ()
         self._files_table_id: int | None = None
         self._files_abbreviation: str | None = None
+        self._corrupt_records = RecordNumbers(database.bank.nrofrecords)
+        self._unsupported_tables: set[int] = set()
 
     @property
     def tables(self) -> tuple[Table, ...]:
@@ -134,8 +139,102 @@ class Bank:
         if self._closed:
             raise ValueError(f"the bank in {self._directory} is closed")
 
+    def files(self) -> Iterator[EmbeddedFile]:
+        """
+        The files stored in the Files table, in CroBank order, read one CroBank record per step, without names.
+
+        Raises ValueError when the bank is closed, now or at any later step.
+        """
+        self._check_open()
+        return self._files()
+
+    def read_file(self, reference: FileReference) -> EmbeddedFile | None:
+        """
+        The file `reference` refers to, named after the reference.
+
+        Returns None, recording unresolved_file_reference, when the reference's record is not a readable record of
+        the Files table. Raises ValueError when the bank is closed.
+        """
+        self._check_open()
+        record = reference.record
+        if record is None:
+            return self._unresolved(reference, "its record number is not a number")
+        if self._files_table_id is None:
+            return self._unresolved(reference, "the database has no Files table")
+        if not 1 <= record <= self._database.bank.nrofrecords:
+            return self._unresolved(reference, f"CroBank has no record {record}")
+        data = self._read(record)
+        if data is None:
+            return self._unresolved(reference, f"CroBank record {record} is deleted or corrupt")
+        if not data or data[0] != self._files_table_id:
+            return self._unresolved(reference, f"CroBank record {record} is not a record of the Files table")
+        name = f"{reference.name}.{reference.extension}" if reference.extension else reference.name
+        return EmbeddedFile(record, data[1:], name)
+
+    def _unresolved(self, reference: FileReference, reason: str) -> None:
+        self._log.record(
+            Diagnostic(
+                DiagnosticKind.UNRESOLVED_FILE_REFERENCE,
+                f"a file reference cannot be read: {reason}",
+                file=BANK_FILE,
+                record=reference.record,
+            )
+        )
+
+    def _read(self, number: int) -> bytes | None:
+        """
+        CroBank record `number`, or None when it is deleted or cannot be read.
+
+        A record that cannot be read is reported as corrupt_record the first time only. OSError propagates.
+        Raises ValueError when the bank is closed.
+        """
+        self._check_open()
+        try:
+            return cast(bytes | None, self._database.bank.readrec(number))
+        except OSError:
+            raise
+        except Exception as e:
+            if self._corrupt_records.add(number):
+                self._log.record(
+                    Diagnostic(
+                        DiagnosticKind.CORRUPT_RECORD,
+                        f"CroBank record {number} is corrupt and is skipped: {describe_error(e)}",
+                        file=BANK_FILE,
+                        record=number,
+                    )
+                )
+            return None
+
     def _records(self, table: Table) -> Iterator[Record]:
-        raise NotImplementedError("Task 10 reads records")
+        if table.id > LARGEST_TABLE_ID:
+            if table.id not in self._unsupported_tables:
+                self._unsupported_tables.add(table.id)
+                self._log.record(
+                    Diagnostic(
+                        DiagnosticKind.UNSUPPORTED_TABLE,
+                        f"the table has id {table.id}, but this release reads only tables with ids up to "
+                        f"{LARGEST_TABLE_ID}, so its records are not read",
+                        file=STRU_FILE,
+                        table=table.name,
+                    )
+                )
+            return
+        for number in range(1, self._database.bank.nrofrecords + 1):
+            data = self._read(number)
+            if not data or data[0] != table.id:
+                continue
+            record = decode_record(number, table.name, table.fields, table._definition.fields, data[1:])
+            for diagnostic in record.diagnostics:
+                self._log.record(diagnostic)
+            yield record
+
+    def _files(self) -> Iterator[EmbeddedFile]:
+        if self._files_table_id is None:
+            return
+        for number in range(1, self._database.bank.nrofrecords + 1):
+            data = self._read(number)
+            if data and data[0] == self._files_table_id:
+                yield EmbeddedFile(number, data[1:], None)
 
     def _load_tables(self) -> None:
         """Decode the database definition and every table definition in it."""

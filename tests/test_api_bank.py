@@ -1,0 +1,330 @@
+# ABOUTME: Tests for reading records and files through the cronos_extract API: laziness, diagnostics and closing.
+# ABOUTME: Compares the API with Database.enumerate_records on every version tests/cronos_builder.py writes.
+import datetime
+from pathlib import Path
+
+import pytest
+from cronos_builder import (
+    TEST_TABLE_FILE_FIELD_INDEX,
+    TEST_TABLE_ID,
+    bank_record,
+    corrupt_compressed_record,
+    database_with_extra_definition_key,
+    database_without_files_table,
+    file_record,
+    file_reference_field,
+    patched_table_definition,
+    random_kod,
+    write_database,
+)
+
+from cronos_extract._api.bank import Bank
+from cronos_extract._api.bank import open as open_bank
+from cronos_extract._api.diagnostics import DIAGNOSTICS_KEPT, Diagnostic, DiagnosticKind
+from cronos_extract._api.kod import Kod
+from cronos_extract._api.values import EmbeddedFile, FileReference
+from cronos_extract.Database import Database
+from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
+
+KOD = random_kod(seed=11)
+FIELDS = [b"42", b"Hammersley", "Привет".encode("cp1251"), b"1240315", b"0930", b"", b"seven", b"", b"", b"", b"x"]
+
+
+def person(*, date: bytes = b"1240315", file_field: bytes = b"") -> bytes:
+    fields = list(FIELDS)
+    fields[3] = date
+    fields[TEST_TABLE_FILE_FIELD_INDEX] = file_field
+    return bank_record(TEST_TABLE_ID, fields)
+
+
+def counts(bank: Bank, kind: DiagnosticKind) -> int:
+    return bank.diagnostic_counts.get(kind, 0)
+
+
+@pytest.fixture
+def prints_nothing(capfd: pytest.CaptureFixture[str]):
+    yield
+    captured = capfd.readouterr()
+    assert (captured.out, captured.err) == ("", "")
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_records_are_read_in_crobank_order_skipping_other_tables_and_deleted_records(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [person(), file_record(b"file"), None, person(date=b"850000")])
+
+    with open_bank(dbdir) as bank:
+        records = list(bank.tables[0].records())
+
+    assert [record.number for record in records] == [1, 4]
+    assert records[0]["Entry #4"].value == datetime.date(2024, 3, 15)
+    assert records[1]["Entry #4"].value == "1985-00-00"
+    assert records[0]["Entry #2"].text == "Hammersley"
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_records_are_read_one_crobank_record_per_step(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [person(), corrupt_compressed_record(), person()])
+
+    with open_bank(dbdir) as bank:
+        records = bank.tables[0].records()
+        assert next(records).number == 1
+        assert counts(bank, DiagnosticKind.CORRUPT_RECORD) == 0
+        assert next(records).number == 3
+        assert counts(bank, DiagnosticKind.CORRUPT_RECORD) == 1
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_a_corrupt_record_is_reported_once_however_many_tables_are_read(tmp_path: Path) -> None:
+    dbdir = database_with_extra_definition_key(
+        tmp_path / "db",
+        "Base002",
+        patched_table_definition(tableid=2),
+        [person(), corrupt_compressed_record(), bank_record(2, FIELDS)],
+    )
+
+    with open_bank(dbdir) as bank:
+        first, second = bank.tables
+        assert [record.number for record in first.records()] == [1]
+        assert [record.number for record in second.records()] == [3]
+        assert [record.number for record in first.records()] == [1]
+        corrupt = [d for d in bank.diagnostics if d.kind == DiagnosticKind.CORRUPT_RECORD]
+
+    (diagnostic,) = corrupt
+    assert (diagnostic.file, diagnostic.record, diagnostic.table, diagnostic.field) == ("CroBank.dat", 2, None, None)
+    assert "CroBank record 2 is corrupt" in diagnostic.message
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_record_diagnostics_are_recorded_each_time_a_record_is_decoded(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [person(date=b"851301")])
+
+    with open_bank(dbdir) as bank:
+        (record,) = bank.tables[0].records()
+        list(bank.tables[0].records())
+
+        assert [d.kind for d in record.diagnostics] == [DiagnosticKind.INVALID_VALUE]
+        assert counts(bank, DiagnosticKind.INVALID_VALUE) == 2
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_a_table_with_an_id_above_255_yields_nothing_and_is_reported_once(tmp_path: Path) -> None:
+    dbdir = database_with_extra_definition_key(tmp_path / "db", "Base002", patched_table_definition(tableid=300))
+
+    with open_bank(dbdir) as bank:
+        table = bank.tables[1]
+        assert list(table.records()) == []
+        assert list(table.records()) == []
+        (diagnostic,) = [d for d in bank.diagnostics if d.kind == DiagnosticKind.UNSUPPORTED_TABLE]
+
+    assert (diagnostic.table, diagnostic.file) == ("erdgeist", "CroStru.dat")
+    assert "255" in diagnostic.message
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_the_bank_keeps_the_first_diagnostics_and_counts_them_all(tmp_path: Path) -> None:
+    corrupt_records = DIAGNOSTICS_KEPT + 1
+    dbdir = write_database(tmp_path / "db", [corrupt_compressed_record()] * corrupt_records)
+    seen: list[Diagnostic] = []
+
+    with open_bank(dbdir, on_diagnostic=seen.append) as bank:
+        assert list(bank.tables[0].records()) == []
+
+        assert len(bank.diagnostics) == DIAGNOSTICS_KEPT
+        assert counts(bank, DiagnosticKind.CORRUPT_RECORD) == corrupt_records
+        assert sum(bank.diagnostic_counts.values()) == corrupt_records + 2
+        assert len(seen) == corrupt_records + 2
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_an_exception_from_on_diagnostic_stops_reading_and_the_bank_still_closes(tmp_path: Path) -> None:
+    class StopReading(Exception):
+        pass
+
+    def on_diagnostic(diagnostic: Diagnostic) -> None:
+        if diagnostic.kind == DiagnosticKind.CORRUPT_RECORD:
+            raise StopReading
+
+    dbdir = write_database(tmp_path / "db", [person(), corrupt_compressed_record(), person()])
+
+    with open_bank(dbdir, on_diagnostic=on_diagnostic) as bank:
+        records = bank.tables[0].records()
+        assert next(records).number == 1
+        with pytest.raises(StopReading):
+            next(records)
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_a_later_records_pass_records_diagnostics_after_on_diagnostic_stopped_one(tmp_path: Path) -> None:
+    class StopReading(Exception):
+        pass
+
+    seen: list[Diagnostic] = []
+
+    def on_diagnostic(diagnostic: Diagnostic) -> None:
+        seen.append(diagnostic)
+        if diagnostic.kind == DiagnosticKind.CORRUPT_RECORD:
+            raise StopReading
+
+    dbdir = write_database(tmp_path / "db", [corrupt_compressed_record(), person(date=b"851301")])
+
+    with open_bank(dbdir, on_diagnostic=on_diagnostic) as bank:
+        with pytest.raises(StopReading):
+            list(bank.tables[0].records())
+        assert counts(bank, DiagnosticKind.CORRUPT_RECORD) == 1
+
+        (record,) = bank.tables[0].records()
+
+        assert record.number == 2
+        assert counts(bank, DiagnosticKind.CORRUPT_RECORD) == 1
+        assert counts(bank, DiagnosticKind.INVALID_VALUE) == 1
+        assert [d.kind for d in bank.diagnostics][-1] == DiagnosticKind.INVALID_VALUE
+        assert seen[-1].kind == DiagnosticKind.INVALID_VALUE
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_a_generator_stops_with_value_error_once_its_bank_is_closed(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [person(), person()])
+    bank = open_bank(dbdir)
+    records = bank.tables[0].records()
+    next(records)
+
+    bank.close()
+
+    with pytest.raises(ValueError, match="is closed"):
+        next(records)
+    assert counts(bank, DiagnosticKind.CORRUPT_RECORD) == 0
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_files_and_read_file_refuse_a_closed_bank(tmp_path: Path) -> None:
+    bank = open_bank(write_database(tmp_path / "db", []))
+    bank.close()
+
+    with pytest.raises(ValueError, match="is closed"):
+        bank.files()
+    with pytest.raises(ValueError, match="is closed"):
+        bank.read_file(FileReference("a", "b", 1))
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_generators_from_two_tables_can_be_interleaved(tmp_path: Path) -> None:
+    dbdir = database_with_extra_definition_key(
+        tmp_path / "db",
+        "Base002",
+        patched_table_definition(tableid=2),
+        [person(), bank_record(2, FIELDS), person(), bank_record(2, FIELDS)],
+    )
+
+    with open_bank(dbdir) as bank:
+        first, second = (table.records() for table in bank.tables)
+        numbers = [next(first).number, next(second).number, next(first).number, next(second).number]
+
+    assert numbers == [1, 2, 3, 4]
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_files_yields_the_files_table_records_without_names(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [person(), file_record(b"first"), None, file_record(b"second")])
+
+    with open_bank(dbdir) as bank:
+        assert list(bank.files()) == [EmbeddedFile(2, b"first", None), EmbeddedFile(4, b"second", None)]
+
+
+@pytest.mark.usefixtures("prints_nothing")
+@pytest.mark.parametrize(("extension", "name"), [("pdf", "report.pdf"), ("", "report")])
+def test_read_file_follows_a_reference_and_names_the_file(tmp_path: Path, extension: str, name: str) -> None:
+    reference = file_reference_field("report", extension, 2)
+    dbdir = write_database(tmp_path / "db", [person(file_field=reference), file_record(b"%PDF")])
+
+    with open_bank(dbdir) as bank:
+        (record,) = bank.tables[0].records()
+        value = record["Entry #6"].value
+        assert isinstance(value, FileReference)
+        assert bank.read_file(value) == EmbeddedFile(2, b"%PDF", name)
+
+
+@pytest.mark.usefixtures("prints_nothing")
+@pytest.mark.parametrize(
+    ("reference", "reason"),
+    [
+        (FileReference("a", "b", None), "its record number is not a number"),
+        (FileReference("a", "b", 0), "CroBank has no record 0"),
+        (FileReference("a", "b", 99), "CroBank has no record 99"),
+        (FileReference("a", "b", 3), "CroBank record 3 is deleted or corrupt"),
+        (FileReference("a", "b", 4), "CroBank record 4 is deleted or corrupt"),
+        (FileReference("a", "b", 1), "CroBank record 1 is not a record of the Files table"),
+    ],
+    ids=["no-number", "zero", "past-the-end", "deleted", "corrupt", "not-a-file"],
+)
+def test_a_reference_that_cannot_be_resolved_is_reported(tmp_path: Path, reference: FileReference, reason: str) -> None:
+    dbdir = write_database(tmp_path / "db", [person(), file_record(b"x"), None, corrupt_compressed_record()])
+
+    with open_bank(dbdir) as bank:
+        assert bank.read_file(reference) is None
+        (diagnostic,) = [d for d in bank.diagnostics if d.kind == DiagnosticKind.UNRESOLVED_FILE_REFERENCE]
+
+    assert (diagnostic.file, diagnostic.record) == ("CroBank.dat", reference.record)
+    assert diagnostic.message.endswith(reason)
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_a_database_without_a_files_table_has_no_files(tmp_path: Path) -> None:
+    dbdir = database_without_files_table(tmp_path / "db", [file_record(b"x")])
+
+    with open_bank(dbdir) as bank:
+        assert bank.files_abbreviation is None
+        assert list(bank.files()) == []
+        assert bank.read_file(FileReference("a", "b", 1)) is None
+        (diagnostic,) = [d for d in bank.diagnostics if d.kind == DiagnosticKind.UNRESOLVED_FILE_REFERENCE]
+        assert diagnostic.message.endswith("the database has no Files table")
+
+
+PARITY_CASES = [
+    (b"01.02", None),
+    (b"01.03", None),
+    (b"01.04", None),
+    (b"01.04", KOD),
+    (b"01.05", KOD),
+    (b"01.11", KOD),
+]
+
+
+@pytest.mark.parametrize(
+    ("version", "kod"),
+    PARITY_CASES,
+    ids=lambda value: value.decode() if isinstance(value, bytes) else ("kod" if value else "default"),
+)
+def test_field_text_matches_database_enumerate_records(
+    tmp_path: Path, capfd: pytest.CaptureFixture[str], version: bytes, kod: list[int] | None
+) -> None:
+    records = [
+        person(),
+        person(date=b"850000", file_field=file_reference_field("report", "pdf", 3)),
+        file_record(b"%PDF"),
+        corrupt_compressed_record(),
+        person(date="до 1990".encode("cp1251")),
+        bank_record(TEST_TABLE_ID, [b"\x1b\xff\xff\xff\x7f"]),
+    ]
+    if version != b"01.11":
+        records.insert(3, None)
+    dbdir = write_database(tmp_path / "db", records, kod, version=version)
+
+    with Database(dbdir, False, KODcoding(kod if kod else INITIAL_KOD)) as db:
+        expected = [
+            (record.recno, [field.content for field in record.fields])
+            for table in db.enumerate_tables()
+            for record in db.enumerate_records(table)
+        ]
+    capfd.readouterr()
+
+    with open_bank(dbdir, kod=Kod.from_table(kod) if kod else Kod.default()) as bank:
+        actual = [
+            (record.number, [field.text for field in record.fields])
+            for table in bank.tables
+            for record in table.records()
+        ]
+
+    assert actual == expected
+    assert len(actual) == 4
+    captured = capfd.readouterr()
+    assert (captured.out, captured.err) == ("", "")
