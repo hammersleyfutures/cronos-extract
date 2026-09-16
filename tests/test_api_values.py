@@ -192,7 +192,7 @@ def test_a_record_looks_fields_up_by_name() -> None:
 
     assert record["Entry #1"] is record.fields[1]
     with pytest.raises(KeyError):
-        record["Entry #12"]
+        _ = record["Entry #12"]
 
 
 def test_diagnostic_messages_hold_no_field_data() -> None:

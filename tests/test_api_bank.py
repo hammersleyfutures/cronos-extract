@@ -22,7 +22,6 @@ from cronos_builder import (
 )
 
 import cronos_extract
-from cronos_extract import Bank, Diagnostic, DiagnosticKind, EmbeddedFile, FileReference, Kod
 from cronos_extract._api.diagnostics import DIAGNOSTICS_KEPT
 from cronos_extract.Database import Database
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
@@ -38,7 +37,7 @@ def person(*, date: bytes = b"1240315", file_field: bytes = b"") -> bytes:
     return bank_record(TEST_TABLE_ID, fields)
 
 
-def counts(bank: Bank, kind: DiagnosticKind) -> int:
+def counts(bank: cronos_extract.Bank, kind: cronos_extract.DiagnosticKind) -> int:
     return bank.diagnostic_counts.get(kind, 0)
 
 
@@ -69,9 +68,9 @@ def test_records_are_read_one_crobank_record_per_step(tmp_path: Path) -> None:
     with cronos_extract.open(dbdir) as bank:
         records = bank.tables[0].records()
         assert next(records).number == 1
-        assert counts(bank, DiagnosticKind.CORRUPT_RECORD) == 0
+        assert counts(bank, cronos_extract.DiagnosticKind.CORRUPT_RECORD) == 0
         assert next(records).number == 3
-        assert counts(bank, DiagnosticKind.CORRUPT_RECORD) == 1
+        assert counts(bank, cronos_extract.DiagnosticKind.CORRUPT_RECORD) == 1
 
 
 @pytest.mark.usefixtures("prints_nothing")
@@ -93,7 +92,7 @@ def test_records_the_dat_file_does_not_hold_are_corrupt(tmp_path: Path) -> None:
 
     with cronos_extract.open(dbdir) as bank:
         assert [record.number for record in bank.tables[0].records()] == [1, 4]
-        corrupt = [d for d in bank.diagnostics if d.kind == DiagnosticKind.CORRUPT_RECORD]
+        corrupt = [d for d in bank.diagnostics if d.kind == cronos_extract.DiagnosticKind.CORRUPT_RECORD]
 
     assert [(d.file, d.record) for d in corrupt] == [("CroBank.dat", 2), ("CroBank.dat", 3)]
     assert all("past the end" in d.message for d in corrupt)
@@ -113,7 +112,7 @@ def test_a_corrupt_record_is_reported_once_however_many_tables_are_read(tmp_path
         assert [record.number for record in first.records()] == [1]
         assert [record.number for record in second.records()] == [3]
         assert [record.number for record in first.records()] == [1]
-        corrupt = [d for d in bank.diagnostics if d.kind == DiagnosticKind.CORRUPT_RECORD]
+        corrupt = [d for d in bank.diagnostics if d.kind == cronos_extract.DiagnosticKind.CORRUPT_RECORD]
 
     (diagnostic,) = corrupt
     assert (diagnostic.file, diagnostic.record, diagnostic.table, diagnostic.field) == ("CroBank.dat", 2, None, None)
@@ -128,8 +127,8 @@ def test_record_diagnostics_are_recorded_each_time_a_record_is_decoded(tmp_path:
         (record,) = bank.tables[0].records()
         list(bank.tables[0].records())
 
-        assert [d.kind for d in record.diagnostics] == [DiagnosticKind.INVALID_VALUE]
-        assert counts(bank, DiagnosticKind.INVALID_VALUE) == 2
+        assert [d.kind for d in record.diagnostics] == [cronos_extract.DiagnosticKind.INVALID_VALUE]
+        assert counts(bank, cronos_extract.DiagnosticKind.INVALID_VALUE) == 2
 
 
 @pytest.mark.usefixtures("prints_nothing")
@@ -140,7 +139,7 @@ def test_a_table_with_an_id_above_255_yields_nothing_and_is_reported_once(tmp_pa
         table = bank.tables[1]
         assert list(table.records()) == []
         assert list(table.records()) == []
-        (diagnostic,) = [d for d in bank.diagnostics if d.kind == DiagnosticKind.UNSUPPORTED_TABLE]
+        (diagnostic,) = [d for d in bank.diagnostics if d.kind == cronos_extract.DiagnosticKind.UNSUPPORTED_TABLE]
 
     assert (diagnostic.table, diagnostic.file) == ("erdgeist", "CroStru.dat")
     assert "255" in diagnostic.message
@@ -150,13 +149,13 @@ def test_a_table_with_an_id_above_255_yields_nothing_and_is_reported_once(tmp_pa
 def test_the_bank_keeps_the_first_diagnostics_and_counts_them_all(tmp_path: Path) -> None:
     corrupt_records = DIAGNOSTICS_KEPT + 1
     dbdir = write_database(tmp_path / "db", [corrupt_compressed_record()] * corrupt_records)
-    seen: list[Diagnostic] = []
+    seen: list[cronos_extract.Diagnostic] = []
 
     with cronos_extract.open(dbdir, on_diagnostic=seen.append) as bank:
         assert list(bank.tables[0].records()) == []
 
         assert len(bank.diagnostics) == DIAGNOSTICS_KEPT
-        assert counts(bank, DiagnosticKind.CORRUPT_RECORD) == corrupt_records
+        assert counts(bank, cronos_extract.DiagnosticKind.CORRUPT_RECORD) == corrupt_records
         assert sum(bank.diagnostic_counts.values()) == corrupt_records + 2
         assert len(seen) == corrupt_records + 2
 
@@ -167,9 +166,9 @@ def test_a_diagnostic_kind_that_never_occurred_counts_zero_but_is_not_a_key(tmp_
 
     with cronos_extract.open(dbdir) as bank:
         counts = bank.diagnostic_counts
-        assert counts[DiagnosticKind.CORRUPT_RECORD] == 0
-        assert DiagnosticKind.CORRUPT_RECORD not in counts
-        assert dict(counts) == {DiagnosticKind.UNEXPECTED_STRUCTURE: 2}
+        assert counts[cronos_extract.DiagnosticKind.CORRUPT_RECORD] == 0
+        assert cronos_extract.DiagnosticKind.CORRUPT_RECORD not in counts
+        assert dict(counts) == {cronos_extract.DiagnosticKind.UNEXPECTED_STRUCTURE: 2}
 
 
 @pytest.mark.usefixtures("prints_nothing")
@@ -177,8 +176,8 @@ def test_an_exception_from_on_diagnostic_stops_reading_and_the_bank_still_closes
     class StopReading(Exception):
         pass
 
-    def on_diagnostic(diagnostic: Diagnostic) -> None:
-        if diagnostic.kind == DiagnosticKind.CORRUPT_RECORD:
+    def on_diagnostic(diagnostic: cronos_extract.Diagnostic) -> None:
+        if diagnostic.kind == cronos_extract.DiagnosticKind.CORRUPT_RECORD:
             raise StopReading
 
     dbdir = write_database(tmp_path / "db", [person(), corrupt_compressed_record(), person()])
@@ -195,11 +194,11 @@ def test_a_later_records_pass_records_diagnostics_after_on_diagnostic_stopped_on
     class StopReading(Exception):
         pass
 
-    seen: list[Diagnostic] = []
+    seen: list[cronos_extract.Diagnostic] = []
 
-    def on_diagnostic(diagnostic: Diagnostic) -> None:
+    def on_diagnostic(diagnostic: cronos_extract.Diagnostic) -> None:
         seen.append(diagnostic)
-        if diagnostic.kind == DiagnosticKind.CORRUPT_RECORD:
+        if diagnostic.kind == cronos_extract.DiagnosticKind.CORRUPT_RECORD:
             raise StopReading
 
     dbdir = write_database(tmp_path / "db", [corrupt_compressed_record(), person(date=b"851301")])
@@ -207,15 +206,15 @@ def test_a_later_records_pass_records_diagnostics_after_on_diagnostic_stopped_on
     with cronos_extract.open(dbdir, on_diagnostic=on_diagnostic) as bank:
         with pytest.raises(StopReading):
             list(bank.tables[0].records())
-        assert counts(bank, DiagnosticKind.CORRUPT_RECORD) == 1
+        assert counts(bank, cronos_extract.DiagnosticKind.CORRUPT_RECORD) == 1
 
         (record,) = bank.tables[0].records()
 
         assert record.number == 2
-        assert counts(bank, DiagnosticKind.CORRUPT_RECORD) == 1
-        assert counts(bank, DiagnosticKind.INVALID_VALUE) == 1
-        assert [d.kind for d in bank.diagnostics][-1] == DiagnosticKind.INVALID_VALUE
-        assert seen[-1].kind == DiagnosticKind.INVALID_VALUE
+        assert counts(bank, cronos_extract.DiagnosticKind.CORRUPT_RECORD) == 1
+        assert counts(bank, cronos_extract.DiagnosticKind.INVALID_VALUE) == 1
+        assert [d.kind for d in bank.diagnostics][-1] == cronos_extract.DiagnosticKind.INVALID_VALUE
+        assert seen[-1].kind == cronos_extract.DiagnosticKind.INVALID_VALUE
 
 
 @pytest.mark.usefixtures("prints_nothing")
@@ -229,7 +228,7 @@ def test_a_generator_stops_with_value_error_once_its_bank_is_closed(tmp_path: Pa
 
     with pytest.raises(ValueError, match="is closed"):
         next(records)
-    assert counts(bank, DiagnosticKind.CORRUPT_RECORD) == 0
+    assert counts(bank, cronos_extract.DiagnosticKind.CORRUPT_RECORD) == 0
 
 
 @pytest.mark.usefixtures("prints_nothing")
@@ -240,7 +239,7 @@ def test_files_and_read_file_refuse_a_closed_bank(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="is closed"):
         bank.files()
     with pytest.raises(ValueError, match="is closed"):
-        bank.read_file(FileReference("a", "b", 1))
+        bank.read_file(cronos_extract.FileReference("a", "b", 1))
 
 
 @pytest.mark.usefixtures("prints_nothing")
@@ -264,7 +263,10 @@ def test_files_yields_the_files_table_records_without_names(tmp_path: Path) -> N
     dbdir = write_database(tmp_path / "db", [person(), file_record(b"first"), None, file_record(b"second")])
 
     with cronos_extract.open(dbdir) as bank:
-        assert list(bank.files()) == [EmbeddedFile(2, b"first", None), EmbeddedFile(4, b"second", None)]
+        assert list(bank.files()) == [
+            cronos_extract.EmbeddedFile(2, b"first", None),
+            cronos_extract.EmbeddedFile(4, b"second", None),
+        ]
 
 
 @pytest.mark.usefixtures("prints_nothing")
@@ -276,29 +278,33 @@ def test_read_file_follows_a_reference_and_names_the_file(tmp_path: Path, extens
     with cronos_extract.open(dbdir) as bank:
         (record,) = bank.tables[0].records()
         value = record["Entry #6"].value
-        assert isinstance(value, FileReference)
-        assert bank.read_file(value) == EmbeddedFile(2, b"%PDF", name)
+        assert isinstance(value, cronos_extract.FileReference)
+        assert bank.read_file(value) == cronos_extract.EmbeddedFile(2, b"%PDF", name)
 
 
 @pytest.mark.usefixtures("prints_nothing")
 @pytest.mark.parametrize(
     ("reference", "reason"),
     [
-        (FileReference("a", "b", None), "its record number is not a number"),
-        (FileReference("a", "b", 0), "CroBank has no record 0"),
-        (FileReference("a", "b", 99), "CroBank has no record 99"),
-        (FileReference("a", "b", 3), "CroBank record 3 is deleted or corrupt"),
-        (FileReference("a", "b", 4), "CroBank record 4 is deleted or corrupt"),
-        (FileReference("a", "b", 1), "CroBank record 1 is not a record of the Files table"),
+        (cronos_extract.FileReference("a", "b", None), "its record number is not a number"),
+        (cronos_extract.FileReference("a", "b", 0), "CroBank has no record 0"),
+        (cronos_extract.FileReference("a", "b", 99), "CroBank has no record 99"),
+        (cronos_extract.FileReference("a", "b", 3), "CroBank record 3 is deleted or corrupt"),
+        (cronos_extract.FileReference("a", "b", 4), "CroBank record 4 is deleted or corrupt"),
+        (cronos_extract.FileReference("a", "b", 1), "CroBank record 1 is not a record of the Files table"),
     ],
     ids=["no-number", "zero", "past-the-end", "deleted", "corrupt", "not-a-file"],
 )
-def test_a_reference_that_cannot_be_resolved_is_reported(tmp_path: Path, reference: FileReference, reason: str) -> None:
+def test_a_reference_that_cannot_be_resolved_is_reported(
+    tmp_path: Path, reference: cronos_extract.FileReference, reason: str
+) -> None:
     dbdir = write_database(tmp_path / "db", [person(), file_record(b"x"), None, corrupt_compressed_record()])
 
     with cronos_extract.open(dbdir) as bank:
         assert bank.read_file(reference) is None
-        (diagnostic,) = [d for d in bank.diagnostics if d.kind == DiagnosticKind.UNRESOLVED_FILE_REFERENCE]
+        (diagnostic,) = [
+            d for d in bank.diagnostics if d.kind == cronos_extract.DiagnosticKind.UNRESOLVED_FILE_REFERENCE
+        ]
 
     assert (diagnostic.file, diagnostic.record) == ("CroBank.dat", reference.record)
     assert diagnostic.message.endswith(reason)
@@ -311,8 +317,10 @@ def test_a_database_without_a_files_table_has_no_files(tmp_path: Path) -> None:
     with cronos_extract.open(dbdir) as bank:
         assert bank.files_abbreviation is None
         assert list(bank.files()) == []
-        assert bank.read_file(FileReference("a", "b", 1)) is None
-        (diagnostic,) = [d for d in bank.diagnostics if d.kind == DiagnosticKind.UNRESOLVED_FILE_REFERENCE]
+        assert bank.read_file(cronos_extract.FileReference("a", "b", 1)) is None
+        (diagnostic,) = [
+            d for d in bank.diagnostics if d.kind == cronos_extract.DiagnosticKind.UNRESOLVED_FILE_REFERENCE
+        ]
         assert diagnostic.message.endswith("the database has no Files table")
 
 
@@ -355,7 +363,9 @@ def test_field_text_matches_database_enumerate_records(
         ]
     capfd.readouterr()
 
-    with cronos_extract.open(dbdir, kod=Kod.from_table(kod) if kod else Kod.default()) as bank:
+    with cronos_extract.open(
+        dbdir, kod=cronos_extract.Kod.from_table(kod) if kod else cronos_extract.Kod.default()
+    ) as bank:
         assert {(table.id, table.name) for table in bank.tables} == expected_tables
         actual = [
             (record.number, [field.text for field in record.fields])

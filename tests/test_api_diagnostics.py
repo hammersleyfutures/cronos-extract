@@ -21,6 +21,11 @@ def corrupt(number: int) -> Diagnostic:
     return Diagnostic(DiagnosticKind.CORRUPT_RECORD, "corrupt", file="CroBank.dat", record=number)
 
 
+def raise_corrupt() -> None:
+    """Raise the ValueError a reader raises for a corrupt record."""
+    raise ValueError("corrupt")
+
+
 def test_the_diagnostic_kinds_have_stable_snake_case_values() -> None:
     assert [kind.value for kind in DiagnosticKind] == [
         "corrupt_record",
@@ -170,7 +175,7 @@ def test_the_guard_lets_a_reader_exception_through_when_the_callback_did_not_rai
 
     with pytest.raises(ValueError, match="corrupt"), log.guard_callback_errors():
         log.record(corrupt(1))
-        raise ValueError("corrupt")
+        raise_corrupt()
 
     assert list(log.kept) == [corrupt(1)]
 

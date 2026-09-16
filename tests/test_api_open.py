@@ -19,22 +19,12 @@ from cronos_builder import (
 )
 
 import cronos_extract
-from cronos_extract import (
-    Bank,
-    DatabaseDefinitionError,
-    Diagnostic,
-    DiagnosticKind,
-    FieldDefinition,
-    Kod,
-    NotACronosFile,
-    UnsupportedVersion,
-)
 from cronos_extract._api.bank import is_table_key
 from cronos_extract.koddecoder import INITIAL_KOD
 
 SECTION_2_WARNINGS = [
-    Diagnostic(
-        DiagnosticKind.UNEXPECTED_STRUCTURE,
+    cronos_extract.Diagnostic(
+        cronos_extract.DiagnosticKind.UNEXPECTED_STRUCTURE,
         f"{key}: FieldDefinition Section 2 not marked with a 2",
         file="CroStru.dat",
     )
@@ -53,7 +43,7 @@ def prints_nothing(capfd: pytest.CaptureFixture[str]):
     assert (captured.out, captured.err) == ("", "")
 
 
-def kinds(bank: Bank) -> list[DiagnosticKind]:
+def kinds(bank: cronos_extract.Bank) -> list[cronos_extract.DiagnosticKind]:
     return [diagnostic.kind for diagnostic in bank.diagnostics]
 
 
@@ -61,8 +51,8 @@ def test_open_reads_the_tables_of_a_database(tmp_path: Path) -> None:
     with cronos_extract.open(write_database(tmp_path / "db", [])) as bank:
         (table,) = bank.tables
         assert (table.id, table.name, table.abbreviation) == (1, "erdgeist", "ER")
-        assert table.fields[0] == FieldDefinition("Системный номер", 0)
-        assert table.fields[4] == FieldDefinition("Entry #4", 4)
+        assert table.fields[0] == cronos_extract.FieldDefinition("Системный номер", 0)
+        assert table.fields[4] == cronos_extract.FieldDefinition("Entry #4", 4)
         assert len(table.fields) == 12
         assert bank.files_abbreviation == "FL"
 
@@ -70,7 +60,7 @@ def test_open_reads_the_tables_of_a_database(tmp_path: Path) -> None:
 def test_open_reports_the_section_2_warning_of_each_table_definition(tmp_path: Path) -> None:
     with cronos_extract.open(write_database(tmp_path / "db", [])) as bank:
         assert list(bank.diagnostics) == SECTION_2_WARNINGS
-        assert dict(bank.diagnostic_counts) == {DiagnosticKind.UNEXPECTED_STRUCTURE: 2}
+        assert dict(bank.diagnostic_counts) == {cronos_extract.DiagnosticKind.UNEXPECTED_STRUCTURE: 2}
 
 
 def test_open_accepts_a_path_object(tmp_path: Path) -> None:
@@ -103,7 +93,7 @@ def test_an_unreadable_index_is_reported_and_reading_goes_on(tmp_path: Path) -> 
     with cronos_extract.open(dbdir) as bank:
         assert [table.name for table in bank.tables] == ["erdgeist"]
         assert bank.info[2].problem is not None
-        assert kinds(bank) == [DiagnosticKind.UNREADABLE_FILE, *(d.kind for d in SECTION_2_WARNINGS)]
+        assert kinds(bank) == [cronos_extract.DiagnosticKind.UNREADABLE_FILE, *(d.kind for d in SECTION_2_WARNINGS)]
 
 
 def test_a_directory_name_that_is_not_valid_utf8_opens(tmp_path: Path) -> None:
@@ -137,7 +127,7 @@ def test_a_directory_without_a_bank_is_not_a_cronos_file(tmp_path: Path) -> None
     (dbdir / "CroBank.dat").unlink()
     (dbdir / "CroBank.tad").unlink()
 
-    with pytest.raises(NotACronosFile, match=r"no CroBank\.dat and CroBank\.tad"):
+    with pytest.raises(cronos_extract.NotACronosFile, match=r"no CroBank\.dat and CroBank\.tad"):
         cronos_extract.open(dbdir)
 
 
@@ -147,21 +137,21 @@ def test_a_v7_bank_is_unsupported(tmp_path: Path) -> None:
     data[10:15] = b"01.19"
     (dbdir / "CroBank.dat").write_bytes(bytes(data))
 
-    with pytest.raises(UnsupportedVersion, match=r"01\.19 \(v7\)"):
+    with pytest.raises(cronos_extract.UnsupportedVersion, match=r"01\.19 \(v7\)"):
         cronos_extract.open(dbdir)
 
 
 def test_a_database_without_records_in_stru_has_no_definition(tmp_path: Path) -> None:
     dbdir = database_with_missing_definition(tmp_path / "db", [])
 
-    with pytest.raises(DatabaseDefinitionError, match=r"holds no records.*cronos_extract\.crack_kod"):
+    with pytest.raises(cronos_extract.DatabaseDefinitionError, match=r"holds no records.*cronos_extract\.crack_kod"):
         cronos_extract.open(dbdir)
 
 
 def test_a_deleted_definition_record_is_a_definition_error(tmp_path: Path) -> None:
     dbdir = database_with_missing_definition(tmp_path / "db", [None, *stru_records_from_test_db()[1:]])
 
-    with pytest.raises(DatabaseDefinitionError, match="is deleted"):
+    with pytest.raises(cronos_extract.DatabaseDefinitionError, match="is deleted"):
         cronos_extract.open(dbdir)
 
 
@@ -172,15 +162,15 @@ def test_a_stru_file_cut_to_its_header_is_a_definition_error(tmp_path: Path) -> 
     ]
     write_raw_datafile(dbdir, "Stru", b"", entries)
 
-    with pytest.raises(DatabaseDefinitionError, match=r"record 1 in CroStru\.dat .* past the end"):
+    with pytest.raises(cronos_extract.DatabaseDefinitionError, match=r"record 1 in CroStru\.dat .* past the end"):
         cronos_extract.open(dbdir)
 
 
 def test_a_wrong_kod_is_a_definition_error(tmp_path: Path) -> None:
     dbdir, wrong_kod_hex = database_with_wrong_kod_record_out_of_range(tmp_path / "db")
 
-    with pytest.raises(DatabaseDefinitionError, match="does not hold"):
-        cronos_extract.open(dbdir, kod=Kod.from_hex(wrong_kod_hex))
+    with pytest.raises(cronos_extract.DatabaseDefinitionError, match="does not hold"):
+        cronos_extract.open(dbdir, kod=cronos_extract.Kod.from_hex(wrong_kod_hex))
 
 
 def test_a_table_definition_that_cannot_be_decoded_is_left_out(tmp_path: Path) -> None:
@@ -188,7 +178,7 @@ def test_a_table_definition_that_cannot_be_decoded_is_left_out(tmp_path: Path) -
 
     with cronos_extract.open(dbdir) as bank:
         assert [table.name for table in bank.tables] == ["erdgeist"]
-        (diagnostic,) = [d for d in bank.diagnostics if d.kind == DiagnosticKind.UNDECODABLE_TABLE]
+        (diagnostic,) = [d for d in bank.diagnostics if d.kind == cronos_extract.DiagnosticKind.UNDECODABLE_TABLE]
         assert (diagnostic.file, diagnostic.message.startswith("Base002 cannot be decoded")) == ("CroStru.dat", True)
 
 
@@ -197,7 +187,7 @@ def test_a_table_without_the_system_number_field_is_left_out(tmp_path: Path) -> 
 
     with cronos_extract.open(dbdir) as bank:
         assert [table.id for table in bank.tables] == [1]
-        (diagnostic,) = [d for d in bank.diagnostics if d.kind == DiagnosticKind.UNDECODABLE_TABLE]
+        (diagnostic,) = [d for d in bank.diagnostics if d.kind == cronos_extract.DiagnosticKind.UNDECODABLE_TABLE]
         assert (diagnostic.table, diagnostic.message) == (
             "erdgeist",
             "Base002 is left out: it does not start with the system number field",
@@ -215,33 +205,37 @@ def test_a_duplicate_definition_key_is_an_unexpected_structure(tmp_path: Path) -
     dbdir = database_with_extra_definition_key(tmp_path / "db", "BankName", b"again")
 
     with cronos_extract.open(dbdir) as bank:
-        assert Diagnostic(DiagnosticKind.UNEXPECTED_STRUCTURE, "duplicate key: BankName", file="CroStru.dat") in list(
-            bank.diagnostics
-        )
+        assert cronos_extract.Diagnostic(
+            cronos_extract.DiagnosticKind.UNEXPECTED_STRUCTURE, "duplicate key: BankName", file="CroStru.dat"
+        ) in list(bank.diagnostics)
 
 
 @pytest.mark.parametrize(
     ("version", "written_with", "opened_with", "reported"),
     [
-        (b"01.04", None, Kod.from_table(random_kod(seed=1)), True),
-        (b"01.02", None, Kod.from_table(random_kod(seed=1)), True),
-        (b"01.04", random_kod(seed=1), Kod.from_table(random_kod(seed=1)), False),
-        (b"01.04", None, Kod.from_table(INITIAL_KOD), False),
+        (b"01.04", None, cronos_extract.Kod.from_table(random_kod(seed=1)), True),
+        (b"01.02", None, cronos_extract.Kod.from_table(random_kod(seed=1)), True),
+        (b"01.04", random_kod(seed=1), cronos_extract.Kod.from_table(random_kod(seed=1)), False),
+        (b"01.04", None, cronos_extract.Kod.from_table(INITIAL_KOD), False),
         (b"01.04", None, None, False),
     ],
     ids=["unencoded-own-kod-version", "default-kod-version", "encoded-with-it", "default-table", "no-kod"],
 )
 def test_a_kod_that_no_file_uses_is_reported(
-    tmp_path: Path, version: bytes, written_with: list[int] | None, opened_with: Kod | None, reported: bool
+    tmp_path: Path,
+    version: bytes,
+    written_with: list[int] | None,
+    opened_with: cronos_extract.Kod | None,
+    reported: bool,
 ) -> None:
     dbdir = write_database(tmp_path / "db", [], written_with, version=version)
 
     with cronos_extract.open(dbdir, kod=opened_with) as bank:
-        assert (DiagnosticKind.UNUSED_KOD in kinds(bank)) is reported
+        assert (cronos_extract.DiagnosticKind.UNUSED_KOD in kinds(bank)) is reported
 
 
 def test_an_exception_from_on_diagnostic_during_open_reaches_the_caller(tmp_path: Path) -> None:
-    def on_diagnostic(diagnostic: Diagnostic) -> None:
+    def on_diagnostic(diagnostic: cronos_extract.Diagnostic) -> None:
         raise StopReading
 
     with pytest.raises(StopReading):
@@ -249,9 +243,9 @@ def test_an_exception_from_on_diagnostic_during_open_reaches_the_caller(tmp_path
 
 
 def test_an_exception_from_a_table_definition_warning_reaches_the_caller(tmp_path: Path) -> None:
-    seen: list[Diagnostic] = []
+    seen: list[cronos_extract.Diagnostic] = []
 
-    def on_diagnostic(diagnostic: Diagnostic) -> None:
+    def on_diagnostic(diagnostic: cronos_extract.Diagnostic) -> None:
         seen.append(diagnostic)
         if len(seen) == 1:
             raise StopReading
@@ -264,7 +258,7 @@ def test_an_exception_from_a_table_definition_warning_reaches_the_caller(tmp_pat
 def test_an_exception_from_a_database_definition_warning_reaches_the_caller(tmp_path: Path) -> None:
     dbdir = database_with_extra_definition_key(tmp_path / "db", "BankName", b"again")
 
-    def on_diagnostic(diagnostic: Diagnostic) -> None:
+    def on_diagnostic(diagnostic: cronos_extract.Diagnostic) -> None:
         if diagnostic.message == "duplicate key: BankName":
             raise StopReading
 
@@ -289,7 +283,7 @@ def test_only_base_followed_by_ascii_digits_names_a_table(key: str, is_table: bo
 
 
 def test_on_diagnostic_receives_the_diagnostics_of_open(tmp_path: Path) -> None:
-    seen: list[Diagnostic] = []
+    seen: list[cronos_extract.Diagnostic] = []
 
     with cronos_extract.open(write_database(tmp_path / "db", []), on_diagnostic=seen.append):
         assert seen == SECTION_2_WARNINGS
