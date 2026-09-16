@@ -336,6 +336,7 @@ def test_field_text_matches_database_enumerate_records(
     dbdir = write_database(tmp_path / "db", records, kod, version=version)
 
     with Database(dbdir, False, KODcoding(kod if kod else INITIAL_KOD)) as db:
+        expected_tables = {(table.tableid, table.tablename) for table in db.enumerate_tables()}
         expected = [
             (record.recno, [field.content for field in record.fields])
             for table in db.enumerate_tables()
@@ -344,6 +345,7 @@ def test_field_text_matches_database_enumerate_records(
     capfd.readouterr()
 
     with cronos_extract.open(dbdir, kod=Kod.from_table(kod) if kod else Kod.default()) as bank:
+        assert {(table.id, table.name) for table in bank.tables} == expected_tables
         actual = [
             (record.number, [field.text for field in record.fields])
             for table in bank.tables

@@ -92,6 +92,7 @@ def test_field_text_matches_database_enumerate_records(dbdir: Path) -> None:
         pytest.skip("the database does not open with the default KOD")
     with bank, contextlib.redirect_stderr(io.StringIO()), Database(str(dbdir), False, koddecoder.new()) as db:
         internal = {(table.tableid, table.tablename): table for table in db.enumerate_tables()}
+        assert {(table.id, table.name) for table in bank.tables} == set(internal)
         for table in bank.tables:
             expected = [
                 (record.recno, [field.content for field in record.fields])
