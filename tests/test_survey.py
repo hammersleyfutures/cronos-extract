@@ -21,8 +21,7 @@ def test_survey_describes_a_built_database(tmp_path: Path) -> None:
     assert [file.name for file in database.files] == ["Bank", "Stru"]
     stru = database.files[1]
     assert stru.problem is None
-    assert stru.header is not None
-    assert stru.header.generation == "v3"
+    assert stru.generation == "v3"
 
 
 def test_survey_finds_databases_in_nested_directories_with_mixed_case_names(tmp_path: Path) -> None:
@@ -41,8 +40,8 @@ def test_survey_reports_a_v7_header(tmp_path: Path) -> None:
     (database,) = survey_databases(tmp_path)
 
     (bank,) = database.files
-    assert bank.header is not None
-    assert (bank.header.version_text, bank.header.generation, bank.header.compressed) == ("01.19", "v7", True)
+    assert bank.problem is None
+    assert (bank.version, bank.generation, bank.compressed) == ("01.19", "v7", True)
 
 
 def test_survey_reports_unreadable_files_without_stopping(tmp_path: Path) -> None:

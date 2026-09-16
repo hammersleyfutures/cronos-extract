@@ -2,23 +2,12 @@
 # ABOUTME: Reads only the 19-byte .dat header of every file, never a .tad file or a record.
 import json
 import os
-import stat
 from collections import Counter
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-from ._format.header import DatHeader, read_dat_header
-
-
-@dataclass(frozen=True)
-class SurveyedFile:
-    """One Cro*.dat file: its header, or the problem that stopped it being read."""
-
-    name: str
-    path: Path
-    header: DatHeader | None
-    problem: str | None
+from ._api.info import FileInfo, read_file_info
 
 
 @dataclass(frozen=True)
@@ -26,27 +15,13 @@ class SurveyedDatabase:
     """One directory holding Cro*.dat files, with a surveyed file for each of them."""
 
     directory: Path
-    files: tuple[SurveyedFile, ...]
+    files: tuple[FileInfo, ...]
 
 
 def is_dat_file(filename: str) -> bool:
     """Whether `filename` is a Cro*.dat file, matched case-insensitively as the readers do."""
     lowered = filename.lower()
     return lowered.startswith("cro") and lowered.endswith(".dat")
-
-
-def survey_file(path: Path) -> SurveyedFile:
-    """Read `path`'s header, returning the problem that stopped it instead of raising."""
-    name = path.name[3:-4] or path.name
-    try:
-        # Anything that is not a regular file is reported rather than opened: opening a FIFO waits for a
-        # writer that never comes, and a directory or a device is not a database file either.
-        if not stat.S_ISREG(path.stat().st_mode):
-            raise ValueError(f"{path.name} is not a regular file")
-        with path.open("rb") as file:
-            return SurveyedFile(name=name, path=path, header=read_dat_header(file, where=path.name), problem=None)
-    except (ValueError, OSError) as e:
-        return SurveyedFile(name=name, path=path, header=None, problem=str(e))
 
 
 def survey_databases(root: Path, problems: list[OSError] | None = None) -> Iterator[SurveyedDatabase]:
@@ -68,22 +43,24 @@ def survey_databases(root: Path, problems: list[OSError] | None = None) -> Itera
         dat_files = sorted((name for name in (*filenames, *subdirectories) if is_dat_file(name)), key=str.lower)
         if dat_files:
             path = Path(directory)
-            yield SurveyedDatabase(directory=path, files=tuple(survey_file(path / name) for name in dat_files))
+            yield SurveyedDatabase(
+                directory=path,
+                files=tuple(read_file_info(name[3:-4] or name, path / name) for name in dat_files),
+            )
 
 
-def describe_file(file: SurveyedFile) -> str:
+def describe_file(file: FileInfo) -> str:
     """Return the survey line for one file, without its database's directory."""
-    if file.header is None:
+    if file.problem is not None:
         return f"{file.name:<6}{file.problem}"
-    header = file.header
     flags = [
-        f"{'64' if header.use64bit else '32'}-bit",
-        "kod-encoded" if header.kod_encoded else "plain",
-        "compressed" if header.compressed else "uncompressed",
+        f"{'64' if file.use64bit else '32'}-bit",
+        "kod-encoded" if file.kod_encoded else "plain",
+        "compressed" if file.compressed else "uncompressed",
     ]
-    if header.own_kod:
+    if file.own_kod:
         flags.append("own-kod")
-    return f"{file.name:<6}{header.version_text}  {header.generation:<7}  " + "  ".join(flags)
+    return f"{file.name:<6}{file.version}  {file.generation:<7}  " + "  ".join(flags)
 
 
 def format_text(databases: Iterable[SurveyedDatabase]) -> Iterator[str]:
@@ -105,10 +82,10 @@ def format_counts(databases: Iterable[SurveyedDatabase]) -> Iterator[str]:
     problems = 0
     for database in databases:
         for file in database.files:
-            if file.header is None:
+            if file.version is None or file.generation is None:
                 problems += 1
             else:
-                counts[(file.header.version_text, file.header.generation)] += 1
+                counts[(file.version, file.generation)] += 1
     for (version, generation), count in sorted(counts.items()):
         yield f"{version}  {generation:<7}  {count}"
     if problems:
@@ -124,12 +101,12 @@ def format_jsonl(databases: Iterable[SurveyedDatabase]) -> Iterator[str]:
                 "files": [
                     {
                         "name": file.name,
-                        "version": file.header.version_text if file.header else None,
-                        "generation": file.header.generation if file.header else None,
-                        "use64bit": file.header.use64bit if file.header else None,
-                        "kod_encoded": file.header.kod_encoded if file.header else None,
-                        "compressed": file.header.compressed if file.header else None,
-                        "own_kod": file.header.own_kod if file.header else None,
+                        "version": file.version,
+                        "generation": file.generation,
+                        "use64bit": file.use64bit,
+                        "kod_encoded": file.kod_encoded,
+                        "compressed": file.compressed,
+                        "own_kod": file.own_kod,
                         "problem": file.problem,
                     }
                     for file in database.files
