@@ -110,7 +110,8 @@ def test_field_text_matches_database_enumerate_records(dbdir: Path) -> None:
 def test_bank_info_agrees_with_the_survey(dbdir: Path) -> None:
     surveyed = SURVEYED_BY_DIRECTORY[dbdir]
     try:
-        bank = open_bank(dbdir)
+        # compact=True reads .tad entries on demand, so a multi-GB CroBank.tad is not loaded into memory.
+        bank = open_bank(dbdir, compact=True)
     except CronosError:
         pytest.skip("the database does not open with the default KOD")
     with bank:
@@ -180,5 +181,6 @@ def test_dbcrack_recovers_a_kod_that_opens_a_v4_database(dbdir: Path) -> None:
     kod = crack_kod(dbdir, "dbcrack")
 
     assert kod is not None
-    with open_bank(dbdir, kod=kod) as bank:
+    # compact=True reads .tad entries on demand, so a multi-GB CroBank.tad is not loaded into memory.
+    with open_bank(dbdir, kod=kod, compact=True) as bank:
         assert bank.tables
