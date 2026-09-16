@@ -28,7 +28,7 @@ Every decision below was made with Ben on 2026-09-15.
 
 Each phase is a separate spec, plan and pull request, in this order.
 
-**Status (2026-09-16):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below, and implemented on branch `phase1-public-api`, awaiting Ben's review before a pull request.
+**Status (2026-09-16):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below, and implemented in PR #9, awaiting merge.
 
 ### Phase 0 — version survey
 
@@ -72,6 +72,7 @@ Found during Phase 0 and its reviews and not fixed there, each with the phase th
   - KOD recovery fails on the real v4 databases whose CroBank and CroIndex headers are not KOD-encoded (both crack methods return `None`); how those databases encode records needs investigating. `tests/test_realdata.py` marks this as a strict xfail.
   - KOD selection: an own-KOD file read with `Kod.default()` is decoded with the wrong table and no diagnostic; `kod=None` on a KOD-encoded file gives a `DatabaseDefinitionError` whose hint suggests cracking.
   - Before removing `Database.enumerate_records`, turn the parity tests into golden output of the façade.
+  - v3 `.tad` lengths are masked with `0x0FFFFFFF` while the flags are read as `ln >> 24`, so bits 24–27 count as both flag and length; `docs/cronos-research.md` says only the top bit is a flag. With the short-read check, an entry with those bits set now raises instead of reading to the end of the file. No real database sets them.
   - Add a committed, seeded random-damage test of the reading path, and the builder gaps the Phase 1 reviews noted (32-bit v3 flag placement, `01.02`/`01.03` written KOD-encoded).
 - **Phase 2, from Phase 1:** escape diagnostic and exception text before printing (surrogate-escaped names; garbage key names from a wrong KOD). Decide whether a date or time field holding only NUL bytes should have `value` `None` rather than `""` plus `invalid_value`, with a realdata count, before the JSON shape freezes. Interactive `strucrack` still reads records through `enumrecords` and can stop on a record that `--noninteractive` skips.
 - **Before 1.0, from Phase 1:** `FileInfo` does not enforce that either `problem` or the header fields are set; `Generation` is a PEP 695 alias, so `typing.get_args(Generation)` is empty; `bank.diagnostic_counts[kind]` reads 0 for a kind that never occurred (documented).
