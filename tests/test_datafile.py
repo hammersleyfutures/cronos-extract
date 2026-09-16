@@ -11,6 +11,7 @@ from cronos_builder import (
     BLOCKSIZE,
     DAT_PREFIX_SIZE,
     INLINE_RECORD_FLAGS,
+    V4_INLINE_RECORD_FLAGS,
     corrupt_compressed_record,
     write_datafile,
     write_raw_datafile,
@@ -91,13 +92,25 @@ def test_extension_block_past_the_end_of_the_file_is_reported(tmp_path: Path) ->
         bank.readrec(1)
 
 
+def inline_tad_entry(version: bytes, offset: int, length: int) -> tuple[int, int]:
+    """The (offset field, length field) of an inline record's .tad entry, with the flags where `version` keeps them."""
+    if version == b"01.11":
+        return (offset | V4_INLINE_RECORD_FLAGS << 56, length)
+    return (offset, length | INLINE_RECORD_FLAGS << 24)
+
+
+@pytest.mark.parametrize("version", [b"01.04", b"01.11"], ids=["v3", "v4"])
 @pytest.mark.parametrize(
     ("offset", "length"), [(FIRST_BLOCK + 10_000, 5), (FIRST_BLOCK, 105)], ids=["past-the-end", "overrunning-the-end"]
 )
-def test_record_that_the_dat_file_does_not_hold_is_reported(tmp_path: Path, offset: int, length: int) -> None:
-    write_raw_datafile(tmp_path, "Bank", bytes(100), [(offset, length | INLINE_RECORD_FLAGS << 24)])
+def test_record_that_the_dat_file_does_not_hold_is_reported(
+    tmp_path: Path, version: bytes, offset: int, length: int
+) -> None:
+    write_raw_datafile(tmp_path, "Bank", bytes(100), [inline_tad_entry(version, offset, length)], version=version)
 
-    with open_bank(tmp_path) as bank, pytest.raises(ValueError, match=r"record 1 in CroBank\.dat .* past the end"):
+    # The message names the offset without its flags, so a v4 offset read with the flags still set fails the match.
+    message = rf"record 1 in CroBank\.dat has {length} bytes at offset {offset:#x}, which runs past the end"
+    with open_bank(tmp_path) as bank, pytest.raises(ValueError, match=message):
         bank.readrec(1)
 
 
