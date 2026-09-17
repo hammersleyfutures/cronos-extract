@@ -5,6 +5,7 @@ import struct
 import zlib
 from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 from cronos_extract.Database import Database
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
@@ -23,17 +24,33 @@ UNUSED_TABLE_ID = 0xFE
 DAT_HEADER = struct.Struct("<8sH5sHH")
 DAT_HEADER_PADDING = 0xE9
 TAD_V3_HEADER = struct.Struct("<2L")
+TAD_V4_HEADER = struct.Struct("<4L")
+# The first dword of every .tad header in Ben's real v4 databases.
+TAD_V4_MARKER = 0xFFFFFFFE
 TAD_V3_ENTRY = struct.Struct("<LLL")
+TAD_64BIT_ENTRY = struct.Struct("<QLL")
 BLOCKSIZE = 0x40
 # Size of the .dat file header and the padding that follows it; the first record starts here.
 DAT_PREFIX_SIZE = DAT_HEADER.size + DAT_HEADER_PADDING
 # Version 01.04 is a 32-bit v3 file whose records are decoded with the database's own KOD table.
 ENCRYPTED_V3_VERSION = b"01.04"
+BUILDER_VERSIONS = (b"01.02", b"01.03", b"01.04", b"01.05", b"01.11")
+VERSIONS_64BIT = (b"01.03", b"01.05", b"01.11")
+V4_VERSIONS = (b"01.11",)
+# Datafile decodes every other version with the default KOD table, whatever table it is given.
+OWN_KOD_VERSIONS = (b"01.04", b"01.05", b"01.11")
 # A non-zero flag byte in the top of a v3 .tad length marks a record stored inline, not in extension blocks.
 INLINE_RECORD_FLAGS = 0x80
+# A v4 .tad keeps the flag byte in the top of the offset; 0x04 marks a record stored inline.
+V4_INLINE_RECORD_FLAGS = 0x04
 DELETED_RECORD_LENGTH = 0xFFFFFFFF
 FIELD_SEPARATOR = b"\x1e"
 COMPLEX_FIELD_MARKER = b"\x1b"
+# The high bit of a database definition key's length says its value follows inline.
+INLINE_DEFINITION_VALUE = 0x80000000
+# Offsets in TEST_DB's Base001 definition: the table id, and the number of field definitions after the names.
+TABLE_ID_OFFSET = 14
+FIELD_COUNT_OFFSET = 34
 
 
 def random_kod(seed: int) -> list[int]:
@@ -43,16 +60,32 @@ def random_kod(seed: int) -> list[int]:
     return kod
 
 
+def tad_layout(version: bytes) -> tuple[bytes, struct.Struct]:
+    """Return the .tad header bytes and the .tad entry format that `version` uses."""
+    if version not in BUILDER_VERSIONS:
+        raise ValueError(f"the builder cannot write version {version!r}; it writes {BUILDER_VERSIONS!r}")
+    if version in V4_VERSIONS:
+        return TAD_V4_HEADER.pack(TAD_V4_MARKER, 0, 0, 0), TAD_64BIT_ENTRY
+    return TAD_V3_HEADER.pack(0, 0), TAD_64BIT_ENTRY if version in VERSIONS_64BIT else TAD_V3_ENTRY
+
+
 def write_raw_datafile(
-    directory: Path, name: str, body: bytes, tad_entries: Sequence[tuple[int, int]], encoding: int = 0
+    directory: Path,
+    name: str,
+    body: bytes,
+    tad_entries: Sequence[tuple[int, int]],
+    encoding: int = 0,
+    version: bytes = ENCRYPTED_V3_VERSION,
 ) -> None:
     """Write Cro<name>.dat holding `body` after the file header, and Cro<name>.tad with one entry per record.
 
-    Each entry is (absolute file offset, length field); the body starts at DAT_PREFIX_SIZE. This lets tests lay
-    out inline, extended or corrupt records byte by byte.
+    Each entry is (offset field, length field), packed as `version` stores them: v3 keeps a record's flags in the
+    top byte of the length field, v4 in the top byte of the offset field. The body starts at DAT_PREFIX_SIZE. This
+    lets tests lay out inline, extended or corrupt records byte by byte.
     """
-    dat = DAT_HEADER.pack(b"CroFile\x00", 0, ENCRYPTED_V3_VERSION, encoding, BLOCKSIZE) + bytes(DAT_HEADER_PADDING)
-    tad = TAD_V3_HEADER.pack(0, 0) + b"".join(TAD_V3_ENTRY.pack(offset, length, 0) for offset, length in tad_entries)
+    tad_header, tad_entry = tad_layout(version)
+    dat = DAT_HEADER.pack(b"CroFile\x00", 0, version, encoding, BLOCKSIZE) + bytes(DAT_HEADER_PADDING)
+    tad = tad_header + b"".join(tad_entry.pack(offset, length, 0) for offset, length in tad_entries)
     directory.mkdir(parents=True, exist_ok=True)
     (directory / f"Cro{name}.dat").write_bytes(dat + body)
     (directory / f"Cro{name}.tad").write_bytes(tad)
@@ -66,23 +99,40 @@ def write_header_only_datafile(directory: Path, name: str, version: bytes = b"01
 
 
 def write_datafile(
-    directory: Path, name: str, records: Sequence[bytes | None], kod: Sequence[int] | None = None
+    directory: Path,
+    name: str,
+    records: Sequence[bytes | None],
+    kod: Sequence[int] | None = None,
+    version: bytes = ENCRYPTED_V3_VERSION,
 ) -> None:
-    """Write Cro<name>.dat and Cro<name>.tad holding `records` inline, where None marks a deleted record.
+    """Write Cro<name>.dat and Cro<name>.tad of `version` holding `records` inline, where None marks a deleted record.
 
-    With `kod`, each record is KOD-encoded using its record number as the shift and the encoding bit is set.
+    With `kod`, each record is KOD-encoded using its record number as the shift and the encoding bit is set; only
+    versions encrypted with their own KOD table take one. Deleted records cannot be written for v4, because how v4
+    marks them is unsettled.
     """
+    tad_layout(version)
+    if kod is not None and version not in OWN_KOD_VERSIONS:
+        raise ValueError(
+            f"version {version!r} is always read with the default KOD, so it cannot be written with another"
+        )
     coder = KODcoding(list(kod)) if kod is not None else None
     body = bytearray()
     tad_entries = []
     for recno, plain in enumerate(records, start=1):
         if plain is None:
+            if version in V4_VERSIONS:
+                raise ValueError("the builder does not write a deleted v4 record: how v4 marks one is unsettled")
             tad_entries.append((0, DELETED_RECORD_LENGTH))
             continue
         stored = coder.encode(recno, plain) if coder else plain
-        tad_entries.append((DAT_PREFIX_SIZE + len(body), len(stored) | INLINE_RECORD_FLAGS << 24))
+        offset = DAT_PREFIX_SIZE + len(body)
+        if version in V4_VERSIONS:
+            tad_entries.append((offset | V4_INLINE_RECORD_FLAGS << 56, len(stored)))
+        else:
+            tad_entries.append((offset, len(stored) | INLINE_RECORD_FLAGS << 24))
         body += stored
-    write_raw_datafile(directory, name, bytes(body), tad_entries, encoding=1 if coder else 0)
+    write_raw_datafile(directory, name, bytes(body), tad_entries, encoding=1 if coder else 0, version=version)
 
 
 def stru_records_from_test_db() -> list[bytes | None]:
@@ -158,6 +208,61 @@ def key_referencing_a_deleted_record(directory: Path, keyname: str, bank_records
     return str(directory)
 
 
+def erdgeist_table_definition() -> bytes:
+    """Return the definition bytes of TEST_DB's table "erdgeist", the value of its Base001 key."""
+    with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD)) as db:
+        return cast(bytes, db.read_db_definition()["Base001"])
+
+
+def patched_table_definition(*, tableid: int) -> bytes:
+    """Return TEST_DB's Base001 definition with its table id replaced."""
+    definition = bytearray(erdgeist_table_definition())
+    assert struct.unpack_from("<L", definition, TABLE_ID_OFFSET) == (TEST_TABLE_ID,)
+    struct.pack_into("<L", definition, TABLE_ID_OFFSET, tableid)
+    return bytes(definition)
+
+
+def table_definition_without_fields(*, tableid: int) -> bytes:
+    """
+    Return a table definition with TEST_DB's Base001 names and `tableid` but no field definitions.
+
+    After the header come an empty first field section, no extra byte strings, a second section marked with a 2
+    holding no fields, and the terminator, so it decodes without warnings.
+    """
+    header = bytearray(patched_table_definition(tableid=tableid)[:FIELD_COUNT_OFFSET])
+    empty_sections = struct.pack("<LLL", 0, 0, 0) + b"\x02" + struct.pack("<LLL", 0, 0, 0xFFFFFFFF)
+    return bytes(header) + empty_sections
+
+
+def database_with_extra_definition_key(
+    directory: Path, keyname: str, value: bytes, bank_records: Sequence[bytes | None] = ()
+) -> str:
+    """Write a database whose database definition has an extra key `keyname` holding `value` inline.
+
+    The key is appended after TEST_DB's own keys; a key already there, such as "BankName", becomes a duplicate.
+    """
+    stru = stru_records_from_test_db()
+    dbinfo = stru[0]
+    assert dbinfo is not None
+    name = keyname.encode("cp1251")
+    stru[0] = dbinfo + bytes([len(name)]) + name + struct.pack("<L", len(value) | INLINE_DEFINITION_VALUE) + value
+    write_datafile(directory, "Stru", stru)
+    write_datafile(directory, "Bank", bank_records)
+    return str(directory)
+
+
+def database_without_files_table(directory: Path, bank_records: Sequence[bytes | None] = ()) -> str:
+    """Write a database whose database definition names its Files table Xase000, so it has no Base000 key."""
+    stru = stru_records_from_test_db()
+    dbinfo = stru[0]
+    assert dbinfo is not None
+    assert dbinfo.count(b"\x07Base000") == 1
+    stru[0] = dbinfo.replace(b"\x07Base000", b"\x07Xase000")
+    write_datafile(directory, "Stru", stru)
+    write_datafile(directory, "Bank", bank_records)
+    return str(directory)
+
+
 def write_database(
     directory: Path,
     bank_records: Sequence[bytes | None],
@@ -165,15 +270,16 @@ def write_database(
     *,
     extra_stru_records: Sequence[bytes] = (),
     index_records: Sequence[bytes | None] | None = None,
+    version: bytes = ENCRYPTED_V3_VERSION,
 ) -> str:
-    """Write a database with TEST_DB's table definitions and `bank_records`, returning its directory path.
+    """Write a database of `version` with TEST_DB's table definitions and `bank_records`, returning its directory path.
 
     `extra_stru_records` are appended to the CroStru records; `index_records`, when given, are written to CroIndex.
     """
-    write_datafile(directory, "Stru", [*stru_records_from_test_db(), *extra_stru_records], kod)
-    write_datafile(directory, "Bank", bank_records, kod)
+    write_datafile(directory, "Stru", [*stru_records_from_test_db(), *extra_stru_records], kod, version)
+    write_datafile(directory, "Bank", bank_records, kod, version)
     if index_records is not None:
-        write_datafile(directory, "Index", index_records, kod)
+        write_datafile(directory, "Index", index_records, kod, version)
     return str(directory)
 
 

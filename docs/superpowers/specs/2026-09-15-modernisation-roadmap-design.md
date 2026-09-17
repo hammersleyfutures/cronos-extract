@@ -28,7 +28,7 @@ Every decision below was made with Ben on 2026-09-15.
 
 Each phase is a separate spec, plan and pull request, in this order.
 
-**Status (2026-09-16):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is next and has no spec or plan yet.
+**Status (2026-09-16):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below, and implemented in PR #9, awaiting merge.
 
 ### Phase 0 — version survey
 
@@ -62,13 +62,26 @@ KOD recovery that chooses the best whole permutation (an assignment problem, e.g
 
 Found during Phase 0 and its reviews and not fixed there, each with the phase that owns it. The older backlog in Appendix A of `docs/superpowers/plans/2026-09-15-pr2-bug-fixes.md` is still the input for Phases 2 to 5.
 
-- **Phase 1:** `survey.survey_roots` returns a list, so nothing prints until the whole walk finishes. The API contract promises lazy iteration, and a survey of network storage would benefit from streaming too.
+- **Phase 1 (done):** `survey.survey_roots` streams its results (Phase 1 plan, Task 6).
 - **Phase 2:** `cli.main` calls `run_survey` directly; the `run_*(args, parser) -> int` signature is the seam for a dispatch once `export`, `inspect` and `crack` exist. `cli.collect_roots` calls `parser.error` on the top-level parser, so its usage line names `cronos-extract` rather than `survey`, which will mislead once there are four subcommands. `dumpdbfields.py` matches `Cro*.dat` names its own way; Phase 2 deletes that file.
-- **Phase 3:** `Datafile.isv3`, `isv4`, `isv7` and `isencrypted` keep their own copies of the version lists that `_format/header.py` now holds. The regular-file check in `survey.survey_file` stats and then opens, so a path swapped for a FIFO between the two calls would still block; opening with `O_NONBLOCK` and checking with `fstat` closes that window.
+- **Phase 3:** `Datafile.isv3`, `isv4`, `isv7` and `isencrypted` keep their own copies of the version lists that `_format/header.py` now holds. (The survey's stat-then-open window is closed: every Cro file is opened by `_format/files.open_regular_file`, which checks `fstat` on the open descriptor.)
+- **Phase 3, from Phase 1:**
+  - `Datafile.decompress` does not limit the decompressed size, so a crafted record can exhaust memory; do it with CRC checking.
+  - With `compact=False`, the default, `open()` reads the whole CroBank `.tad` into memory; one real database's reached 4.1 GB. Decide whether the default should change, or the index be read lazily.
+  - v4 deleted records: no real `01.11` `.tad` entry uses the `0xFFFFFFFF` length `readrec` treats as deleted, while many carry flag `02`, which `docs/cronos-research.md` calls deleted; today they are read as live records. One real v4 database's `.tad` entries hold what look like 2024 Unix timestamps in their third field.
+  - KOD recovery fails on the real v4 databases whose CroBank and CroIndex headers are not KOD-encoded (both crack methods return `None`); how those databases encode records needs investigating. `tests/test_realdata.py` marks this as a strict xfail.
+  - KOD selection: an own-KOD file read with `Kod.default()` is decoded with the wrong table and no diagnostic; `kod=None` on a KOD-encoded file gives a `DatabaseDefinitionError` whose hint suggests cracking.
+  - Before removing `Database.enumerate_records`, turn the parity tests into golden output of the façade.
+  - v3 `.tad` lengths are masked with `0x0FFFFFFF` while the flags are read as `ln >> 24`, so bits 24–27 count as both flag and length; `docs/cronos-research.md` says only the top bit is a flag. With the short-read check, an entry with those bits set now raises instead of reading to the end of the file. No real database sets them.
+  - Add a committed, seeded random-damage test of the reading path, and the builder gaps the Phase 1 reviews noted (32-bit v3 flag placement, `01.02`/`01.03` written KOD-encoded).
+- **Phase 2, from Phase 1:** escape diagnostic and exception text before printing (surrogate-escaped names; garbage key names from a wrong KOD). Decide whether a date or time field holding only NUL bytes should have `value` `None` rather than `""` plus `invalid_value`, with a realdata count, before the JSON shape freezes. Interactive `strucrack` still reads records through `enumrecords` and can stop on a record that `--noninteractive` skips.
+- **Before 1.0, from Phase 1:** `FileInfo` does not enforce that either `problem` or the header fields are set; `Generation` is a PEP 695 alias, so `typing.get_args(Generation)` is empty; `bank.diagnostic_counts[kind]` reads 0 for a kind that never occurred (documented).
 - **Cosmetic, no phase:** an unreadable directory reachable from two overlapping roots is warned about twice. A directory named `Cro*.dat` that itself holds databases is reported as a problem under its parent and as its own database, so `--counts` also scores it as one unreadable file. `--jsonl` writes undecodable path bytes as `\udcXX` escapes, which strict JSON parsers may reject. The README's sentence about unreadable directories sits in the `--list` paragraph, though the warning applies to any root.
 - **Decided, not open:** `survey_file` follows symlinks (`stat`, not `lstat`) on purpose, and each plan keeps its pre-implementation wording as the record of what was planned.
 
 ## Public API contract (Phases 1 and 2 build to this)
+
+As refined by the Phase 1 design (`2026-09-16-phase1-public-api-design.md`, decisions P1–P11), which gives the full detail.
 
 ```python
 import cronos_extract
@@ -82,15 +95,15 @@ with cronos_extract.open(path, kod=..., compact=False, on_diagnostic=None) as ba
 - **`open(path, *, kod=Kod.default(), compact=False, on_diagnostic=None) -> Bank`** — `kod=None` reads without KOD decoding. `Bank` is a context manager that closes its files.
 - **`Kod`** — `Kod.default()`, `Kod.from_hex(str)`, `Kod.from_table(Sequence[int])`. A valid table is a permutation of 0–255.
 - **`crack_kod(path, method="strucrack" | "dbcrack") -> Kod | None`** — returns `None` when it cannot recover a permutation.
-- **`Bank`** — `tables: Sequence[Table]` (the Files table excluded), `read_file(FileReference) -> EmbeddedFile`, `files() -> Iterator[EmbeddedFile]`, `info` (per-file versions and flags, as the survey reports them), `diagnostics: Sequence[Diagnostic]`, `close()`.
-- **`Table`** — `id: int`, `name: str`, `fields: Sequence[FieldDefinition]`, `records() -> Iterator[Record]` (lazy).
+- **`Bank`** — `tables: Sequence[Table]` (the Files table excluded), `read_file(FileReference) -> EmbeddedFile | None`, `files() -> Iterator[EmbeddedFile]`, `info: Sequence[FileInfo]` (per-file versions and flags, as the survey reports them), `diagnostics: Sequence[Diagnostic]` (the first 1,000), `diagnostic_counts: Mapping[DiagnosticKind, int]`, `close()`.
+- **`Table`** — `id: int`, `name: str`, `abbreviation: str`, `fields: Sequence[FieldDefinition]`, `records() -> Iterator[Record]` (lazy).
 - **`Record`** — `number: int`, `fields: Sequence[Field]`, `__getitem__(name)`, `diagnostics`.
 - **`Field`** — `definition`, `value`, `text: str`, `raw: bytes`. `value` is `str`, `datetime.date`, `datetime.time`, `FileReference` or `None`; a value that does not parse as its type falls back to the text and records a diagnostic.
-- **`FileReference`** — `name`, `extension`, `record`. **`EmbeddedFile`** — `name`, `data: bytes`.
-- **`Diagnostic`** — frozen: `kind` (enum, e.g. `corrupt_record`, `undecodable_field`, `unresolved_file_reference`, `unused_kod`), `message`, `file`, `table`, `record`, `field`.
+- **`FileReference`** — `name`, `extension`, `record`. **`EmbeddedFile`** — `record: int`, `data: bytes`, `name: str | None` (`None` from `files()`, where the Files table stores no name).
+- **`Diagnostic`** — frozen: `kind` (`DiagnosticKind`: `corrupt_record`, `undecodable_field`, `invalid_value`, `undecodable_table`, `unsupported_table`, `unexpected_structure`, `unresolved_file_reference`, `unreadable_file`, `unused_kod`), `message`, `file`, `table`, `record`, `field`.
 - **Exceptions** — `CronosError` base; `NotACronosFile`, `UnsupportedVersion`, `DatabaseDefinitionError`. Anything survivable (one record, field or file reference) is a diagnostic, not an exception.
 
-**Documented promises:** iteration is lazy, and `bank.diagnostics` grows while reading; a `Bank` is not thread-safe; the set of `Field.value` types may grow in later versions.
+**Documented promises:** iteration is lazy, and `bank.diagnostics` grows while reading, up to its first 1,000 entries; a `Bank` is not thread-safe; the set of `Field.value` types may grow in later versions.
 
 ## Command line (Phase 2 builds to this)
 

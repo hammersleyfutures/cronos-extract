@@ -4,8 +4,9 @@ import argparse
 import struct
 
 import pytest
+from cronos_builder import erdgeist_table_definition
 
-from cronos_extract.Datamodel import Field, FieldDefinition
+from cronos_extract.Datamodel import Field, FieldDefinition, TableDefinition
 from cronos_extract.hexdump import aschr, hexdump
 
 
@@ -87,3 +88,12 @@ def test_hexdump_ascdump_prints_text_only(capsys: pytest.CaptureFixture[str]) ->
     hexdump(0, "Привет!".encode("cp1251"), argparse.Namespace(width=4, ascdump=True))
 
     assert capsys.readouterr().out == "00000000: Прив\n00000004: ет!\n"
+
+
+def test_table_definition_warnings_go_through_the_warn_hook(capfd: pytest.CaptureFixture[str]) -> None:
+    messages: list[str] = []
+
+    TableDefinition(erdgeist_table_definition(), warn=messages.append)
+
+    assert messages == ["Warning: FieldDefinition Section 2 not marked with a 2"]
+    assert capfd.readouterr().err == ""

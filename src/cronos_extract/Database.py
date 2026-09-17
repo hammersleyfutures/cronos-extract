@@ -10,9 +10,10 @@ from contextlib import ExitStack
 from functools import cached_property
 
 from . import koddecoder
+from ._format.files import open_regular_file
 from .Datafile import Datafile
 from .Datamodel import Record, TableDefinition, describe_error
-from .hexdump import ashex, strescape, toout
+from .hexdump import ashex, strescape, toout, warn_on_stderr
 from .readers import ByteReader
 
 # Printed after a database definition error: a KOD that isn't the database's own decodes the definition as garbage.
@@ -21,6 +22,9 @@ KOD_HINT = (
     "crodump strucrack can derive the database's KOD."
 )
 
+# The files a Database opens unless told otherwise.
+ALL_FILES = ("Stru", "Index", "Bank", "Sys")
+
 
 class Database:
     """represent the entire database, consisting of Stru, Index and Bank files"""
@@ -28,15 +32,19 @@ class Database:
     # The number of records enumerate_records yielded with fields that could not be decoded.
     incomplete_records = 0
 
-    def __init__(self, dbdir, compact, kod):
+    def __init__(self, dbdir, compact, kod, files=ALL_FILES, warn=warn_on_stderr):
         """
         `dbdir` is the directory containing the Cro*.dat and Cro*.tad files.
         `compact` if set, the .tad file is not cached in memory, making dumps 15 % slower
         `kod` is a KOD coder object, or None to read the records without KOD decoding.
+        `files` names the components to open, from ALL_FILES; the others are None.
+        `warn` receives a message for each part of the database definition that is not laid out as expected.
         """
         self.dbdir = dbdir
         self.compact = compact
         self.kod = kod
+        self.files = files
+        self.warn = warn
 
         # Stru+Index+Bank for the components for most databases
         self.stru = self.getfile("Stru")
@@ -46,6 +54,17 @@ class Database:
         # the Sys file resides in the "Program Files\Cronos" directory, and
         # contains an index of all known databases.
         self.sys = self.getfile("Sys")
+
+    @classmethod
+    def from_datafiles(cls, dbdir, compact, kod, stru, bank, warn):
+        """
+        Make a Database of the CroStru and CroBank Datafiles `stru` and `bank`, which the caller has opened.
+        Closing the Database closes them.
+        """
+        db = cls(dbdir, compact, kod, files=(), warn=warn)
+        db.stru = stru
+        db.bank = bank
+        return db
 
     def close(self):
         """
@@ -65,10 +84,15 @@ class Database:
         """
         Returns a Datafile object for `name`.
         this function expects a `Cro<name>.dat` and a `Cro<name>.tad` file.
-        When no such files exist, or only one, then None is returned.
+        When no such files exist, only one of them does, or one cannot be opened or is not a regular file,
+        then None is returned.
+
+        A component not named in `files` is not opened, and None is returned.
 
         `name` is matched case insensitively
         """
+        if name not in self.files:
+            return None
         try:
             datname = self.getname(name, "dat")
             tadname = self.getname(name, "tad")
@@ -82,9 +106,9 @@ class Database:
         Open a .dat/.tad pair as a Datafile, closing both files again if it can't be read.
         """
         with ExitStack() as stack:
-            dat = stack.enter_context(open(datname, "rb"))
-            tad = stack.enter_context(open(tadname, "rb"))
-            datafile = Datafile(name, dat, tad, self.compact, self.kod)
+            dat = stack.enter_context(open_regular_file(datname))
+            tad = stack.enter_context(open_regular_file(tadname))
+            datafile = Datafile(name, dat, tad, self.compact, self.kod, self.warn)
             stack.pop_all()
         return datafile
 
@@ -140,7 +164,7 @@ class Database:
             while not rd.eof():
                 keyname = rd.readname()
                 if keyname in d:
-                    print(f"WARN: duplicate key: {keyname}", file=sys.stderr)
+                    self.warn(f"WARN: duplicate key: {keyname}")
 
                 index_or_length = rd.readdword()
                 if index_or_length >> 31:
@@ -157,7 +181,7 @@ class Database:
                             f'key "{keyname}" refers to CroStru record {index_or_length}, which is deleted'
                         )
                     if refdata[:1] != b"\x04":
-                        print("WARN: expected refdata to start with 0x04", file=sys.stderr)
+                        self.warn("WARN: expected refdata to start with 0x04")
                     d[keyname] = refdata[1:]
         except EOFError as e:
             raise ValueError(f"the database definition is cut off after {len(d)} keys") from e
@@ -184,7 +208,7 @@ class Database:
         if dbinfo is None:
             raise ValueError("CroStru record 1, which holds the database definition, is deleted")
         if dbinfo[:1] != b"\x03":
-            print("WARN: expected dbinfo to start with 0x03", file=sys.stderr)
+            self.warn("WARN: expected dbinfo to start with 0x03")
         return self.decode_db_definition(dbinfo[1:])
 
     def dump_db_table_defs(self, args):

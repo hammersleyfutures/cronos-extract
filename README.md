@@ -54,6 +54,27 @@ version it finds, including v7 and versions it does not recognise. The export an
 and do not read v7 yet.
 
 
+# Python API
+
+cronos-extract is also a library. The command line is being rebuilt on it.
+
+```python
+import cronos_extract
+
+with cronos_extract.open("path/to/database") as bank:
+    for table in bank.tables:
+        for record in table.records():
+            print(record["Entry #4"].value)
+    print(bank.diagnostic_counts)
+```
+
+`open` takes `kod=` (a `cronos_extract.Kod`, or `None` to read without KOD decoding), `compact=True` for very large
+databases, and `on_diagnostic=` for a function to call with each problem found while reading. The library never
+prints: records it cannot read are skipped and reported as diagnostics, and a database it cannot read at all raises
+a `cronos_extract.CronosError`. `cronos_extract.crack_kod(path, "strucrack")` or `"dbcrack"` recovers the KOD of a
+database encrypted with its own. The module docstring (`help(cronos_extract)`) lists what the API promises.
+
+
 # Templates
 
 The croconvert command uses the [jinja templating framework](https://jinja.palletsprojects.com/) to render more file formats like PostgreSQL and HTML.

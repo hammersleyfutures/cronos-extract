@@ -62,5 +62,8 @@ all = "error"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ["-ra", "--strict-markers", "--strict-config"]
+addopts = ["-ra", "--strict-markers", "--strict-config", "-m", "not realdata"]
+markers = [
+    "realdata: reads the real databases listed in the git-ignored local/mash_datasets_with_CroIndex_dat.txt; run with -m realdata",
+]
 filterwarnings = ["error"]

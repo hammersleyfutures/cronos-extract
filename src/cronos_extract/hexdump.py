@@ -5,6 +5,7 @@ Several functions for converting bytes to readable text or hex bytes.
 """
 
 import struct
+import sys
 from binascii import a2b_hex, b2a_hex
 
 
@@ -17,6 +18,14 @@ def unhex(data):
     data = data.replace(" ", "")
     data = data.strip()
     return a2b_hex(data)
+
+
+def warn_on_stderr(message):
+    """
+    Print a reader's warning to stderr, where the commands report problems.
+    This is the default `warn` hook of Datafile, TableDefinition and Database.
+    """
+    print(message, file=sys.stderr)
 
 
 def ashex(line):

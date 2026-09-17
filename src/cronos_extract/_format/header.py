@@ -2,7 +2,7 @@
 # ABOUTME: Reports the format version, its generation and the encoding flags.
 import struct
 from dataclasses import dataclass
-from typing import BinaryIO
+from typing import BinaryIO, Literal
 
 DAT_HEADER = struct.Struct("<8sH5sHH")
 MAGIC = b"CroFile\x00"
@@ -13,6 +13,9 @@ VERSIONS_OWN_KOD = (b"01.04", b"01.05")
 V3_VERSIONS = (b"01.02", b"01.03", b"01.04", b"01.05")
 V4_VERSIONS = (b"01.11", b"01.13", b"01.14")
 V7_VERSIONS = (b"01.19",)
+
+# The CronosPro generations a header's version belongs to.
+type Generation = Literal["v3", "v4", "v7", "unknown"]
 
 
 @dataclass(frozen=True)
@@ -30,7 +33,7 @@ class DatHeader:
         return self.version.decode("ascii", "replace")
 
     @property
-    def generation(self) -> str:
+    def generation(self) -> Generation:
         """The CronosPro generation of this version: "v3", "v4", "v7", or "unknown"."""
         if self.version in V3_VERSIONS:
             return "v3"

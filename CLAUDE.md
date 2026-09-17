@@ -13,6 +13,7 @@ injection and silent data loss are bugs.
 uv sync                                   # dev environment (Python 3.12+)
 uv run pre-commit install                 # ruff, ty and pytest before each commit
 uv run pytest -q                          # all tests
+uv run pytest -q -m realdata              # the real databases listed in local/, deselected by default; a node id needs -m realdata too
 uv run pytest -q tests/test_crodump.py::test_strudump_without_the_database_kod_stops_with_a_message
 uv run ruff check && uv run ruff format --check && uv run ty check
 uv run pip-audit --skip-editable          # CI runs this in the lint job
@@ -33,6 +34,12 @@ uv run python -m cronos_extract.dumpdbfields test_data/all_field_types   # examp
 
 The code is layered, from bytes up to commands (`src/cronos_extract/`):
 
+- **Public API** (`cronos_extract/__init__.py`, implemented in `_api/`): `open()` returns a `Bank` of `Table`s whose
+  `records()` yield `Record`s of `Field`s with `value`, `text` and `raw`; problems it survives are `Diagnostic`s,
+  and a database it cannot read raises a `CronosError`. It drives `Datafile`, `Database.read_db_definition`,
+  `TableDefinition` and `Datamodel.Record` directly, never the printing `enumerate_*` generators, and passes a
+  `warn` hook to the readers that print. Only names in `__all__` are public. `_format/files.py`'s
+  `open_regular_file` is the one way Cro files are opened.
 - **`Datafile`**: one `.dat`/`.tad` pair. The `.tad` is an index of `(offset, length, flags)` entries, where a length of
   `0xFFFFFFFF` means deleted. Record numbers start at 1. `readrec(idx)` reassembles extended records from extension
   blocks, KOD-decodes the data using the record number as the shift (when bit 0 of the `.dat` header's encoding field
