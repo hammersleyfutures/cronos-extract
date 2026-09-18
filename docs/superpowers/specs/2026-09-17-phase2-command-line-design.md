@@ -1,8 +1,8 @@
 # Phase 2 design: the cronos-extract command line
 
 **Date:** 2026-09-17
-**Status:** design approved by Ben (2026-09-17); sections 2 to 6 written after he accepted the remaining design unseen,
-to be reviewed in the pull request
+**Status:** design approved by Ben (2026-09-17); the sections after the command surface were written after he accepted
+the remaining design unseen, then reviewed by Fable against the code, whose findings D17 records
 **Builds on:** `2026-09-15-modernisation-roadmap-design.md`, its decisions 1–11, its "Command line (Phase 2 builds to
 this)" and its open items, and `2026-09-16-phase1-public-api-design.md` (decisions P1–P12)
 
@@ -23,11 +23,15 @@ CRC checking, table ids above 255); v7 (Phase 4); the full API reference (Phase 
 cronos-extract survey  [--list FILE] [--counts|--jsonl] [DIR...]
 cronos-extract export  --csv|--postgres|--jsonl [-o PATH] [--delimiter ,] [--no-files] [--strict]
                        [--kod HEX|--nokod|--crack strucrack|dbcrack] [--compact] DB
-cronos-extract inspect strudump|recdump|crodump|destruct|kodump [subcommand options]
-                       [--kod HEX|--nokod|--crack strucrack|dbcrack] [--compact] DB
-cronos-extract crack   strucrack|dbcrack [--noninteractive] [--silent] [--sys] [--fix F] [--text T]
-                       [--width N] [--color] DB
+cronos-extract inspect strudump|recdump|crodump [subcommand options] KODOPTS DB
+cronos-extract inspect destruct [-t TYPE] [-v] [-a] [--kod HEX|--nokod] [--compact] [DB]
+cronos-extract inspect kodump [subcommand options] [--kod HEX|--nokod] [FILE]
+cronos-extract crack   strucrack [--noninteractive] [--silent] [--sys] [--color] [--fix F]
+                       [--text T] [--width N] DB
+cronos-extract crack   dbcrack [--silent] DB
 ```
+
+`KODOPTS` is `[--kod HEX | --nokod | --crack strucrack|dbcrack] [--compact]`.
 
 `--csv`, `--postgres` and `--jsonl` are one required mutually exclusive group; the KOD options are another, optional
 one. `survey` is unchanged from Phase 0.
@@ -41,8 +45,10 @@ were written from his acceptance of the rest of the design.
 
 The roadmap's synopsis put `--kod HEX | --nokod | --crack METHOD` and `--compact` in front of the subcommand. They are
 instead defined once (a shared argparse parent parser) and attached to `export` and to each `inspect` subcommand, so
-they are written after the subcommand name: `cronos-extract export --csv --kod HEX DB`. `inspect destruct` and
-`inspect kodump` read hex on stdin or one named file rather than a database, so they take only `--kod` and `--nokod`.
+they are written after the subcommand name: `cronos-extract export --csv --kod HEX DB`. `inspect kodump` reads one
+named file or stdin rather than a database, so it takes only `--kod` and `--nokod`. `inspect destruct` reads hex on
+stdin, but `-t 1` resolves a definition key stored by reference through CroStru (`Database.decode_db_definition`), so
+it takes an optional `DB` argument, `.` by default as today, and `--compact` with it.
 
 **Why:** `survey` and `crack` never read with a caller's KOD, so as global options they would have to be rejected for
 half the subcommands with a hand-written usage error. argparse accepts a parent parser's options only before the
@@ -108,6 +114,21 @@ The names repeat on every line, which costs size and compresses away.
 
 `text` and `raw` are not written. `raw` may be added in a later version, which does not break a JSON reader.
 
+**Diagnostics are lines of the stream too**, at the point they happened, so a script reading the JSON Lines alone
+knows which records had problems without parsing stderr:
+
+```json
+{"type": "diagnostic", "kind": "invalid_value", "message": "the value is not a date; it is kept as text",
+ "file": "CroBank.dat", "table": "Люди", "record": 13, "field": "Дата"}
+```
+
+`kind` is the `DiagnosticKind` value; `file`, `table`, `record` and `field` are present and `null` when they do not
+apply. Messages and names are written as JSON string escapes, not through D10's escaping, because JSON has its own.
+A record's diagnostics precede its record line, because the API decodes a record's fields before yielding it. The
+same lines are written when the output goes to a `-o` file, and each one is also printed on stderr and counted in the
+summary and by `--strict` (D10). A command-level problem (D10's `replaced_nul`, D17's `duplicate_table`) is written
+the same way with `"file"`, `"table"`, `"record"` and `"field"` filled in as far as they apply.
+
 **Why:** once `value` is JSON, `text` repeats it for every type but a file reference (where `text` is
 `"name ext record"`) and an empty field (`""` against `null`). `raw` would roughly double or treble the output; the
 `inspect` subcommands show bytes for the rare case where a decoded value has to be checked against them.
@@ -146,11 +167,15 @@ something the CSV export already does well.
 
 - `<table name>.csv` per table, the header row holding the field names, the system number first, `--delimiter`
   unchanged, UTF-8 without a BOM.
-- `Files-<abbreviation>/` holds every record of the Files table, named by its system number.
-- `Files-Referenced/` holds each referenced file under its own name, created only when a reference was resolved.
-- Names are made safe and unique exactly as `croconvert` does it today (`safepathname`, `unique_file_name`,
-  `unique_sql_table_name`, `MAX_FILE_NAME_BYTES`, `MAX_EXTENSION_BYTES`, `POSTGRES_IDENTIFIER_BYTES` move unchanged
-  into `_cli/names.py`).
+- `Files-<abbreviation>/` holds every record of the Files table, named by its system number. The abbreviation goes
+  through `unique_file_name` with `Files-Referenced` already claimed, so an abbreviation of `Referenced`, one of 510
+  UTF-8 bytes, or one differing only in case cannot collide or exceed the 255-byte limit (D17).
+- `Files-Referenced/` holds each referenced file under its own name. It is created whenever the export met a file
+  reference, resolved or not, as today.
+- Names are made safe and unique as `croconvert` does today. `safepathname`, `truncate_utf8`, `unique_name`,
+  `unique_file_name` and the three byte limits move unchanged into `_cli/names.py`; `unique_sql_table_name`,
+  `unique_sql_column_names` and `sql_value` take an API `Table`, `FieldDefinition` and `Field` instead of
+  `TableDefinition` and `Datamodel.Field`, so they read `name`, `id` and `text` (D17).
 - Cells hold exactly what the API decoded. Neither a formula-neutralising prefix nor a BOM is added.
 
 **Why:** prefixing `'` to a cell starting with `=`, `+`, `-` or `@` would change evidence and mangle `-5` and `+7…`;
@@ -199,13 +224,19 @@ warning: corrupt_record: CroBank.dat record 88: CroBank record 88 is corrupt and
 
 - The kind is the `DiagnosticKind` value; then whichever of `file`, `table`, `record` and `field` are set; then the
   message.
-- Every name and message is escaped before printing: control characters (which could carry terminal escape
-  sequences from a hostile database), surrogate-escaped bytes and other unprintable characters become `\xNN`,
-  `\uNNNN` or `\UNNNNNNNN`. So one diagnostic is always one line, and nothing from a database reaches a terminal raw.
-  The same escaping is applied to the text of a fatal error, and to the messages the internal readers print through
-  `inspect` (their wording does not change). This closes the carried-forward escaping item.
-- The summary line lists the counts by kind from `bank.diagnostic_counts`, in kind order, and is printed once at the
-  end, including when nothing went wrong (`no diagnostics`).
+- Everything written to stderr is escaped: control characters (which could carry terminal escape sequences from a
+  hostile database), surrogate-escaped bytes and other unprintable characters become `\xNN`, `\uNNNN` or
+  `\UNNNNNNNN`. So one diagnostic is always one line, and nothing a database holds reaches the terminal raw **through
+  stderr**. The internal readers print to stderr directly in places `warn` does not cover (`Database.dump_ns1`,
+  `Database.recdump`, `Database.readbankrec`), so the escaping is a wrapper installed on `sys.stderr` for the whole
+  process; it covers `export`, `inspect` and `crack` alike and changes no wording. stdout is not escaped: `inspect`
+  dumps and SQL literals keep the database's bytes, which D11 requires, and the README tells users to write export
+  output to a file or `-o` rather than to a terminal (D17). This closes the carried-forward escaping item.
+- The summary line lists the counts by kind from `bank.diagnostic_counts`, in `DiagnosticKind` declaration order with
+  command-level kinds last, and is printed once at the end, including when nothing went wrong (`no diagnostics`).
+  When a fatal error stops the run, the counts so far are printed first and the `Error: …` line last, so the error is
+  the last thing on stderr. `crack` prints no summary: it opens no bank, and its stderr must stay usable in
+  `KOD=$(cronos-extract crack dbcrack --silent DB)` (D17).
 - A command-level problem that is not an API diagnostic is printed and counted in the same shape, with its own kind:
   `replaced_nul` for D9's NUL replacement in SQL output.
 - There is no `--quiet`: `2>/dev/null` already silences stderr, and the summary is its last line.
@@ -227,8 +258,18 @@ today's internal readers, which the public API hides on purpose: raw definition 
 
 Changes:
 
-- A database that cannot be read at all exits 1 with one `Error: …` line and no traceback, as `strudump` does today.
-- Text naming a command says `cronos-extract crack strucrack` and `cronos-extract --kod`; `KOD_HINT` moves with it.
+- A database that cannot be read at all exits 1 with one `Error: …` line and no traceback. Today it does not:
+  `Database.getfile` catches only `OSError` (`Database.py:101`), so a `CroIndex.dat` of ten bytes ends `strudump`,
+  `crodump` and `recdump` in a `ValueError` traceback from `read_dat_header`, and an unknown `.tad` version raises a
+  bare `Exception` (`Datafile.py:106`) — for a file the subcommand never reads. `_cli/inspect.py` therefore opens the
+  files each subcommand needs through its own opener, which maps `ValueError`, `struct.error` and that `Exception`
+  from `Datafile` construction to exit 1 naming the file, and reports a damaged CroIndex or CroSys that the
+  subcommand does not need as a diagnostic instead of stopping (D17).
+- `inspect strudump` calls `Database.dump_db_table_defs` and maps `ValueError` to exit 1 itself, with the hint;
+  `Database.strudump`, which calls `sys.exit` twice (`Database.py:144,148`), is deleted as dead code.
+- Text naming a command says `cronos-extract crack strucrack` and `cronos-extract export --kod`; `KOD_HINT` moves
+  with it. `export` formats a `DatabaseDefinitionError` with that command-line hint in place of the API's
+  `DEFINITION_HINT`, which names the Python function `cronos_extract.crack_kod` (`_api/bank.py:25`).
 - The global `--debug` becomes `inspect recdump --debug`, its only user.
 - `sysdump` is dropped: `inspect crodump` dumps CroSys among the four files, and `inspect recdump --sys` its records.
 - `--strict` is not offered, because no `inspect` subcommand reads through the API.
@@ -243,7 +284,15 @@ replaces the internal `print` calls with diagnostics.
 
 `crack strucrack` keeps `--fix/-f`, `--text/-t`, `--width`, `--color`, `--sys`, `--silent`, `--noninteractive`, the
 known-string hints and the interactive dump. `crack dbcrack` keeps `--silent`. Both build on `_api/crack.py`'s shared
-steps, as Phase 1 arranged.
+statistics, as Phase 1 arranged.
+
+**Which files each method opens.** The shared steps cover only the statistics, so `_cli/crack.py` opens the files
+itself, through `_api.datafiles.open_datafile` with a `DiagnosticLog` that `report.py` prints: `strucrack` opens
+CroStru alone, or CroSys alone with `--sys`; `dbcrack` opens CroBank and CroIndex. Neither opens a file its method
+does not read, so a damaged CroIndex no longer ends a `strucrack` (today it does, through `Database`), and the
+`tests/test_crack.py` cases that build a directory holding only CroStru or only CroBank keep passing —
+`crack_kod` could not serve them, because it opens both (`_api/crack.py:130-135`). Cracking always reads the index
+from disk, as `crack_kod` does, so `crack` has no `--compact` option.
 
 Changes:
 
@@ -252,10 +301,12 @@ Changes:
   only, and `KOD=$(cronos-extract crack dbcrack --silent DB)` needs no filtering.
 - The hints name `cronos-extract crack strucrack -f …` and `cronos-extract export --kod …`.
 - "Ambigous" is spelled correctly.
-- Exit statuses: 0 when a KOD is produced; 1 when `--noninteractive` cracking fails or the database cannot be opened;
-  2 for an unparsable `--fix` or `--text` or one that does not fit the database (today a `CrackInputError` exit 1).
-  An interactive `strucrack` that ends with entries unresolved keeps exit 0; the roadmap defers interactive crack
-  statuses to after 1.0.
+- Exit statuses: 0 when a KOD is produced; 1 when `--noninteractive` `strucrack` fails, when `dbcrack` fails
+  (it is non-interactive by nature, and today such a run exits 0, which would make
+  `KOD=$(cronos-extract crack dbcrack --silent DB)` succeed with an empty value), or when a file the method needs is
+  missing or cannot be opened; 2 for an unparsable `--fix` or `--text` or one that does not fit the database (today a
+  `CrackInputError` exit 1). `--silent` never changes the status. An interactive `strucrack` that ends with entries
+  unresolved keeps exit 0; the roadmap defers interactive crack statuses to after 1.0.
 - The interactive dump reads records the way `--noninteractive` does, through `_api/crack.readable_records`, so a
   record it cannot read is skipped instead of ending the crack. This closes that carried-forward item.
 
@@ -291,14 +342,25 @@ survey.py           unchanged
 
 The three writers share one interface — `table(table)`, `record(table, record)`, `finish()` — so `export.py` walks the
 bank once and knows nothing about formats. Every subcommand handler has Phase 0's signature `run_*(args, parser) ->
-int` and none calls `sys.exit`: `main` catches `CronosError`, `OSError`, `BrokenPipeError` and `KeyboardInterrupt` and
-turns them into a status. This is the dispatch seam the roadmap's carried item asks for. `collect_roots` is given the
+int` and none calls `sys.exit`: `main` catches `CronosError`, `OSError`, `CrackInputError`, `BrokenPipeError` and
+`KeyboardInterrupt` and turns them into a status. Every subcommand group is `required=True`, so
+`cronos-extract inspect` with no subcommand is argparse's usage error and exit 2, where `crodump` prints help and
+exits 0 today. This is the dispatch seam the roadmap's carried item asks for. `collect_roots` is given the
 `survey` subparser instead of the top-level parser, so its usage line names `cronos-extract survey` — the second
 carried item. All new modules are fully annotated and ty-clean.
 
 **Deleted:** `crodump.py`, `croconvert.py`, `dumpdbfields.py`, `templates/` (both templates), the `crodump` and
-`croconvert` console scripts, the `jinja2` dependency, and `tests/test_dumpdbfields.py`. `KOD_HINT` and the
-`Database.dump*`, `recdump`, `strudump` methods stay, because `inspect` uses them.
+`croconvert` console scripts, the `jinja2` dependency, `Database.strudump` (D11) and `tests/test_dumpdbfields.py`.
+`KOD_HINT` and the `Database.dump*` and `recdump` methods stay, because `inspect` uses them.
+
+**Tests that move, not go.** `tests/test_croconvert.py`, `tests/test_crodump.py` and `tests/test_crack.py` run the
+deleted commands and import `croconvert`, so every case moves into `tests/test_cli_export.py`,
+`tests/test_cli_inspect.py` or `tests/test_cli_crack.py`, keeping its assertions except where a decision here changes
+them. Only the HTML cases go, with the export they test. No case is dropped for failing.
+
+**Dead code flagged, not removed:** once `croconvert` goes, `Database.enumerate_tables`, `enumerate_records` and
+`enumerate_files` are used only by the Phase 1 parity tests, which Phase 3 replaces with golden output before
+removing them (the roadmap's existing item). `_cli/export.py` never calls them.
 
 ### D15. Exit statuses
 
@@ -306,41 +368,118 @@ carried item. All new modules are fully annotated and ty-clean.
 |---|---|
 | 0 | the command finished; skipped records and diagnostics do not change this |
 | 1 | the database cannot be read at all (`CronosError`, or an `OSError` on the database directory or an output file): one `Error: …` line, no traceback. Also a failed `--crack`, a failed `crack --noninteractive`, a write error such as a full disk, and `--strict` with at least one diagnostic |
-| 2 | a usage error: argparse's own, an `-o` target that exists, `--no-files` without `--csv`, a `--kod` that is not 512 hex digits or not a permutation of 0–255, a `--fix`/`--text` that cannot be parsed or does not fit |
+| 2 | a usage error: argparse's own (a missing subcommand included), an `-o` target that exists, `--no-files` or `--delimiter` without `--csv`, a `--delimiter` that is not one character, a `--kod` that is not 512 hex digits or not a permutation of 0–255, a `--fix`/`--text` that cannot be parsed or does not fit. A `--kod` is validated by an argparse type that raises `ArgumentTypeError` with `Kod.from_hex`'s reason, so the message is not argparse's generic "invalid from_hex value" |
 
 `BrokenPipeError` (`| head`) exits 1 without a message and without Python's "Exception ignored" report;
 `KeyboardInterrupt` exits 130 with no traceback. Output written before a failure is left in place, and the message
-says where it is.
+says where it is. `--strict` only ever raises a status: a run that already exits 1 or 2 keeps it. The output target is
+created after `open()` has succeeded, so a database that cannot be read leaves no empty directory behind. `export`
+reconfigures stdout to UTF-8 with `errors="backslashreplace"`, so SQL on a Windows console with a legacy code page is
+not silently transcoded (D17).
 
 ### D16. Golden output tests move to the new commands, with every difference recorded
 
 `tests/test_cli_characterisation.py` runs `cronos-extract` instead of `crodump` and `croconvert`. The golden files are
-renamed in one commit (`git mv`) and regenerated in the next, so the diff of the second shows only real changes.
+renamed in one commit (`git mv`) and regenerated in the next, so the diff of the second shows only real changes. The
+harness takes an expected exit status per case, because it hard-codes 0 today and two cases now end in 1
+(`export-postgres-nokod`, `crack-dbcrack`).
 
 | Golden file | Difference |
 |---|---|
 | `crodump-*` → `inspect-*` | stdout unchanged; hint text names `cronos-extract` |
 | `crodump-sysdump.*` | deleted with the subcommand (D11) |
 | `crodump-strucrack` → `crack-strucrack` | failure and key messages move to stderr; "Ambiguous" spelled correctly; hints name `cronos-extract` |
-| `crodump-dbcrack` → `crack-dbcrack` | its "Ambiguous result" line moves to stderr |
+| `crodump-dbcrack` → `crack-dbcrack` | its "Ambiguous result" line moves to stderr; exit status 0 → 1 (D12) |
 | `croconvert-html.*` | deleted with the HTML export |
 | `croconvert-postgres` → `export-postgres` | `SET standard_conforming_strings = on;` first; no stray blank lines or trailing spaces; stderr in the new diagnostic format with a summary |
 | `croconvert-postgres-nokod` → `export-postgres-nokod` | exit status 0 → 1; one `Error: …` line naming `cronos-extract crack` in place of today's two lines |
 | `croconvert-csv` → `export-csv` | the directory tree and every CSV byte unchanged; stderr in the new diagnostic format with a summary |
 | `export-jsonl` | new |
 
+No other observable behaviour changes. In particular `Files-Referenced/` is still created whenever a file reference
+was met, resolved or not, so `test_a_file_reference_to_a_record_of_another_table_is_skipped`
+(`tests/test_croconvert.py:686`) keeps its assertion when it moves.
+
+### D17. Refinements from Fable's review of the written spec (2026-09-17)
+
+Fable reviewed this spec against the code and probed today's commands. Each finding below was checked against the
+source before it was adopted; the decisions above carry the changes, and this list records where they came from.
+
+**Opening files and exit statuses**
+
+- `inspect` needs its own opener: `Database.getfile` catches only `OSError` (`Database.py:101`), so a ten-byte
+  `CroIndex.dat` gives a `ValueError` traceback from `strudump`, `crodump`, `recdump` and `strucrack`, and an unknown
+  `.tad` version a bare `Exception` (`Datafile.py:106`) — for a file the subcommand never reads (D11).
+- `Database.strudump` calls `sys.exit` (`Database.py:144,148`), which D14's "no handler calls `sys.exit`" forbids, so
+  it is deleted and `inspect strudump` maps the `ValueError` itself (D11).
+- `crack` opens only the files its method reads, not through `crack_kod`, which opens CroStru and CroBank both
+  (`_api/crack.py:130-135`) while several `tests/test_crack.py` cases build a directory with only one of them (D12).
+- `dbcrack` failure exits 1. Today it exits 0, so `KOD=$(… crack dbcrack --silent DB)` would succeed with an empty
+  value — the very use D12 offers (D12).
+- `CrackInputError` is added to what `main` maps to a status, and a missing subcommand is exit 2 rather than help and
+  0 (D14, D15).
+- A wrong KOD is exit 1, not a diagnostic: `open()` raises `DatabaseDefinitionError` (`_api/bank.py:250`). The
+  hostile-input row said exit 0, contradicting D16's own `export-postgres-nokod` row.
+
+**Output and names**
+
+- `inspect destruct -t 1` does read a database — `Database(".", …)` and `stru.readrec` for keys stored by reference
+  (`crodump.py:200`, `Database.py:173-185`), which `tests/test_crodump.py:36` relies on — so it keeps an optional `DB`
+  and `--compact` (D1).
+- The `Files-<abbreviation>` directory is neither uniquified nor length-limited today (`croconvert.py:217`), so an
+  abbreviation of `Referenced` gives `FileExistsError` and a 510-byte one `ENAMETOOLONG`, after the CSVs are written
+  (D7).
+- `unique_sql_table_name`, `unique_sql_column_names` and `sql_value` read `TableDefinition` and `Datamodel.Field`
+  attributes (`croconvert.py:145,158,169`), so they cannot move unchanged (D7).
+- `--delimiter` that is not one character is a `TypeError` traceback today (`croconvert.py:200`), and `--delimiter`
+  with a format that has no delimiter was undefined (D15).
+- `-o` is checked with `os.path.lexists` and created atomically, because `os.path.exists` passes a dangling symlink
+  and a check-then-create gap is a race (D15).
+- A duplicate table (same name and id) is skipped for every format: CSV and SQL skip it only as a side effect of
+  their name helpers returning `None` (`croconvert.py:194`), so JSON Lines would export its records twice (D3, D14).
+- stdout is not escaped, and cannot be while D11 keeps `inspect` byte for byte: `TableDefinition.__str__` and
+  `sql_value` pass a name's control bytes through (`Datamodel.py:418`, `croconvert.py:172`). The escaping claim is
+  scoped to stderr, and the README says to write export output to a file (D10).
+- `export` sets stdout to UTF-8, because a Windows console with a legacy code page would transcode SQL silently
+  (D15).
+- The escaping is a `sys.stderr` wrapper: `Database.dump_ns1`, `recdump` and `readbankrec` print to stderr without
+  going through `warn` (`Database.py:235,248,332,380`) (D10).
+
+**Definitions the spec was missing**
+
+- The JSON Lines diagnostic line had no shape, though Ben chose to put diagnostics in the stream (D4).
+- What the summary prints when a fatal error stops a run, and that `crack` prints none, was undefined (D10).
+- `tests/test_croconvert.py`, `tests/test_crodump.py` and `tests/test_crack.py` were neither deleted nor moved; they
+  import `croconvert` and run the deleted commands (D14).
+- Summary order is `DiagnosticKind` declaration order with command-level kinds last; `--kod` gets an argparse type
+  that reports `Kod.from_hex`'s reason (D10, D15).
+- `Database.enumerate_*` becomes dead code once `croconvert` goes, kept only for the Phase 1 parity tests (D14).
+
+**Knowingly not changed**
+
+- `--strict` will exit 1 on every crafted database, because `TableDefinition` reports "Section 2 not marked with a 2"
+  as `unexpected_structure` for `test_data`'s definitions (Phase 1's evidence). The README says so.
+- A database whose every record is corrupt writes one stderr line per record: D10 rejected a cap deliberately.
+- `inspect destruct` and `kodump` keep today's tracebacks for bad hex, a bad `--shift`, `--offset` or `--length`; the
+  roadmap puts that error handling after 1.0.
+
 ## Hostile input
 
 | Input | Result |
 |---|---|
-| a `Cro*` file that is a FIFO, socket, device, directory or dangling symlink | `open()` raises `NotACronosFile`: exit 1 with one line (Index and Sys give an `unreadable_file` diagnostic and the export continues) |
-| a truncated or corrupt `.dat`/`.tad`, a wrong or absent KOD, a table id above 255 | diagnostics on stderr, the export finishes with exit 0 (1 with `--strict`) |
+| a `Cro*` file that is a FIFO, socket, device, directory or dangling symlink | `export`: `open()` raises `NotACronosFile`, exit 1 with one line (Index and Sys give an `unreadable_file` diagnostic and the export continues). `inspect` and `crack`: their own opener, exit 1 naming the file, and only for a file the subcommand reads (D11, D12) |
+| a wrong or absent KOD, or a CroStru/CroBank `.dat` or `.tad` shorter than its header | exit 1 with one `Error: …` line: a wrong KOD decodes the definition as garbage, which `open()` raises as `DatabaseDefinitionError` (`_api/bank.py:250`), and a short header as `NotACronosFile`. D16's `export-postgres-nokod` golden file is this case |
+| a truncated CroBank body, a corrupt record, looping extension blocks, a table id above 255 | diagnostics on stderr, the export finishes with exit 0 (1 with `--strict`) |
 | a table, field or file name that is not valid UTF-8 or CP-1251, or holds control characters or terminal escapes | escaped on stderr (D10); made safe for file names by `safepathname` and shortened to 255 bytes; quoted for SQL with `"` replaced by `_`; written as JSON string escapes |
 | a name that would escape the output directory (`..`, `/`, `\`, an empty name, only dots) | `safepathname` replaces the separators and `unique_file_name` replaces a stem that is empty or only dots with its number, so every path stays directly under the output directory. Tested with a database whose table and file names are `../../etc/passwd` and similar |
-| `-o` that exists, is a dangling symlink, or is inside a directory that is not writable | exit 2 for an existing target; exit 1 with the `OSError`'s message for one that cannot be created |
+| `-o` that exists, including as a dangling symlink | exit 2. The check is `os.path.lexists`, because `os.path.exists` follows a link and would pass a dangling one, and the target is then created with `os.mkdir` or `open(mode="x")`, whose `FileExistsError` is exit 2 as well, so the check-then-create race cannot overwrite anything (D17) |
+| `-o` inside a directory that is not writable, or on a read-only file system | exit 1 with the `OSError`'s message |
+| a table name or abbreviation that collides with `Files-Referenced`, differs only in case, or is 510 UTF-8 bytes long | a unique, shortened name from `unique_file_name` (D7); today the `Files-<abbreviation>` directory is neither, and gives `FileExistsError` or `ENAMETOOLONG` after the CSVs are written |
+| two table definitions with the same name and id | the second is skipped for every format, with a `duplicate_table` note; today only CSV and SQL skip it, and JSON Lines would export its records twice (D17) |
+| `--delimiter` that is not one character, or `--delimiter` without `--csv` | exit 2; today `csv.writer` raises `TypeError` (D17) |
 | a database directory that cannot be listed, or is a file | exit 1 with the `OSError` message (`NotADirectoryError` included) |
 | stdout closed early (`| head`), or a full disk | exit 1, no traceback (D15) |
-| hex input to `inspect destruct` that is not hex, or a binary file to `inspect kodump` | today's behaviour, checked to give a message rather than a traceback |
+| hex input to `inspect destruct` that is not hex, or `inspect kodump -s zz`, `-l -5`, `-o` past the end | today's tracebacks stay: the roadmap puts "`crodump destruct` error handling" after 1.0, and this phase does not pull it forward. A binary file to `inspect kodump` already works. `inspect recdump --debug` re-raises on purpose (`Database.py:412`), the one deliberate traceback |
 
 Reviewers are asked to try all of the above, plus a database whose every record is corrupt (stderr flood), an
 `-o` directory on a read-only file system, names differing only in case, and `--fix`/`--text` values that do not fit
@@ -357,9 +496,14 @@ exit status.
   number is not a number, a partial date, a NUL-only date (D5) and an empty field; diagnostic lines in the stream and
   on stderr; the summary; `--strict` exit 1 with the output kept; `--delimiter`; CSV cells kept verbatim; the
   `Files-<abbreviation>` and `Files-Referenced` layout; over-long and hostile names; every exit status of D15.
-- `tests/test_cli_inspect.py`: the moved subcommands, `--debug`, the exit-1 paths, and that `sysdump` is gone.
+- `tests/test_cli_inspect.py`: the moved subcommands and the cases from `tests/test_crodump.py`; `--debug`; a damaged
+  CroIndex or CroSys that the subcommand does not read (a diagnostic, not exit 1) and one it does (exit 1, no
+  traceback); `destruct -t 1` with and without a `DB`; and that `sysdump` is gone.
+- `tests/test_cli_export.py` also covers `--delimiter` validation, a duplicate table skipped once per format, and an
+  abbreviation that collides with `Files-Referenced`, differs only in case, or is 510 UTF-8 bytes long.
 - `tests/test_cli_crack.py`: the existing `tests/test_crack.py` cases moved to `crack`, plus messages on stderr, the
-  exit statuses of D12, and an interactive crack over a database with an unreadable record.
+  exit statuses of D12, a `strucrack` over a directory holding only CroStru and one whose CroIndex is damaged, a
+  `dbcrack` over a directory holding only CroBank, and an interactive crack over a database with an unreadable record.
 - `tests/test_cli_report.py`: escaping of control characters, surrogate-escaped bytes and terminal escapes; the
   summary wording; `replaced_nul`.
 - `tests/test_cli_characterisation.py`: the golden files of D16.
