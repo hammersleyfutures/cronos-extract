@@ -78,7 +78,15 @@ class Problems:
 
 
 def delimiter_argument(text: str) -> str:
-    """Parse a --delimiter value: one character that the csv module accepts as a delimiter."""
+    """
+    Parse a --delimiter value: one character that the csv module accepts as a delimiter.
+
+    csv.writer on Python 3.12 accepts '"', '\\r' and '\\n' as delimiters, which 3.13 rejects; checking them here
+    rejects the same values on every supported Python.
+    """
+    if text in ('"', "\r", "\n"):
+        reason = "it is the quote character or a line break"
+        raise argparse.ArgumentTypeError(f"{text!r} cannot be a CSV delimiter: {reason}")
     try:
         csv.writer(io.StringIO(), delimiter=text)
     except (TypeError, ValueError) as e:
