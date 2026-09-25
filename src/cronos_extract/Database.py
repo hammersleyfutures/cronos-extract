@@ -19,7 +19,7 @@ from .readers import ByteReader
 # Printed after a database definition error: a KOD that isn't the database's own decodes the definition as garbage.
 KOD_HINT = (
     "If the KOD used to read this database is not its own, the definition decodes as garbage; "
-    "crodump strucrack can derive the database's KOD."
+    "cronos-extract crack strucrack can derive the database's KOD."
 )
 
 # The files a Database opens unless told otherwise.
@@ -135,17 +135,6 @@ class Database:
             self.bank.dump(args)
         if self.sys:
             self.sys.dump(args)
-
-    def strudump(self, args):
-        """
-        prints all info found in the CroStru file.
-        """
-        if not self.stru:
-            sys.exit(f"Error: {self.missing_stru_message()}")
-        try:
-            self.dump_db_table_defs(args)
-        except ValueError as e:
-            sys.exit(f"Error: {e}\n{KOD_HINT}")
 
     def missing_stru_message(self):
         """

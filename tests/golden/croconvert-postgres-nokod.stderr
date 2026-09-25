@@ -1,3 +1,0 @@
-WARN: expected dbinfo to start with 0x03
-ERROR decoding db definition: the database definition is cut off after 0 keys
-If the KOD used to read this database is not its own, the definition decodes as garbage; crodump strucrack can derive the database's KOD.

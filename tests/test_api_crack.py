@@ -1,9 +1,10 @@
 # ABOUTME: Tests for crack_kod, which recovers a database's KOD table from its encrypted records without printing.
-# ABOUTME: Uses encrypted databases from tests/cronos_builder.py whose KOD table is known, and checks crodump agrees.
+# ABOUTME: Uses encrypted databases from tests/cronos_builder.py with a known KOD, and checks the crack command agrees.
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from cli import run_command
 from cronos_builder import (
     TEST_TABLE_ID,
     UNUSED_TABLE_ID,
@@ -14,7 +15,7 @@ from cronos_builder import (
     write_database,
 )
 
-from cronos_extract import Kod, NotACronosFile, crack_kod, crodump
+from cronos_extract import Kod, NotACronosFile, crack_kod
 from cronos_extract.koddecoder import KODcoding
 
 KOD = random_kod(seed=7)
@@ -40,14 +41,15 @@ def test_crack_kod_recovers_the_kod_of_an_encrypted_database(encrypted_db: str, 
 
 
 @pytest.mark.parametrize("method", METHODS)
-def test_crack_kod_agrees_with_crodump(encrypted_db: str, method: str, capfd: pytest.CaptureFixture[str]) -> None:
-    expected = crodump.crack_kod(method, encrypted_db, False)
-    capfd.readouterr()
+def test_crack_kod_agrees_with_the_crack_command(encrypted_db: str, method: str) -> None:
+    options = ["--noninteractive"] if method == "strucrack" else []
+    result = run_command("cli", ["crack", method, "--silent", *options, encrypted_db])
 
     kod = crack_kod(Path(encrypted_db), cast(Any, method))
 
+    assert result.returncode == 0
     assert kod is not None
-    assert list(kod.table) == expected
+    assert result.stdout == kod.hex() + "\n"
 
 
 @pytest.mark.parametrize("method", METHODS)

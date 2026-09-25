@@ -1,8 +1,12 @@
-# ABOUTME: Runs the cronos_extract commands in a subprocess for tests, using the interpreter running pytest.
-# ABOUTME: Shared by every test that runs cli, crodump, croconvert or dumpdbfields.
+# ABOUTME: Runs the cronos_extract commands for tests: in a subprocess with the interpreter running pytest, or
+# ABOUTME: one subcommand's parser and handler in this process, before the command line assembles them all.
+import argparse
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
+
+from cronos_extract._cli.options import Subcommands
 
 
 def run_command(
@@ -23,3 +27,16 @@ def run_command(
         check=False,
         timeout=timeout,
     )
+
+
+def run_in_process(add_parser: Callable[[Subcommands], None], args: list[str]) -> int:
+    """
+    Parse `args` with a parser holding only the subcommand that `add_parser` adds, and run its handler here.
+
+    Returns the handler's exit status. Exceptions reach the caller as they would reach cli.main, and argparse's usage
+    errors raise SystemExit.
+    """
+    parser = argparse.ArgumentParser(prog="cronos-extract")
+    add_parser(parser.add_subparsers(dest="subcommand", required=True))
+    parsed = parser.parse_args(args)
+    return int(parsed.handler(parsed, parsed.command_parser))

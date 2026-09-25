@@ -27,7 +27,7 @@ classifiers = [
     "Topic :: Database",
     "Topic :: Utilities",
 ]
-dependencies = ["jinja2>=3.1.6"]
+dependencies = []
 
 [project.urls]
 Homepage = "https://github.com/hammersleyfutures/cronos-extract"
@@ -35,8 +35,6 @@ Issues = "https://github.com/hammersleyfutures/cronos-extract/issues"
 
 [project.scripts]
 cronos-extract = "cronos_extract.cli:main"
-crodump = "cronos_extract.crodump:main"
-croconvert = "cronos_extract.croconvert:main"
 
 [dependency-groups]
 dev = [

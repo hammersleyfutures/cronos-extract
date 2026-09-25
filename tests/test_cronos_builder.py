@@ -15,14 +15,19 @@ from cronos_builder import (
     bank_record,
     compressed_record,
     database_with_extra_definition_key,
+    database_with_files_abbreviation,
     database_with_missing_definition,
     database_without_files_table,
+    duplicate_table_name_database,
     erdgeist_table_definition,
+    field_definition_with_nul_name,
     file_record,
     file_reference_field,
     key_referencing_a_deleted_record,
     patched_table_definition,
     random_kod,
+    record_with_file_field,
+    renamed_table_definition,
     stru_records_from_test_db,
     table_definition_without_fields,
     write_database,
@@ -30,6 +35,7 @@ from cronos_builder import (
     write_header_only_datafile,
 )
 
+import cronos_extract
 from cronos_extract._format.header import DatHeader, read_dat_header
 from cronos_extract.Database import KOD_HINT, Database
 from cronos_extract.Datamodel import TableDefinition
@@ -266,3 +272,45 @@ def test_a_database_without_a_files_table_has_no_base000_key(tmp_path: Path) -> 
         keys = db.read_db_definition().keys()
         assert "Base000" not in keys
         assert "Base001" in keys
+
+
+def test_renamed_table_definition_changes_the_name_and_the_abbreviation(tmp_path: Path) -> None:
+    second = renamed_table_definition(patched_table_definition(tableid=2), name=b"other", abbreviation=b"OT")
+    dbdir = database_with_extra_definition_key(tmp_path / "db", "Base002", second)
+
+    with cronos_extract.open(dbdir) as bank:
+        assert [(table.id, table.name, table.abbreviation) for table in bank.tables] == [
+            (1, "erdgeist", "ER"),
+            (2, "other", "OT"),
+        ]
+
+
+def test_field_definition_with_nul_name_puts_a_nul_in_the_first_fields_name(tmp_path: Path) -> None:
+    definition = field_definition_with_nul_name(patched_table_definition(tableid=2))
+    dbdir = database_with_extra_definition_key(tmp_path / "db", "Base002", definition)
+
+    with cronos_extract.open(dbdir) as bank:
+        table = next(table for table in bank.tables if table.id == 2)
+        assert "\x00" in table.fields[0].name
+
+
+def test_database_with_files_abbreviation_gives_the_files_table_that_abbreviation(tmp_path: Path) -> None:
+    dbdir = database_with_files_abbreviation(tmp_path / "db", "Файлы".encode("cp1251"), [file_record(b"DATA")])
+
+    with cronos_extract.open(dbdir) as bank:
+        assert bank.files_abbreviation == "Файлы"
+        assert [file.data for file in bank.files()] == [b"DATA"]
+
+
+def test_duplicate_table_name_database_holds_two_tables_with_one_name(tmp_path: Path) -> None:
+    with cronos_extract.open(duplicate_table_name_database(tmp_path / "db")) as bank:
+        assert [(table.id, table.name) for table in bank.tables] == [(1, "erdgeist"), (2, "erdgeist")]
+        assert [[record.fields[2].text for record in table.records()] for table in bank.tables] == [["one"], ["two"]]
+
+
+def test_record_with_file_field_puts_the_reference_in_the_file_field(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [record_with_file_field(file_reference_field("scan", "jpg", 7))])
+
+    with cronos_extract.open(dbdir) as bank:
+        (record,) = bank.tables[0].records()
+        assert record["Entry #6"].value == cronos_extract.FileReference("scan", "jpg", 7)

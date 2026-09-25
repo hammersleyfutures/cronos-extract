@@ -8,7 +8,9 @@ from pathlib import Path
 from typing import cast
 
 from cronos_extract.Database import Database
+from cronos_extract.Datamodel import TableDefinition
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
+from cronos_extract.readers import ByteReader
 
 TEST_DB = Path(__file__).resolve().parent.parent / "test_data" / "all_field_types"
 
@@ -171,6 +173,13 @@ def bank_record(tableid: int, fields: Sequence[bytes]) -> bytes:
     return bytes(record)
 
 
+def record_with_file_field(file_field: bytes) -> bytes:
+    """Build a record of the test table whose fields are empty except for the file reference `file_field`."""
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[TEST_TABLE_FILE_FIELD_INDEX] = file_field
+    return bank_record(TEST_TABLE_ID, fields)
+
+
 def compressed_chunk(compdata: bytes) -> bytes:
     """Encode `compdata` as one chunk of Datafile's compressed record format: size, flag, crc, then the data.
 
@@ -222,6 +231,49 @@ def patched_table_definition(*, tableid: int) -> bytes:
     return bytes(definition)
 
 
+def files_table_definition() -> bytes:
+    """Return the definition bytes of TEST_DB's Files table, the value of its Base000 key."""
+    with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD)) as db:
+        return cast(bytes, db.read_db_definition()["Base000"])
+
+
+def renamed_table_definition(
+    definition: bytes, *, name: bytes | None = None, abbreviation: bytes | None = None
+) -> bytes:
+    """Return the table definition `definition` with its name or abbreviation replaced by CP-1251 bytes.
+
+    Both follow the table id, each stored as a length byte and the bytes, so each is at most 255 bytes long.
+    """
+    name_start = TABLE_ID_OFFSET + 4
+    abbreviation_start = name_start + 1 + definition[name_start]
+    abbreviation_end = abbreviation_start + 1 + definition[abbreviation_start]
+    new_name = definition[name_start:abbreviation_start] if name is None else bytes([len(name)]) + name
+    new_abbreviation = (
+        definition[abbreviation_start:abbreviation_end]
+        if abbreviation is None
+        else bytes([len(abbreviation)]) + abbreviation
+    )
+    return definition[:name_start] + new_name + new_abbreviation + definition[abbreviation_end:]
+
+
+def field_definition_with_nul_name(definition: bytes, *, field_number: int = 0) -> bytes:
+    """Return `definition` with a NUL byte written into the name of the field numbered `field_number`.
+
+    Fields are numbered in file order, in the first section that TableDefinition.decode reads (0 is the first
+    one defined, which is usually the system number). A field's name is a length-prefixed CP-1251 string right
+    after its type (word) and idx1 (dword); the length is unchanged, so nothing else in `definition` moves.
+    """
+    header_length = len(TableDefinition(definition, warn=lambda message: None).headerdata)
+    reader = ByteReader(definition[header_length:])
+    for _ in range(field_number):
+        deflen = reader.readword()
+        reader.readbytes(deflen)
+    name_offset = header_length + reader.o + 2 + 2 + 4 + 1  # deflen, typ (word), idx1 (dword), name length byte
+    patched = bytearray(definition)
+    patched[name_offset] = 0
+    return bytes(patched)
+
+
 def table_definition_without_fields(*, tableid: int) -> bytes:
     """
     Return a table definition with TEST_DB's Base001 names and `tableid` but no field definitions.
@@ -234,6 +286,12 @@ def table_definition_without_fields(*, tableid: int) -> bytes:
     return bytes(header) + empty_sections
 
 
+def definition_with_extra_key(dbinfo: bytes, keyname: str, value: bytes) -> bytes:
+    """Return the database definition `dbinfo` with the key `keyname` appended, holding `value` inline."""
+    name = keyname.encode("cp1251")
+    return dbinfo + bytes([len(name)]) + name + struct.pack("<L", len(value) | INLINE_DEFINITION_VALUE) + value
+
+
 def database_with_extra_definition_key(
     directory: Path, keyname: str, value: bytes, bank_records: Sequence[bytes | None] = ()
 ) -> str:
@@ -244,11 +302,45 @@ def database_with_extra_definition_key(
     stru = stru_records_from_test_db()
     dbinfo = stru[0]
     assert dbinfo is not None
-    name = keyname.encode("cp1251")
-    stru[0] = dbinfo + bytes([len(name)]) + name + struct.pack("<L", len(value) | INLINE_DEFINITION_VALUE) + value
+    stru[0] = definition_with_extra_key(dbinfo, keyname, value)
     write_datafile(directory, "Stru", stru)
     write_datafile(directory, "Bank", bank_records)
     return str(directory)
+
+
+def database_with_files_abbreviation(
+    directory: Path, abbreviation: bytes, bank_records: Sequence[bytes | None] = ()
+) -> str:
+    """Write a database whose Files table has the abbreviation `abbreviation`, given in CP-1251.
+
+    TEST_DB's Base000 key is renamed Xase000, which is not a table key, and a Base000 key holding the Files table's
+    definition with the new abbreviation is appended.
+    """
+    stru = stru_records_from_test_db()
+    dbinfo = stru[0]
+    assert dbinfo is not None
+    assert dbinfo.count(b"\x07Base000") == 1
+    files_table = renamed_table_definition(files_table_definition(), abbreviation=abbreviation)
+    stru[0] = definition_with_extra_key(dbinfo.replace(b"\x07Base000", b"\x07Xase000"), "Base000", files_table)
+    write_datafile(directory, "Stru", stru)
+    write_datafile(directory, "Bank", bank_records)
+    return str(directory)
+
+
+def duplicate_table_name_database(directory: Path, second_table_name: bytes = b"erdgeist") -> str:
+    """Write a database with tables "erdgeist" and `second_table_name`, ids 1 and 2, with records "one" and "two".
+
+    The second table is the first table's definition with its table id and name changed, added to CroStru's
+    database definition as an inline Base002 entry.
+    """
+    fields_one = [b""] * TEST_TABLE_FIELD_COUNT
+    fields_one[1] = b"one"
+    fields_two = [b""] * TEST_TABLE_FIELD_COUNT
+    fields_two[1] = b"two"
+    second = renamed_table_definition(patched_table_definition(tableid=2), name=second_table_name)
+    return database_with_extra_definition_key(
+        directory, "Base002", second, [bank_record(TEST_TABLE_ID, fields_one), bank_record(2, fields_two)]
+    )
 
 
 def database_without_files_table(directory: Path, bank_records: Sequence[bytes | None] = ()) -> str:

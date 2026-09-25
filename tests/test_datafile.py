@@ -129,7 +129,7 @@ def test_corrupt_compressed_record_is_reported_as_a_value_error(tmp_path: Path) 
         bank.readrec(1)
 
 
-def test_crodump_reports_a_corrupt_record_and_dumps_the_next(tmp_path: Path) -> None:
+def test_inspect_crodump_reports_a_corrupt_record_and_dumps_the_next(tmp_path: Path) -> None:
     corrupt, inline = bytes(4), b"hello"
     write_raw_datafile(
         tmp_path,
@@ -138,7 +138,7 @@ def test_crodump_reports_a_corrupt_record_and_dumps_the_next(tmp_path: Path) -> 
         [(FIRST_BLOCK, len(corrupt)), (FIRST_BLOCK + len(corrupt), len(inline) | INLINE_RECORD_FLAGS << 24)],
     )
 
-    result = run_command("crodump", ["crodump", str(tmp_path)])
+    result = run_command("cli", ["inspect", "crodump", str(tmp_path)])
 
     assert result.returncode == 0, result.stderr
     first, second = [line for line in result.stdout.splitlines() if line.startswith(("    1:", "    2:"))]

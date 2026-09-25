@@ -59,14 +59,15 @@ def test_decode_db_definition_rejects_a_record_number_crostru_does_not_hold(tmp_
                 db.decode_db_definition(dbinfo[1:])
 
 
-def test_croconvert_passes_over_a_fifo_named_like_the_index_instead_of_blocking(tmp_path: Path) -> None:
+def test_export_passes_over_a_fifo_named_like_the_index_instead_of_blocking(tmp_path: Path) -> None:
     dbdir = Path(write_database(tmp_path / "db", []))
     os.mkfifo(dbdir / "CroIndex.dat")
     (dbdir / "CroIndex.tad").write_bytes(bytes(8))
 
-    result = run_command("croconvert", ["--csv", "-o", str(tmp_path / "out"), str(dbdir)], timeout=60)
+    result = run_command("cli", ["export", "--csv", "-o", str(tmp_path / "out"), str(dbdir)], timeout=60)
 
     assert result.returncode == 0, result.stderr
+    assert "warning: unreadable_file: CroIndex.dat" in result.stderr
 
 
 def test_a_duplicate_definition_key_is_reported_through_the_warn_hook(

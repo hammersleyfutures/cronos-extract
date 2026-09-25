@@ -1,5 +1,5 @@
 # ABOUTME: Recovers a database's KOD table from byte statistics of its encrypted records, printing nothing.
-# ABOUTME: crack_kod uses these steps, and so do crodump's strucrack and dbcrack subcommands.
+# ABOUTME: crack_kod uses these steps, and so do the cronos-extract crack subcommands.
 import os
 from collections.abc import Iterator
 from contextlib import ExitStack

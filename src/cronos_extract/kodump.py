@@ -1,12 +1,13 @@
 # ABOUTME: kodump subcommand: KOD-decodes and hexdumps a byte range from a file or stdin.
 # ABOUTME: Can try every shift value, which helps find the right one when reverse-engineering.
 """
-This module has the functions for the 'kodump' subcommand from the 'crodump' script.
+This module has the functions for the 'inspect kodump' subcommand of cronos-extract.
 """
 
 import io
 import struct
 
+from ._format.files import open_regular_file
 from .hexdump import hexdump, toout, unhex
 
 
@@ -62,7 +63,7 @@ def kod_hexdump(kod, args):
         args.width = 64 if args.ascdump else 16
 
     if args.filename:
-        with open(args.filename, "rb") as fh:
+        with open_regular_file(args.filename) as fh:
             if args.length is None:
                 fh.seek(0, io.SEEK_END)
                 filesize = fh.tell()
