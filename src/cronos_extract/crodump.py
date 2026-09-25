@@ -4,50 +4,12 @@ import argparse
 import sys
 
 from ._api.crack import bank_and_index_xref, fill_single_gap, kod_from_xref, kod_is_resolved, stru_xref
-from .Database import Database
+from ._cli.inspect import destruct_sys_definition
+from .Database import KOD_HINT, Database
 from .Datamodel import TableDefinition
 from .hexdump import as1251, asambigoushex, asasc, tohex, unhex
 from .koddecoder import match_with_mismatches
 from .kodump import kod_hexdump
-from .readers import ByteReader
-
-
-def destruct_sys3_def(rd):
-    # todo
-    pass
-
-
-def destruct_sys4_def(rd):
-    """
-    decode type 4 of the records found in CroSys.
-
-    This function is only useful for reverse-engineering the CroSys format.
-    """
-    n = rd.readdword()
-    for _ in range(n):
-        marker = rd.readdword()
-        description = rd.readlongstring()
-        path = rd.readlongstring()
-        marker2 = rd.readdword()
-
-        print(f"{marker:08x};{marker2:08x}: {path:<50} : {description}")
-
-
-def destruct_sys_definition(args, data):
-    """
-    Decode the 'sys' / dbindex definition
-
-    This function is only useful for reverse-engineering the CroSys format.
-    """
-    rd = ByteReader(data)
-
-    systype = rd.readbyte()
-    if systype == 3:
-        destruct_sys3_def(rd)
-    elif systype == 4:
-        destruct_sys4_def(rd)
-    else:
-        raise Exception("unsupported sys record")
 
 
 def cro_dump(kod, args):
@@ -65,7 +27,12 @@ def cro_dump(kod, args):
 def stru_dump(kod, args):
     """handle 'strudump' subcommand"""
     db = Database(args.dbdir, args.compact, kod)
-    db.strudump(args)
+    if not db.stru:
+        sys.exit(f"Error: {db.missing_stru_message()}")
+    try:
+        db.dump_db_table_defs(args)
+    except ValueError as e:
+        sys.exit(f"Error: {e}\n{KOD_HINT}")
 
 
 def sys_dump(kod, args):

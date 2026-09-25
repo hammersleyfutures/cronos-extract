@@ -136,17 +136,6 @@ class Database:
         if self.sys:
             self.sys.dump(args)
 
-    def strudump(self, args):
-        """
-        prints all info found in the CroStru file.
-        """
-        if not self.stru:
-            sys.exit(f"Error: {self.missing_stru_message()}")
-        try:
-            self.dump_db_table_defs(args)
-        except ValueError as e:
-            sys.exit(f"Error: {e}\n{KOD_HINT}")
-
     def missing_stru_message(self):
         """
         Returns the message that explains that the database directory has no CroStru files.
