@@ -4,6 +4,7 @@ import argparse
 import sys
 
 from ._api.crack import bank_and_index_xref, fill_single_gap, kod_from_xref, kod_is_resolved, stru_xref
+from ._cli.crack import CrackInputError, color_code, parse_fix, parse_text, positive_int
 from ._cli.inspect import destruct_sys_definition
 from .Database import KOD_HINT, Database
 from .Datamodel import TableDefinition
@@ -76,89 +77,6 @@ def destruct(kod, args):
         tbdef.dump(args)
     elif args.type == 3:
         destruct_sys_definition(args, data)
-
-
-def color_code(c, confidence, forced, force):
-    from sys import stdout
-
-    is_a_tty = hasattr(stdout, "isatty") and stdout.isatty()
-    if not force and not is_a_tty:
-        return c
-
-    if forced:
-        return "\033[32m" + c + "\033[0m"
-    if confidence < 0:
-        return "\033[96m" + c + "\033[0m"
-    if confidence == 0:
-        return "\033[31m" + c + "\033[0m"
-    if confidence > 3:
-        return "\033[93m" + c + "\033[0m"
-    return "\033[94m" + c + "\033[0m"
-
-
-FIX_FORMAT = "use xxyy=C or xxyycc, with the encrypted byte xx, the shift yy and the plaintext C or cc"
-
-
-def parse_fix(value):
-    """
-    Parse a strucrack --fix switch into (encrypted byte, shift, plaintext byte).
-
-    Raises argparse.ArgumentTypeError with the reason when the switch can't be parsed.
-    """
-    try:
-        if len(value) != 6:
-            raise ValueError(f"expected 6 characters, got {len(value):d}")
-        if value[4] == "=":
-            i, o = unhex(value[0:4])
-            (c,) = as1251(value[5:])
-        else:
-            i, o, c = unhex(value)
-    except ValueError as e:
-        raise argparse.ArgumentTypeError(f"invalid fix {value!r}: {e}; {FIX_FORMAT}") from e
-    return i, o, c
-
-
-def positive_int(value):
-    """
-    Parse a command line option that must be a positive whole number.
-
-    Raises argparse.ArgumentTypeError when `value` is not one.
-    """
-    try:
-        number = int(value)
-    except ValueError:
-        number = 0
-    if number <= 0:
-        raise argparse.ArgumentTypeError(f"{value!r} must be a positive number")
-    return number
-
-
-TEXT_FORMAT = "use record:line:offset:plaintext, with the record, line and offset that the strucrack dump shows"
-
-
-def parse_text(value):
-    """
-    Parse a strucrack --text value into (record number, offset in the record, CP-1251 plaintext bytes).
-
-    Raises argparse.ArgumentTypeError with the reason when the value can't be parsed.
-    """
-    parts = value.split(":", 3)
-    try:
-        if len(parts) != 4:
-            raise ValueError("expected four parts separated by ':'")
-        record, line, offset = [int(part) for part in parts[:3]]
-        if min(record, line, offset) < 0:
-            raise ValueError("record, line and offset can't be negative")
-        plaintext = as1251(parts[3])
-    except ValueError as e:
-        raise argparse.ArgumentTypeError(f"invalid text {value!r}: {e}; {TEXT_FORMAT}") from e
-    return record, line + offset, plaintext
-
-
-class CrackInputError(Exception):
-    """
-    A strucrack option that doesn't fit the database being cracked.
-    """
 
 
 def strucrack(kod, args):
