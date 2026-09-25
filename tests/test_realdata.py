@@ -16,6 +16,7 @@ from cronos_builder import tad_layout
 import cronos_extract
 import cronos_extract.koddecoder
 from cronos_extract._api.info import read_file_info
+from cronos_extract._cli.sql_out import unique_sql_table_name
 from cronos_extract.Database import Database
 from cronos_extract.survey import SurveyedDatabase, read_path_list, survey_databases
 
@@ -222,15 +223,24 @@ def finished_or_failed_cleanly(result: subprocess.CompletedProcess[str]) -> bool
     return False
 
 
-def api_record_count(dbdir: Path) -> int:
-    """The number of records the API reads from the tables of `dbdir`, counting a repeated table once."""
+def api_record_count(dbdir: Path, *, sql: bool = False) -> int:
+    """
+    The number of records the API reads from the tables of `dbdir`, counting a repeated table once.
+
+    With `sql`, a table is also skipped when its PostgreSQL name repeats an earlier table's, as SqlWriter.table()
+    skips it, so the count matches what --postgres actually writes.
+    """
     with open_or_skip(dbdir, compact=True) as bank:
         written: set[tuple[str, int]] = set()
+        sql_names: dict[str, int] = {}
         count = 0
         for table in bank.tables:
-            if (table.name, table.id) not in written:
-                written.add((table.name, table.id))
-                count += sum(1 for _ in table.records())
+            if (table.name, table.id) in written:
+                continue
+            written.add((table.name, table.id))
+            if sql and unique_sql_table_name(table, sql_names) is None:
+                continue
+            count += sum(1 for _ in table.records())
         return count
 
 
@@ -265,7 +275,7 @@ def test_export_postgres_writes_one_insert_per_record(dbdir: Path, tmp_path: Pat
 
     if finished_or_failed_cleanly(result):
         sql = output.read_bytes().decode("utf-8")
-        assert sum(line.startswith('INSERT INTO "') for line in sql.split("\n")) == api_record_count(dbdir)
+        assert sum(line.startswith('INSERT INTO "') for line in sql.split("\n")) == api_record_count(dbdir, sql=True)
 
 
 def test_export_csv_writes_the_smallest_databases_with_their_files(dbdir: Path, tmp_path: Path) -> None:
