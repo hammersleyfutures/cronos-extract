@@ -21,9 +21,11 @@ from cronos_builder import (
     corrupt_compressed_record,
     database_with_missing_definition,
     database_with_wrong_kod_record_out_of_range,
+    duplicate_table_name_database,
     file_record,
     file_reference_field,
     key_referencing_a_deleted_record,
+    record_with_file_field,
     stru_records_from_test_db,
     write_database,
     write_datafile,
@@ -33,16 +35,6 @@ from cronos_extract.croconvert import csv_output, template_convert, unique_sql_c
 from cronos_extract.Database import KOD_HINT, Database
 from cronos_extract.Datamodel import TableDefinition
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
-
-# The offset of the table id in a table definition of TEST_DB, which has version 3 and an extra dword.
-TABLE_ID_OFFSET = 14
-
-
-def record_with_file_field(file_field: bytes) -> bytes:
-    """Build a record of the test table whose fields are empty except for the file reference `file_field`."""
-    fields = [b""] * TEST_TABLE_FIELD_COUNT
-    fields[TEST_TABLE_FILE_FIELD_INDEX] = file_field
-    return bank_record(TEST_TABLE_ID, fields)
 
 
 class TagCollector(HTMLParser):
@@ -409,38 +401,6 @@ def test_croconvert_stops_with_a_clear_message_without_crostru(tmp_path: Path) -
     assert "CroStru.dat" in result.stderr
     assert dbdir in result.stderr
     assert result.stdout == ""
-
-
-def duplicate_table_name_database(directory: Path, second_table_name: bytes = b"erdgeist") -> str:
-    """Write a database with tables "erdgeist" and `second_table_name`, ids 1 and 2, with records "one" and "two".
-
-    The second table is the first table's definition with its table id and name changed, added to CroStru's
-    database definition as an inline Base002 entry.
-    """
-    stru = stru_records_from_test_db()
-    with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD)) as db:
-        assert db.stru is not None
-        base001 = db.decode_db_definition(db.stru.readrec(1)[1:])["Base001"]
-    name_offset = TABLE_ID_OFFSET + 4
-    base002 = (
-        base001[:TABLE_ID_OFFSET]
-        + struct.pack("<L", 2)
-        + bytes([len(second_table_name)])
-        + second_table_name
-        + base001[name_offset + 1 + base001[name_offset] :]
-    )
-    name = b"Base002"
-    database_definition = stru[0]
-    assert database_definition is not None
-    stru[0] = database_definition + bytes([len(name)]) + name + struct.pack("<L", len(base002) | 0x80000000) + base002
-    write_datafile(directory, "Stru", stru)
-
-    fields_one = [b""] * TEST_TABLE_FIELD_COUNT
-    fields_one[1] = b"one"
-    fields_two = [b""] * TEST_TABLE_FIELD_COUNT
-    fields_two[1] = b"two"
-    write_datafile(directory, "Bank", [bank_record(TEST_TABLE_ID, fields_one), bank_record(2, fields_two)])
-    return str(directory)
 
 
 def name_with_undefined_cp1251_byte_database(directory: Path) -> str:
