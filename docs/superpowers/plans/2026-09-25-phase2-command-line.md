@@ -4520,3 +4520,46 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 Then stop and ask Ben before opening the pull request.
+
+## Outcome (2026-09-25)
+
+Tasks 1–13 are implemented on branch `phase2-implementation` in 15 commits after the spec and plan (`a72c10b`..`d3eec7b`), with subagent-driven development: a sonnet implementer per task, a task review after each. The plan above is kept as written; where it and the code differ, the divergences below record what was done. Default suite on the branch: 571 passed, 9 deselected; on `master` (`a72c10b`, collected in a scratch worktree): 423 collected, 6 deselected. `uv run ruff format --check` and `uv run pytest -q` are both clean; `tests/golden` was renamed (Task 9) and regenerated (Task 10) as the plan intends.
+
+**Commits:**
+
+- `0e01def` Plan Phase 2: the cronos-extract command line
+- `75e5007` Add the command line's problem reporting and KOD options
+- `962bb9b` Add the export walk and the CSV writer
+- `6243849` Skip a refused table's records instead of reading them twice
+- `97629ef` Add the PostgreSQL export
+- `40d2e62` Add the JSON Lines export
+- `3b92f19` Add the inspect subcommands
+- `1bf525d` Add the crack subcommands
+- `b9f7a64` Dispatch every cronos-extract subcommand and map exit statuses
+- `31ab087` Rename the golden files after the cronos-extract subcommands
+- `d643f45` Pin the output of the cronos-extract subcommands
+- `b1bc29d` Remove crodump, croconvert, dumpdbfields and the templates
+- `af6fe54` Run the export over the real databases in the realdata tests
+- `5594219` Match api_record_count's SQL count to SqlWriter's table skipping
+- `d3eec7b` Document the cronos-extract export, inspect and crack subcommands
+
+**Divergences and fixes during execution:**
+
+- Task 2: `options.py`'s KOD narrowing needed `typing.cast(Kod, args.kod)` to satisfy `ty check` — `argparse.Namespace` attributes are `Any`, so `args.kod` narrowed by `is not None` does not narrow to `Kod | None` on its own. The only change from the brief's given code.
+- Task 3: `Writer.table()` was changed to return `bool` — whether the writer accepted the table — and `walk()` reads a table's records only when it did, so a table a writer refuses (a colliding safe name or id) does not have its records decoded and its diagnostics reported twice. `SqlWriter` (Task 4) and `JsonlWriter` (Task 5) follow this protocol rather than the plan's `-> None`. Two export tests' expected directory listings were widened to include `Files-Referenced`, which is created for `table_record()`'s empty type-6 field too, per the plan's own choice 5.
+- Task 6: a test helper needed `cast(bytes, db.stru.readrec(1))` for `ty check`, since `Database.stru.readrec` is unannotated. No other divergence.
+- Task 7: `FIX_FORMAT` and `TEXT_FORMAT` were not imported into `crodump.py`, because it never references them directly — only `parse_fix`/`parse_text`, which live entirely in `_cli/crack.py`, use them — matching global-constraints.md's own list of the five names `crodump.py` imports from `_cli/crack.py`.
+- Task 8: no divergence — every exact stderr line, exit status and import matched the existing `_cli` module code on first run.
+- Task 9: renamed the golden files; no code divergence.
+- Task 10: no divergence from the brief's table. `export-postgres-nokod.stderr`'s `Error:` line embeds the Python exception class name (`cannot be decoded: ValueError: ...`), which the brief's table covers with `…`; flagged for Ben as a possible cleanup, outside this task's scope.
+- Task 11: `Database.enumerate_files`, `incomplete_records`, `files_tableid` and `get_record` have no production caller left now that `croconvert` and `dumpdbfields` are gone; `enumerate_records` is called only by the Phase 1 parity tests and `tests/test_cronos_builder.py`. Recorded as dead code, not removed, and carried to the roadmap's Phase 3 open items rather than fixed here.
+- Task 12: a fix round matched `api_record_count`'s SQL count to `SqlWriter`'s table-skipping (the SQL export omits a table a writer refuses; the test helper counting expected `INSERT` statements did not).
+- Task 13: the README's quick-start example was corrected: `Files-Referenced/` is created lazily, on the first record that refers to a file, not unconditionally — `test_data/all_field_types`'s one table has no records at all.
+
+**Real databases** (Task 12, `uv run pytest -m realdata`, the export run over the listed databases): 51 passed, 39 skipped (including 6 databases over the CroBank size limit that the record tests skip), 0 failed.
+
+**Minor findings deferred during task reviews** (not fixed in this phase; each is either cosmetic or carried to the roadmap's Phase 3 open items): `Report.summary` counts only `KIND_ORDER` kinds with no invariant test that the counts sum to the total; `print_error` has no direct test; `STRU_FILE` is defined in both `export.py` and `csv_out.py`; if `make_writer` raised after `create_directory`, the error would omit the output location (unreachable today); `sql_out.py` writes U+FFFD as a literal character; `open_component`'s broad `except Exception` would also report a programming error as an unreadable file; the SIGINT test in Task 8 depends on timing; `from ._cli import inspect` shadows the stdlib module name inside `cli.py`; `test_strudump_without_the_database_kod_stops_with_a_message` duplicates another test after the Task 11 move; `cast(Any, method)` in one crack test; the INSERT-count heuristic in Task 12's realdata test could be inflated by a value holding a line starting `INSERT INTO "` (not observed in the real run); `finished_or_failed_cleanly` raises `IndexError` rather than an assertion on an unexpected exit/stderr combination.
+
+### Final review
+
+Recorded after the whole-branch review.

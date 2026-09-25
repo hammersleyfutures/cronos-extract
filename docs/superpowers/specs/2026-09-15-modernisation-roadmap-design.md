@@ -31,7 +31,7 @@ Every decision below was made with Ben on 2026-09-15.
 
 Each phase is a separate spec, plan and pull request, in this order.
 
-**Status (2026-09-17):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is complete: it is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below, and was merged as PR #9. Phase 2 is designed in `2026-09-17-phase2-command-line-design.md`; its implementation follows that spec.
+**Status (2026-09-25):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is complete: it is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below, and was merged as PR #9. Phase 2 is designed in `2026-09-17-phase2-command-line-design.md` and complete: implemented on branch `phase2-implementation` (`2026-09-25-phase2-command-line.md`), pull request pending Ben's approval.
 
 ### Phase 0 — version survey
 
@@ -66,17 +66,37 @@ KOD recovery that chooses the best whole permutation (an assignment problem, e.g
 Found during Phase 0 and its reviews and not fixed there, each with the phase that owns it. The older backlog in Appendix A of `docs/superpowers/plans/2026-09-15-pr2-bug-fixes.md` is still the input for Phases 2 to 5.
 
 - **Phase 1 (done):** `survey.survey_roots` streams its results (Phase 1 plan, Task 6).
-- **Phase 2 (designed):** `cli.main` calls `run_survey` directly; the `run_*(args, parser) -> int` signature is the seam for a dispatch once `export`, `inspect` and `crack` exist. `cli.collect_roots` calls `parser.error` on the top-level parser, so its usage line names `cronos-extract` rather than `survey`, which will mislead once there are four subcommands. `dumpdbfields.py` matches `Cro*.dat` names its own way; Phase 2 deletes that file. The Phase 2 design covers all three in decision D14.
+- **Phase 2 (done, D14):** `cli.main` now dispatches `survey`, `export`, `inspect` and `crack` through the `run_*(args, parser) -> int` signature; `dumpdbfields.py` is deleted.
 - **Phase 3:** `Datafile.isv3`, `isv4`, `isv7` and `isencrypted` keep their own copies of the version lists that `_format/header.py` now holds. (The survey's stat-then-open window is closed: every Cro file is opened by `_format/files.open_regular_file`, which checks `fstat` on the open descriptor.)
 - **Phase 3, from Phase 1:**
   - `Datafile.decompress` does not limit the decompressed size, so a crafted record can exhaust memory; do it with CRC checking.
   - v4 deleted records: no real `01.11` `.tad` entry uses the `0xFFFFFFFF` length `readrec` treats as deleted, while many carry flag `02`, which `docs/cronos-research.md` calls deleted; today they are read as live records. One real v4 database's `.tad` entries hold what look like 2024 Unix timestamps in their third field.
   - KOD recovery fails on the real v4 databases whose CroBank and CroIndex headers are not KOD-encoded (both crack methods return `None`); how those databases encode records needs investigating. `tests/test_realdata.py` marks this as a strict xfail.
   - KOD selection: an own-KOD file read with `Kod.default()` is decoded with the wrong table and no diagnostic; `kod=None` on a KOD-encoded file gives a `DatabaseDefinitionError` whose hint suggests cracking.
-  - Before removing `Database.enumerate_records`, turn the parity tests into golden output of the façade.
+  - `Database.enumerate_records` is used only by tests (the Phase 1 parity tests and `tests/test_cronos_builder.py`);
+    before removing it, turn the parity tests into golden output of the façade. `Database.enumerate_files`,
+    `incomplete_records`, `files_tableid` and `get_record` have no production caller left either, now that
+    `croconvert` and `dumpdbfields` are gone.
   - v3 `.tad` lengths are masked with `0x0FFFFFFF` while the flags are read as `ln >> 24`, so bits 24–27 count as both flag and length; `docs/cronos-research.md` says only the top bit is a flag. With the short-read check, an entry with those bits set now raises instead of reading to the end of the file. No real database sets them.
   - Add a committed, seeded random-damage test of the reading path, and the builder gaps the Phase 1 reviews noted (32-bit v3 flag placement, `01.02`/`01.03` written KOD-encoded).
-- **Phase 2, from Phase 1 (designed):** escape diagnostic and exception text before printing (surrogate-escaped names; garbage key names from a wrong KOD), which the Phase 2 design settles in D10. A date or time field holding only NUL bytes keeps `""` plus `invalid_value`: a realdata count found no such field in any of the 30 listed databases (D5). Interactive `strucrack` still reads records through `enumrecords` and can stop on a record that `--noninteractive` skips; D12 moves it onto `readable_records`. The CSV export holds every file reference in memory until the end; D8 writes each referenced file while the records are read.
+- **Phase 2, from Phase 1 (done, D5/D8/D10/D12):** diagnostic and exception text is now escaped before printing
+  (`_cli/report.py`'s `EscapingStream`, D10). A date or time field holding only NUL bytes keeps `""` plus
+  `invalid_value` (D5; unchanged, since a realdata count found no such field in any of the 30 listed databases).
+  `crack strucrack` now reads through `readable_records` rather than `enumrecords`, so it no longer stops on a
+  record `--noninteractive` skips (D12). `export --csv` writes each referenced file while the records are read,
+  instead of holding them in memory until the end (D8).
+- **Phase 3, from Phase 2:**
+  - `Table.records()` reads all of CroBank on every call, so an export's time is proportional to tables × records;
+    one pass that hands each record to its table by id would make it linear.
+  - an `unresolved_file_reference` diagnostic names the referenced record and the reason, but not the file name or
+    the record holding the reference, which `croconvert` named; the CSV export could add them, or the API could
+    carry the referring record.
+  - the `inspect` subcommands print warnings through the internal readers' default `warn`, so their wording is
+    today's, while `export` prints the new escaped diagnostic lines; Phase 3's "diagnostics in place of `print`"
+    settles it.
+  - `report.py` counts `replaced_nul` itself, because writing a NUL to a PostgreSQL `TEXT` column is a problem of
+    the SQL writer, not of reading; if Phase 3 gives the API a diagnostic kind for output problems, this moves
+    there.
 - **Before 1.0, from Phase 1:** `FileInfo` does not enforce that either `problem` or the header fields are set; `Generation` is a PEP 695 alias, so `typing.get_args(Generation)` is empty; `bank.diagnostic_counts[kind]` reads 0 for a kind that never occurred (documented).
 - **Cosmetic, no phase:** an unreadable directory reachable from two overlapping roots is warned about twice. A directory named `Cro*.dat` that itself holds databases is reported as a problem under its parent and as its own database, so `--counts` also scores it as one unreadable file. `--jsonl` writes undecodable path bytes as `\udcXX` escapes, which strict JSON parsers may reject. The README's sentence about unreadable directories sits in the `--list` paragraph, though the warning applies to any root.
 - **Decided, not open:** `survey_file` follows symlinks (`stat`, not `lstat`) on purpose, and each plan keeps its pre-implementation wording as the record of what was planned.
@@ -107,7 +127,7 @@ with cronos_extract.open(path, kod=..., compact=False, on_diagnostic=None) as ba
 
 **Documented promises:** iteration is lazy, and `bank.diagnostics` grows while reading, up to its first 1,000 entries; a `Bank` is not thread-safe; the set of `Field.value` types may grow in later versions.
 
-## Command line (Phase 2 builds to this)
+## Command line
 
 As refined by the Phase 2 design (`2026-09-17-phase2-command-line-design.md`), whose decision D1 moves the KOD
 options onto the subcommands that read with one.
@@ -144,10 +164,10 @@ A `.dat` file starts with a 19-byte header, `struct.unpack("<8sH5sHH", ...)`: ma
 
 ### Files
 
-- `src/cronos_extract/cli.py` — the `cronos-extract` entry point: an argparse parser whose only subcommand is `survey` for now; Phase 2 adds the rest here.
+- `src/cronos_extract/cli.py` — the `cronos-extract` entry point: an argparse parser dispatching all four subcommands, `survey`, `export`, `inspect` and `crack`.
 - `src/cronos_extract/survey.py` — finding databases, reading a `--list` file, surveying several roots as one group without reporting a database twice, and the three output formats.
 - `src/cronos_extract/_format/header.py` — a frozen, annotated `DatHeader` and `read_dat_header(file) -> DatHeader`, raising `ValueError` for a short file or an unknown magic. `Datafile.readdathdr` is changed to use it, so the header is parsed in one place. This creates the internal `_format` package that Phase 3 fills.
-- `pyproject.toml` — adds the console script `cronos-extract = "cronos_extract.cli:main"`. The `crodump` and `croconvert` scripts stay until Phase 2.
+- `pyproject.toml` — adds the console script `cronos-extract = "cronos_extract.cli:main"`. The `crodump` and `croconvert` scripts are gone.
 - New modules are fully annotated and ty-clean.
 
 ### Tests
