@@ -4554,7 +4554,7 @@ Tasks 1–13 are implemented on branch `phase2-implementation` in 15 commits aft
 - Task 10: no divergence from the brief's table. `export-postgres-nokod.stderr`'s `Error:` line embeds the Python exception class name (`cannot be decoded: ValueError: ...`), which the brief's table covers with `…`; flagged for Ben as a possible cleanup, outside this task's scope.
 - Task 11: `Database.enumerate_files`, `incomplete_records`, `files_tableid` and `get_record` have no production caller left now that `croconvert` and `dumpdbfields` are gone; `enumerate_records` is called only by the Phase 1 parity tests and `tests/test_cronos_builder.py`. Recorded as dead code, not removed, and carried to the roadmap's Phase 3 open items rather than fixed here.
 - Task 12: a fix round matched `api_record_count`'s SQL count to `SqlWriter`'s table-skipping (the SQL export omits a table a writer refuses; the test helper counting expected `INSERT` statements did not).
-- Task 13: the README's quick-start example was corrected: `Files-Referenced/` is created lazily, on the first record that refers to a file, not unconditionally — `test_data/all_field_types`'s one table has no records at all.
+- Task 13: the README's quick-start example was corrected: `Files-Referenced/` is created at the first record of a table that has a file field, even when that field is empty, not only once a record actually refers to a file — `test_data/all_field_types`'s one table has no records at all.
 
 **Real databases** (Task 12, `uv run pytest -m realdata`, the export run over the listed databases): 51 passed, 39 skipped (including 6 databases over the CroBank size limit that the record tests skip), 0 failed.
 
@@ -4562,4 +4562,35 @@ Tasks 1–13 are implemented on branch `phase2-implementation` in 15 commits aft
 
 ### Final review
 
-Recorded after the whole-branch review.
+The whole-branch review (Fable) found no Critical issues and two Important ones:
+
+1. A NUL in a table or column name reached a PostgreSQL identifier raw, since `unique_sql_table_name` and
+   `unique_sql_column_names` replaced only `"`. Fixed: both also replace NUL with U+FFFD, and `SqlWriter` reports
+   each replacement as a `replaced_nul` Problem, with tests in `tests/test_cli_export.py`.
+2. `inspect kodump FILE` opened its file with plain `open()`, which hangs forever on a FIFO. Fixed: it now opens
+   with `_format/files.py`'s `open_regular_file`, the one way Cro files are opened elsewhere, with a test in
+   `tests/test_cli_inspect.py`.
+
+Both are fixed in this commit range, with tests. The README corrections (item 3 of the fix brief): the
+quick-start's `Files-Referenced/` wording now matches `csv_out.py`'s rule (created at a table's first record once
+it has a file field, even an empty one); the CSV names sentence no longer claims Windows device-name safety that
+`safepathname` does not provide; and the Inspection section now says `inspect` prints names and bytes to stdout
+unescaped. The tidy-ups (item 4): `STRU_FILE` and `BANK_FILE` are now defined once, in `_cli/report.py`, and
+imported elsewhere in `_cli`; `Report.problem` now raises `ValueError` for a kind not in `KIND_ORDER`, and
+`Report.summary` is tested to include every kind in `KIND_ORDER`. Also fixed, found while re-reading the tests
+this review touched: `test_strudump_of_an_undecodable_definition_exits_1_with_two_lines`, the duplicate this
+Outcome's own deferred-findings list already named, is removed, keeping
+`test_strudump_without_the_database_kod_stops_with_a_message`.
+
+Minors the review found that are not fixed here:
+
+- `--maxrecs junk` traceback in inspect recdump/crodump
+- `inspect destruct` without `-t` exits 0 silently
+- `destruct -t 1` with a by-reference key and no CroStru is an AttributeError
+- `--nodecompress` default is the string "true"
+- CsvWriter reads a referenced record before checking it is already written
+- D15's wording that BrokenPipeError exits "without a message" while export still prints its summary
+- a usage error in D2's race window prints the summary after argparse's usage lines
+- `destruct_sys3_def` is a stub
+
+The export of the six largest databases is recorded below.

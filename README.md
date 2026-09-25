@@ -21,8 +21,9 @@ cronos-extract export --csv test_data/all_field_types
 
 This creates a `cronos-extract-YYYY-mm-dd-HH-MM-SS-ffffff/` directory holding a CSV file for each table, a
 `Files-FL/` directory holding every file stored in the database, whether or not a record still refers to it, and,
-once a record refers to a file, a `Files-Referenced/` directory holding the files the records refer to, under their
-own names. `-o DIR` names the directory instead; it must not exist, because an export never overwrites anything.
+for each table that has a file field, a `Files-Referenced/` directory holding the files the records refer to, under
+their own names; it is created at the table's first record, even when that record's file field is empty. `-o DIR`
+names the directory instead; it must not exist, because an export never overwrites anything.
 
 If the export stops with an error about the database definition, or its output is unreadable, the database is
 probably encrypted with its own KOD; see [Recovering the KOD](#recovering-the-kod-of-an-encrypted-database).
@@ -53,8 +54,8 @@ the command prints there is escaped.
 
 `--csv` creates a directory holding `<table name>.csv` for each table, UTF-8 without a byte order mark. The first row
 holds the field names, starting with the system number. `--delimiter ';'` changes the delimiter, and `--no-files`
-leaves out the two file directories. Names are made safe for Linux, macOS and Windows, unique within the directory,
-and at most 255 bytes long.
+leaves out the two file directories. Names have the characters no file system allows, and path separators, replaced
+with underscores; they are unique within the directory and at most 255 bytes long.
 
 The cells hold exactly what the database holds, including text that a spreadsheet reads as a formula. Open a CSV
 file through the spreadsheet's CSV import, as UTF-8, never by double-clicking it.
@@ -128,7 +129,8 @@ and do not read v7 yet.
 # Inspection
 
 `cronos-extract inspect` shows what the export hides, for studying the file format. Some experience with binary
-dumps helps: not all of the format is understood yet.
+dumps helps: not all of the format is understood yet. It prints the database's names and bytes to stdout
+unescaped, so write it to a file or pipe it into a pager rather than a terminal when the database is untrusted.
 
 ```bash
 cronos-extract inspect strudump -v -a test_data/all_field_types   # the database and table definitions, as text
