@@ -4610,4 +4610,5 @@ exported separately (2026-09-25) with `export --jsonl --compact`, counting the r
 
 No run printed a traceback. db13 is one of the databases that Phase 1 found do not open with the default KOD, and it
 stops as D15 describes. db28's time against its record count shows the Phase 3 open item on reading CroBank once per
-table: most of its CroBank records belong to no exported table, and each table's walk reads them all again.
+table: its index holds about 22.8 million entries (365 MB at 16 bytes each) for 28,191 exported records, and each
+table's walk reads every entry again, whether it is deleted, a stored file or a record of another table.
