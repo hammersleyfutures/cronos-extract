@@ -21,9 +21,9 @@ cronos-extract export --csv test_data/all_field_types
 
 This creates a `cronos-extract-YYYY-mm-dd-HH-MM-SS-ffffff/` directory holding a CSV file for each table, a
 `Files-FL/` directory holding every file stored in the database, whether or not a record still refers to it, and,
-for each table that has a file field, a `Files-Referenced/` directory holding the files the records refer to, under
-their own names; it is created at the table's first record, even when that record's file field is empty. `-o DIR`
-names the directory instead; it must not exist, because an export never overwrites anything.
+once a record of a table with a file field is written, a `Files-Referenced/` directory holding the files the
+records refer to, under their own names; it appears at that first record, even when its file field is empty.
+`-o DIR` names the directory instead; it must not exist, because an export never overwrites anything.
 
 If the export stops with an error about the database definition, or its output is unreadable, the database is
 probably encrypted with its own KOD; see [Recovering the KOD](#recovering-the-kod-of-an-encrypted-database).

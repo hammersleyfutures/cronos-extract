@@ -4577,10 +4577,9 @@ it has a file field, even an empty one); the CSV names sentence no longer claims
 `safepathname` does not provide; and the Inspection section now says `inspect` prints names and bytes to stdout
 unescaped. The tidy-ups (item 4): `STRU_FILE` and `BANK_FILE` are now defined once, in `_cli/report.py`, and
 imported elsewhere in `_cli`; `Report.problem` now raises `ValueError` for a kind not in `KIND_ORDER`, and
-`Report.summary` is tested to include every kind in `KIND_ORDER`. Also fixed, found while re-reading the tests
-this review touched: `test_strudump_of_an_undecodable_definition_exits_1_with_two_lines`, the duplicate this
-Outcome's own deferred-findings list already named, is removed, keeping
-`test_strudump_without_the_database_kod_stops_with_a_message`.
+`Report.summary` is tested to include every kind in `KIND_ORDER`. Also removed, at Ben's request:
+`test_strudump_of_an_undecodable_definition_exits_1_with_two_lines`, the duplicate this Outcome's own
+deferred-findings list already named, keeping `test_strudump_without_the_database_kod_stops_with_a_message`.
 
 Minors the review found that are not fixed here:
 
