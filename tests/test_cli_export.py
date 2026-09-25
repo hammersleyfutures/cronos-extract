@@ -1,29 +1,40 @@
 # ABOUTME: Tests for the export subcommand: each format's layout, the -o rules, diagnostics and exit statuses.
 # ABOUTME: They export crafted databases from tests/cronos_builder.py, in this process or by running the command.
 import csv
+import gc
 import json
 import os
 import re
+import struct
 from pathlib import Path
+from typing import cast
 
 import pytest
 from cli import run_command, run_in_process
 from cronos_builder import (
     TEST_DB,
     TEST_TABLE_FIELD_COUNT,
+    TEST_TABLE_FILE_FIELD_INDEX,
     TEST_TABLE_ID,
     bank_record,
+    complex_field,
+    corrupt_compressed_record,
     database_with_extra_definition_key,
     database_with_files_abbreviation,
+    database_with_missing_definition,
+    database_with_wrong_kod_record_out_of_range,
     duplicate_table_name_database,
     erdgeist_table_definition,
     file_record,
     file_reference_field,
+    key_referencing_a_deleted_record,
     patched_table_definition,
     random_kod,
     record_with_file_field,
     renamed_table_definition,
+    stru_records_from_test_db,
     write_database,
+    write_datafile,
 )
 
 from cronos_extract import DatabaseDefinitionError, FieldDefinition
@@ -702,3 +713,610 @@ def test_strict_does_not_lower_a_usage_error(tmp_path: Path) -> None:
     result = run_command("cli", ["export", "--csv", "--strict", "-o", str(tmp_path / "out"), str(TEST_DB)])
 
     assert result.returncode == 2
+
+
+def test_table_definition_warnings_go_to_stderr_not_into_the_sql() -> None:
+    result = run_command("cli", ["export", "--postgres", str(TEST_DB)])
+
+    assert result.returncode == 0, result.stderr
+    assert "FieldDefinition" not in result.stdout
+    assert (
+        "warning: unexpected_structure: CroStru.dat: Base001: FieldDefinition Section 2 not marked with a 2"
+        in result.stderr
+    )
+
+
+def test_db_definition_errors_go_to_stderr_not_into_the_sql() -> None:
+    result = run_command("cli", ["export", "--postgres", "--nokod", str(TEST_DB)])
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "warning: unexpected_structure: CroStru.dat: expected dbinfo to start with 0x03" in result.stderr
+    assert last_line(result.stderr).startswith("Error: the database definition in CroStru.dat of ")
+
+
+def test_postgres_output_is_not_html_escaped(tmp_path: Path) -> None:
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[1] = b'<b>&"O\'Brien"</b>'
+    dbdir = write_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, fields)])
+
+    result = run_command("cli", ["export", "--postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert "'<b>&\"O''Brien\"</b>'" in result.stdout
+
+
+def unreadable_file_references_database(directory: Path) -> str:
+    """Write a database whose record 3 refers to a stored file and records 4 to 6 refer to unreadable ones."""
+    return write_database(
+        directory,
+        [
+            file_record(b"GOOD"),
+            None,
+            record_with_file_field(file_reference_field("good", "pdf", 1)),
+            record_with_file_field(file_reference_field("letters", "pdf", "abc")),
+            record_with_file_field(file_reference_field("deleted", "pdf", 2)),
+            record_with_file_field(file_reference_field("missing", "pdf", 99)),
+        ],
+    )
+
+
+def test_csv_export_skips_unreadable_file_references(tmp_path: Path) -> None:
+    dbdir = unreadable_file_references_database(tmp_path / "db")
+    outdir = tmp_path / "out"
+
+    result = run_command("cli", ["export", "--csv", "-o", str(outdir), dbdir])
+
+    assert result.returncode == 0, result.stderr
+    lines = result.stderr.splitlines()
+    for warning in [
+        "warning: unresolved_file_reference: CroBank.dat: a file reference cannot be read: "
+        "its record number is not a number",
+        "warning: unresolved_file_reference: CroBank.dat record 2: a file reference cannot be read: "
+        "CroBank record 2 is deleted or corrupt",
+        "warning: unresolved_file_reference: CroBank.dat record 99: a file reference cannot be read: "
+        "CroBank has no record 99",
+    ]:
+        assert lines.count(warning) == 1, result.stderr
+    assert [path.name for path in (outdir / "Files-Referenced").iterdir()] == ["good.pdf"]
+    assert (outdir / "Files-Referenced" / "good.pdf").read_bytes() == b"GOOD"
+
+
+def test_csv_export_gives_referenced_files_safe_unique_names(tmp_path: Path) -> None:
+    dbdir = write_database(
+        tmp_path / "db",
+        [
+            file_record(b"one"),
+            file_record(b"two"),
+            file_record(b"three"),
+            file_record(b"four"),
+            file_record(b"five"),
+            record_with_file_field(file_reference_field("", "", 1)),
+            record_with_file_field(file_reference_field("..", "", 2)),
+            record_with_file_field(file_reference_field("same", "txt", 3)),
+            record_with_file_field(file_reference_field("same", "txt", 4)),
+            record_with_file_field(file_reference_field("same", "txt", 3)),
+            record_with_file_field(file_reference_field("nul\x00byte", "bin", 5)),
+        ],
+    )
+    outdir = tmp_path / "out"
+
+    result = run_command("cli", ["export", "--csv", "-o", str(outdir), dbdir])
+
+    assert result.returncode == 0, result.stderr
+    referenced = outdir / "Files-Referenced"
+    assert {path.name: path.read_bytes() for path in referenced.iterdir()} == {
+        "1": b"one",
+        "2": b"two",
+        "same.txt": b"three",
+        "same-4.txt": b"four",
+        "nul_byte.bin": b"five",
+    }
+
+
+def test_tad_leftover_warning_goes_to_stderr_not_into_the_sql(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [])
+    with (Path(dbdir) / "CroBank.tad").open("ab") as tad:
+        tad.write(b"\x00\x00\x00")
+
+    result = run_command("cli", ["export", "--postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert "leftover" not in result.stdout
+    assert "warning: unexpected_structure: CroBank.dat: leftover data in .tad" in result.stderr
+
+
+def partly_broken_records_database(directory: Path) -> str:
+    """Write a database with one intact record and two whose fields fail to decode.
+
+    Record 2's second field claims 100 bytes but holds 3, so no later field can be read either.
+    Record 3's file reference field is too short to decode, but the field after it is intact.
+    """
+    intact = [b""] * TEST_TABLE_FIELD_COUNT
+    intact[0] = b"intact"
+    truncated = [b""] * TEST_TABLE_FIELD_COUNT
+    truncated[0] = b"first"
+    truncated[1] = b"\x1b" + struct.pack("<L", 100) + b"abc"
+    short_file = [b""] * TEST_TABLE_FIELD_COUNT
+    short_file[0] = b"first"
+    short_file[TEST_TABLE_FILE_FIELD_INDEX] = complex_field(b"\x01")
+    short_file[TEST_TABLE_FILE_FIELD_INDEX + 1] = b"after"
+    return write_database(
+        directory,
+        [
+            bank_record(TEST_TABLE_ID, intact),
+            bank_record(TEST_TABLE_ID, truncated),
+            bank_record(TEST_TABLE_ID, short_file),
+        ],
+    )
+
+
+def assert_partly_broken_record_warnings(stderr: str) -> None:
+    lines = stderr.splitlines()
+    for recno, fieldname in [(2, "Entry #2"), (3, "Entry #6")]:
+        prefix = (
+            f'warning: undecodable_field: table "erdgeist", record {recno}, field "{fieldname}": '
+            "the field could not be decoded ("
+        )
+        assert any(line.startswith(prefix) for line in lines), (
+            f"no warning about field {fieldname} of record {recno} in stderr: {stderr}"
+        )
+    assert "2 undecodable_field" in lines[-1], f"no count of undecodable fields at the end of stderr: {stderr}"
+
+
+def test_csv_export_keeps_the_decoded_fields_of_broken_records(tmp_path: Path) -> None:
+    dbdir = partly_broken_records_database(tmp_path / "db")
+    outdir = tmp_path / "out"
+
+    result = run_command("cli", ["export", "--csv", "-o", str(outdir), dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert_partly_broken_record_warnings(result.stderr)
+    with (outdir / "erdgeist.csv").open(encoding="utf-8", newline="") as csvfile:
+        rows = list(csv.reader(csvfile))[1:]
+    assert rows == [
+        ["1", "intact", "", "", "", "", "", "", "", "", "", ""],
+        ["2", "first", "", "", "", "", "", "", "", "", "", ""],
+        ["3", "first", "", "", "", "", "", "after", "", "", "", ""],
+    ]
+
+
+def test_postgres_export_keeps_the_decoded_fields_of_broken_records(tmp_path: Path) -> None:
+    dbdir = partly_broken_records_database(tmp_path / "db")
+
+    result = run_command("cli", ["export", "--postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert_partly_broken_record_warnings(result.stderr)
+    assert "intact" in result.stdout
+    assert "after" in result.stdout
+
+
+def test_postgres_output_has_no_insert_for_an_empty_table(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [])
+
+    result = run_command("cli", ["export", "--postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert 'CREATE TABLE "erdgeist"' in result.stdout
+    assert insert_statements(result.stdout) == []
+
+
+def test_postgres_output_has_one_insert_per_record(tmp_path: Path) -> None:
+    first = [b""] * TEST_TABLE_FIELD_COUNT
+    first[1] = b"one"
+    second = [b""] * TEST_TABLE_FIELD_COUNT
+    second[1] = b"two"
+    dbdir = write_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, first), bank_record(TEST_TABLE_ID, second)])
+
+    result = run_command("cli", ["export", "--postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    inserts = insert_statements(result.stdout)
+    assert len(inserts) == 2
+    assert all(line.startswith('INSERT INTO "erdgeist" VALUES (') and line.endswith(");") for line in inserts)
+    assert "'one'" in inserts[0]
+    assert "'two'" in inserts[1]
+
+
+def test_export_reports_a_key_referencing_a_deleted_record(tmp_path: Path) -> None:
+    dbdir = key_referencing_a_deleted_record(tmp_path / "db", "DanglingKey")
+
+    result = run_command("cli", ["export", "--postgres", dbdir])
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert last_line(result.stderr) == (
+        f"Error: the database definition in CroStru.dat of {dbdir} cannot be decoded: "
+        f'ValueError: key "DanglingKey" refers to CroStru record 5, which is deleted. {KOD_HINT}'
+    )
+
+
+def test_export_reports_a_record_out_of_range_with_a_wrong_kod(tmp_path: Path) -> None:
+    dbdir, wrong_kod_hex = database_with_wrong_kod_record_out_of_range(tmp_path / "db")
+
+    result = run_command("cli", ["export", "--postgres", "--kod", wrong_kod_hex, dbdir])
+
+    assert result.returncode == 1
+    assert "Traceback" not in result.stderr
+    assert result.stdout == ""
+    lines = result.stderr.splitlines()
+    assert len(lines) == 2, result.stderr
+    assert lines[0] == "no diagnostics"
+    assert re.fullmatch(
+        r"Error: the database definition in CroStru\.dat of .* cannot be decoded: "
+        r'ValueError: key ".*" refers to CroStru record \d+, which CroStru does not hold \(4 records\)\. '
+        + re.escape(KOD_HINT),
+        lines[1],
+    )
+
+
+def test_export_reports_a_deleted_definition_record(tmp_path: Path) -> None:
+    stru_records = [None, *stru_records_from_test_db()[1:]]
+    dbdir = database_with_missing_definition(tmp_path / "db", stru_records)
+
+    result = run_command("cli", ["export", "--postgres", dbdir])
+
+    assert result.returncode == 1
+    assert last_line(result.stderr) == (
+        f"Error: the database definition in CroStru.dat of {dbdir} cannot be decoded: "
+        f"ValueError: CroStru record 1, which holds the database definition, is deleted. {KOD_HINT}"
+    )
+
+
+def test_export_reports_no_definition_record(tmp_path: Path) -> None:
+    dbdir = database_with_missing_definition(tmp_path / "db", [])
+
+    result = run_command("cli", ["export", "--postgres", dbdir])
+
+    assert result.returncode == 1
+    assert last_line(result.stderr) == (
+        f"Error: the database definition in CroStru.dat of {dbdir} cannot be decoded: "
+        f"ValueError: CroStru holds no records, so it has no database definition. {KOD_HINT}"
+    )
+
+
+def test_export_stops_with_a_clear_message_without_crostru(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [])
+    (Path(dbdir) / "CroStru.dat").unlink()
+    (Path(dbdir) / "CroStru.tad").unlink()
+
+    result = run_command("cli", ["export", "--postgres", dbdir])
+
+    assert result.returncode == 1
+    assert "Traceback" not in result.stderr
+    assert "CroStru.dat" in result.stderr
+    assert dbdir in result.stderr
+    assert result.stdout == ""
+
+
+def name_with_undefined_cp1251_byte_database(directory: Path) -> str:
+    """Write a database whose table name and a field name each contain byte 0x98, undefined in CP-1251.
+
+    Base001 (the test table's definition) is stored in CroStru record 4, referenced from record 1's database
+    definition; its table name "erdgeist" and field name "Entry #6" each have their first byte replaced.
+    """
+    stru = stru_records_from_test_db()
+    table_definition = stru[3]
+    assert table_definition is not None
+    mutated = bytearray(table_definition)
+    for name in (b"erdgeist", b"Entry #6"):
+        mutated[mutated.index(name)] = 0x98
+    stru[3] = bytes(mutated)
+    write_datafile(directory, "Stru", stru)
+
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[1] = b"value"
+    write_datafile(directory, "Bank", [bank_record(TEST_TABLE_ID, fields)])
+    return str(directory)
+
+
+def test_jsonl_replaces_an_undefined_cp1251_byte_in_a_name(tmp_path: Path) -> None:
+    dbdir = name_with_undefined_cp1251_byte_database(tmp_path / "db")
+
+    result = run_command("cli", ["export", "--jsonl", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert "Traceback" not in result.stderr
+    (table_line,) = [line for line in jsonl_lines(result.stdout) if line["type"] == "table"]
+    assert table_line["table"] == "\ufffdrdgeist"
+    assert {"name": "\ufffdntry #6", "type": 6} in cast(list[object], table_line["fields"])
+
+
+def test_csv_export_writes_tables_with_the_same_name_to_different_files(tmp_path: Path) -> None:
+    dbdir = duplicate_table_name_database(tmp_path / "db")
+    outdir = tmp_path / "out"
+
+    result = run_command("cli", ["export", "--csv", "-o", str(outdir), dbdir])
+
+    assert result.returncode == 0, result.stderr
+    tables = {}
+    for path in outdir.glob("*.csv"):
+        with path.open(encoding="utf-8", newline="") as csvfile:
+            tables[path.name] = [row[2] for row in list(csv.reader(csvfile))[1:]]
+    assert tables == {"erdgeist.csv": ["one"], "erdgeist-2.csv": ["two"]}
+
+
+def test_postgres_output_gives_tables_with_the_same_name_different_names(tmp_path: Path) -> None:
+    dbdir = duplicate_table_name_database(tmp_path / "db")
+
+    result = run_command("cli", ["export", "--postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    creates = [line for line in result.stdout.splitlines() if line.startswith("CREATE TABLE")]
+    assert creates == ['CREATE TABLE "erdgeist" (', 'CREATE TABLE "erdgeist-2" (']
+    inserts = insert_statements(result.stdout)
+    assert len(inserts) == 2
+    assert inserts[0].startswith('INSERT INTO "erdgeist" VALUES (') and "'one'" in inserts[0]
+    assert inserts[1].startswith('INSERT INTO "erdgeist-2" VALUES (') and "'two'" in inserts[1]
+
+
+def test_postgres_output_writes_null_for_every_empty_value(tmp_path: Path) -> None:
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[1] = b"text"
+    dbdir = write_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, fields)])
+
+    result = run_command("cli", ["export", "--postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert insert_statements(result.stdout) == [
+        "INSERT INTO \"erdgeist\" VALUES ('1', NULL, 'text', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);"
+    ]
+
+
+def test_postgres_output_declares_every_column_text_and_writes_values_as_decoded(tmp_path: Path) -> None:
+    decoded = [b""] * TEST_TABLE_FIELD_COUNT
+    decoded[0] = b"42"
+    decoded[3] = b"1240315"
+    decoded[4] = b"0930"
+    unparseable = [b""] * TEST_TABLE_FIELD_COUNT
+    unparseable[0] = b"not a number"
+    unparseable[3] = b"12x"
+    dbdir = write_database(
+        tmp_path / "db", [bank_record(TEST_TABLE_ID, decoded), bank_record(TEST_TABLE_ID, unparseable)]
+    )
+
+    result = run_command("cli", ["export", "--postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    column_lines = [line.strip().rstrip(",").strip() for line in result.stdout.splitlines() if line.startswith('    "')]
+    assert len(column_lines) == TEST_TABLE_FIELD_COUNT + 1
+    assert all(line.endswith('" TEXT') for line in column_lines), column_lines
+    assert insert_statements(result.stdout) == [
+        (
+            'INSERT INTO "erdgeist" VALUES '
+            "('1', '42', NULL, NULL, '2024-03-15', '09:30', NULL, NULL, NULL, NULL, NULL, NULL);"
+        ),
+        (
+            'INSERT INTO "erdgeist" VALUES '
+            "('2', 'not a number', NULL, NULL, '12x', NULL, NULL, NULL, NULL, NULL, NULL, NULL);"
+        ),
+    ]
+
+
+def test_csv_export_round_trips_a_backslash(tmp_path: Path) -> None:
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[1] = 'C:\\Users\\x,"quoted"'.encode("cp1251")
+    dbdir = write_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, fields)])
+    outdir = tmp_path / "out"
+
+    result = run_command("cli", ["export", "--csv", "-o", str(outdir), dbdir])
+
+    assert result.returncode == 0, result.stderr
+    with (outdir / "erdgeist.csv").open(encoding="utf-8", newline="") as csvfile:
+        rows = list(csv.reader(csvfile))[1:]
+    assert rows[0][2] == 'C:\\Users\\x,"quoted"'
+
+
+def corrupt_bank_record_database(directory: Path) -> str:
+    """Write a database whose CroBank record 2 is corrupt, with records referring to a good and to the corrupt file.
+
+    Record 2's index entry has no inline flag, so the reader expects an extended record header, which is longer
+    than the 4 bytes stored.
+    """
+    dbdir = write_database(
+        directory,
+        [
+            file_record(b"GOOD"),
+            b"\x00abc",
+            record_with_file_field(file_reference_field("good", "pdf", 1)),
+            record_with_file_field(file_reference_field("broken", "pdf", 2)),
+        ],
+    )
+    tad_path = Path(dbdir) / "CroBank.tad"
+    tad = bytearray(tad_path.read_bytes())
+    entry_offset = 8 + 12
+    offset, length, checksum = struct.unpack_from("<LLL", tad, entry_offset)
+    struct.pack_into("<LLL", tad, entry_offset, offset, length & 0xFFFFFF, checksum)
+    tad_path.write_bytes(tad)
+    return dbdir
+
+
+def test_csv_export_skips_a_corrupt_bank_record(tmp_path: Path) -> None:
+    dbdir = corrupt_bank_record_database(tmp_path / "db")
+    outdir = tmp_path / "out"
+
+    result = run_command("cli", ["export", "--csv", "-o", str(outdir), dbdir])
+
+    assert result.returncode == 0, result.stderr
+    prefix = "warning: corrupt_record: CroBank.dat record 2: CroBank record 2 is corrupt and is skipped: "
+    assert any(line.startswith(prefix) for line in result.stderr.splitlines()), result.stderr
+    with (outdir / "erdgeist.csv").open(encoding="utf-8", newline="") as csvfile:
+        assert [row[0] for row in list(csv.reader(csvfile))[1:]] == ["3", "4"]
+    assert [path.name for path in (outdir / "Files-FL").iterdir()] == ["1"]
+    assert [path.name for path in (outdir / "Files-Referenced").iterdir()] == ["good.pdf"]
+
+
+def corrupt_compressed_bank_record_database(directory: Path) -> str:
+    """Write a database whose CroBank record 2 passes iscompressed() but is not valid deflate data."""
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[0] = b"good"
+    return write_database(
+        directory,
+        [
+            bank_record(TEST_TABLE_ID, fields),
+            corrupt_compressed_record(),
+        ],
+    )
+
+
+def test_csv_export_skips_a_corrupt_compressed_bank_record(tmp_path: Path) -> None:
+    dbdir = corrupt_compressed_bank_record_database(tmp_path / "db")
+    outdir = tmp_path / "out"
+
+    result = run_command("cli", ["export", "--csv", "-o", str(outdir), dbdir])
+
+    assert result.returncode == 0, result.stderr
+    prefix = (
+        "warning: corrupt_record: CroBank.dat record 2: CroBank record 2 is corrupt and is skipped: "
+        "ValueError: corrupt compressed data: "
+    )
+    assert any(line.startswith(prefix) for line in result.stderr.splitlines()), result.stderr
+    with (outdir / "erdgeist.csv").open(encoding="utf-8", newline="") as csvfile:
+        rows = list(csv.reader(csvfile))[1:]
+    assert rows == [["1", "good", "", "", "", "", "", "", "", "", "", ""]]
+
+
+def test_exports_close_the_database_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    dbdir = write_database(
+        tmp_path / "db", [file_record(b"DATA"), record_with_file_field(file_reference_field("report", "pdf", 1))]
+    )
+    monkeypatch.chdir(tmp_path)
+
+    run_in_process(export.add_parser, ["export", "--csv", "-o", "out", dbdir])
+    run_in_process(export.add_parser, ["export", "--postgres", dbdir])
+    run_in_process(export.add_parser, ["export", "--jsonl", dbdir])
+    gc.collect()
+
+    assert (tmp_path / "out" / "Files-Referenced" / "report.pdf").read_bytes() == b"DATA"
+
+
+def test_a_corrupt_referenced_file_gets_one_accurate_warning(tmp_path: Path) -> None:
+    dbdir = corrupt_bank_record_database(tmp_path / "db")
+
+    result = run_command("cli", ["export", "--csv", "-o", "out", dbdir], cwd=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    lines = result.stderr.splitlines()
+    corrupt = [line for line in lines if line.startswith("warning: corrupt_record: CroBank.dat record 2: ")]
+    assert len(corrupt) == 1, result.stderr
+    unresolved = (
+        "warning: unresolved_file_reference: CroBank.dat record 2: a file reference cannot be read: "
+        "CroBank record 2 is deleted or corrupt"
+    )
+    assert lines.count(unresolved) == 1, result.stderr
+    assert "is not the number of a stored file" not in result.stderr
+
+
+def reference_to_a_data_record_database(directory: Path) -> str:
+    """Write a database whose record 2 refers to record 1, a record of the data table instead of the Files table."""
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[1] = b"secret"
+    return write_database(
+        directory,
+        [
+            bank_record(TEST_TABLE_ID, fields),
+            record_with_file_field(file_reference_field("stolen", "txt", 1)),
+        ],
+    )
+
+
+def test_a_file_reference_to_a_record_of_another_table_is_skipped(tmp_path: Path) -> None:
+    dbdir = reference_to_a_data_record_database(tmp_path / "db")
+
+    result = run_command("cli", ["export", "--csv", "-o", "out", dbdir], cwd=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    warning = (
+        "warning: unresolved_file_reference: CroBank.dat record 1: a file reference cannot be read: "
+        "CroBank record 1 is not a record of the Files table"
+    )
+    assert result.stderr.splitlines().count(warning) == 1, result.stderr
+    assert list((tmp_path / "out" / "Files-Referenced").iterdir()) == []
+
+
+def test_csv_export_shortens_over_long_file_and_table_names(tmp_path: Path) -> None:
+    long_name = "я" * 200
+    dbdir = write_database(
+        tmp_path / "files",
+        [
+            file_record(b"one"),
+            file_record(b"two"),
+            file_record(b"three"),
+            record_with_file_field(file_reference_field(long_name, "txt", 1)),
+            record_with_file_field(file_reference_field(long_name + "ж", "txt", 2)),
+            record_with_file_field(file_reference_field("long", "x" * 300, 3)),
+        ],
+    )
+    outdir = tmp_path / "files-out"
+
+    result = run_command("cli", ["export", "--csv", "-o", str(outdir), dbdir])
+
+    assert result.returncode == 0, result.stderr
+    files = {path.name: path.read_bytes() for path in (outdir / "Files-Referenced").iterdir()}
+    assert all(len(name.encode("utf-8")) <= 255 for name in files), list(files)
+    by_content = {content: name for name, content in files.items()}
+    assert set(by_content) == {b"one", b"two", b"three"}
+    assert by_content[b"one"].endswith(".txt") and by_content[b"one"].startswith("яяя")
+    assert by_content[b"two"].endswith("-2.txt")
+    assert by_content[b"three"].startswith("long.x")
+
+    tablesdir = duplicate_table_name_database(tmp_path / "tables", second_table_name=long_name.encode("cp1251"))
+    tablesout = tmp_path / "tables-out"
+
+    result = run_command("cli", ["export", "--csv", "-o", str(tablesout), tablesdir])
+
+    assert result.returncode == 0, result.stderr
+    csv_names = sorted(path.name for path in tablesout.glob("*.csv"))
+    assert len(csv_names) == 2
+    assert all(len(name.encode("utf-8")) <= 255 and name.endswith(".csv") for name in csv_names), csv_names
+
+
+def test_postgres_output_shortens_a_long_table_name(tmp_path: Path) -> None:
+    dbdir = duplicate_table_name_database(tmp_path / "db", second_table_name=("я" * 100).encode("cp1251"))
+
+    result = run_command("cli", ["export", "--postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    creates = [line for line in result.stdout.splitlines() if line.startswith("CREATE TABLE")]
+    assert len(creates) == 2
+    for line in creates:
+        name = line.removeprefix('CREATE TABLE "').removesuffix('" (')
+        assert len(name.encode("utf-8")) <= 63, line
+
+
+def test_postgres_output_replaces_nul_characters_and_warns(tmp_path: Path) -> None:
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[1] = b"a\x00b"
+    dbdir = write_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, fields)])
+
+    result = run_command("cli", ["export", "--postgres", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    (insert,) = insert_statements(result.stdout)
+    assert "'a�b'" in insert
+    assert "\x00" not in result.stdout
+    warnings = [line for line in result.stderr.splitlines() if line.startswith("warning: replaced_nul")]
+    assert warnings == [
+        'warning: replaced_nul: table "erdgeist", record 1, field "Entry #2": the value holds NUL characters, which '
+        "PostgreSQL text cannot hold; they are written as U+FFFD"
+    ], result.stderr
+
+    outdir = tmp_path / "out"
+    csv_result = run_command("cli", ["export", "--csv", "-o", str(outdir), dbdir])
+
+    assert csv_result.returncode == 0, csv_result.stderr
+    assert "replaced_nul" not in csv_result.stderr
+    with (outdir / "erdgeist.csv").open(encoding="utf-8", newline="") as csvfile:
+        assert list(csv.reader(csvfile))[1][2] == "a\x00b"
+
+
+def test_jsonl_export_kod_option_decodes_an_encrypted_database(tmp_path: Path) -> None:
+    kod = random_kod(seed=11)
+    dbdir = write_database(tmp_path / "db", [table_record({1: b"Hammersley"})], kod=kod)
+
+    result = run_command("cli", ["export", "--jsonl", "--kod", bytes(kod).hex(), dbdir])
+
+    assert result.returncode == 0, result.stderr
+    (record,) = [line for line in jsonl_lines(result.stdout) if line["type"] == "record"]
+    assert record == record_line(1, {"Entry #2": "Hammersley"})

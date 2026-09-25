@@ -1,5 +1,5 @@
 # ABOUTME: The inspect subcommands, strudump, recdump, crodump, destruct and kodump, over the internal readers.
-# ABOUTME: They show what the API hides, keep crodump's output, and stop only for a file they read that cannot be read.
+# ABOUTME: They show what the API hides, as the readers dump it, and stop only for a file they read that cannot be read.
 import argparse
 import sys
 from collections.abc import Collection

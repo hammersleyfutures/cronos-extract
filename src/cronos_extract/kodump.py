@@ -1,7 +1,7 @@
 # ABOUTME: kodump subcommand: KOD-decodes and hexdumps a byte range from a file or stdin.
 # ABOUTME: Can try every shift value, which helps find the right one when reverse-engineering.
 """
-This module has the functions for the 'kodump' subcommand from the 'crodump' script.
+This module has the functions for the 'inspect kodump' subcommand of cronos-extract.
 """
 
 import io
