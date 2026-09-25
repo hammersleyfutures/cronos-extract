@@ -5,8 +5,8 @@ import csv
 import io
 import os
 import sys
-from collections.abc import Callable
-from contextlib import ExitStack
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack, contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import NoReturn, Protocol, TextIO, cast
@@ -155,20 +155,26 @@ def create_directory(directory: Path, parser: argparse.ArgumentParser) -> None:
         exists_error(parser, directory)
 
 
-def open_stream(target: Path | None, parser: argparse.ArgumentParser, stack: ExitStack) -> TextIO:
+@contextmanager
+def output_stream(target: Path | None, parser: argparse.ArgumentParser) -> Iterator[TextIO]:
     """
     The text stream the export writes to: the new file `target`, or stdout, set to UTF-8, when there is no target.
 
     Unencodable characters are written as backslash escapes. A file that appeared since the check is a usage error.
+    Stdout is never closed; a file `target` is closed when the caller's `with` exits.
     """
     if target is None:
         if isinstance(sys.stdout, io.TextIOWrapper):
             sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
-        return cast(TextIO, sys.stdout)
+        yield cast(TextIO, sys.stdout)
+        return
     try:
-        return stack.enter_context(open(target, "x", encoding="utf-8", errors="backslashreplace", newline="\n"))
+        stream = open(target, "x", encoding="utf-8", errors="backslashreplace", newline="\n")  # noqa: SIM115
     except FileExistsError:
         exists_error(parser, target)
+        raise  # exists_error exits; the raise makes every path explicit
+    with stream:
+        yield stream
 
 
 def check_format_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
@@ -236,7 +242,7 @@ def make_writer(
         create_directory(target, parser)
         writer = CsvWriter(target, bank, problems.problem, delimiter=args.delimiter or ",", files=not args.no_files)
         return writer, target
-    stream = open_stream(target, parser, stack)
+    stream = stack.enter_context(output_stream(target, parser))
     writer: Writer = SqlWriter(stream, problems.problem) if args.postgres else JsonlWriter(stream)
     return writer, target
 
