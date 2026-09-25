@@ -4593,3 +4593,21 @@ Minors the review found that are not fixed here:
 - `destruct_sys3_def` is a stub
 
 The export of the six largest databases is recorded below.
+
+### The six largest databases
+
+The realdata record tests skip the six databases whose CroBank index is over the test suite's 32 MB limit. Each was
+exported separately (2026-09-25) with `export --jsonl --compact`, counting the record lines of the output:
+
+| Id | CroBank index | Exit | Time | Records | stderr summary |
+|---|---|---|---|---|---|
+| db06 | 126 MB | 0 | 7.0 min | 7,922,153 | no diagnostics |
+| db12 | 89 MB | 0 | 3.5 min | 5,624,447 | no diagnostics |
+| db13 | 2,052 MB | 1 | under 1 s | 0 | one `Error:` line: the definition does not decode with the default KOD |
+| db14 | 110 MB | 0 | 8.3 min | 9,217,777 | 410 `invalid_value` |
+| db26 | 179 MB | 0 | 11.4 min | 14,964,416 | no diagnostics |
+| db28 | 365 MB | 0 | 19.8 min | 28,191 | 17,542: 244 `undecodable_field`, 17,296 `invalid_value`, 2 `unexpected_structure` |
+
+No run printed a traceback. db13 is one of the databases that Phase 1 found do not open with the default KOD, and it
+stops as D15 describes. db28's time against its record count shows the Phase 3 open item on reading CroBank once per
+table: most of its CroBank records belong to no exported table, and each table's walk reads them all again.
