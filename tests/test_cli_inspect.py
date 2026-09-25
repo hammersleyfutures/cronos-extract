@@ -31,11 +31,11 @@ def run_inspect(*args: str) -> int:
 @pytest.mark.parametrize(
     ("args", "golden"),
     [
-        (["strudump", "-v", "-a", RELATIVE_TEST_DB], "crodump-strudump"),
-        (["crodump", "-v", RELATIVE_TEST_DB], "crodump-crodump"),
-        (["recdump", RELATIVE_TEST_DB], "crodump-recdump"),
-        (["recdump", "--stats", "--stru", RELATIVE_TEST_DB], "crodump-recdump-stats-stru"),
-        (["kodump", "-s", "1", "-l", "64", f"{RELATIVE_TEST_DB}/CroStru.dat"], "crodump-kodump-shift1"),
+        (["strudump", "-v", "-a", RELATIVE_TEST_DB], "inspect-strudump"),
+        (["crodump", "-v", RELATIVE_TEST_DB], "inspect-crodump"),
+        (["recdump", RELATIVE_TEST_DB], "inspect-recdump"),
+        (["recdump", "--stats", "--stru", RELATIVE_TEST_DB], "inspect-recdump-stats-stru"),
+        (["kodump", "-s", "1", "-l", "64", f"{RELATIVE_TEST_DB}/CroStru.dat"], "inspect-kodump-shift1"),
     ],
     ids=["strudump", "crodump", "recdump", "recdump-stats-stru", "kodump"],
 )
@@ -66,7 +66,7 @@ def test_a_damaged_file_the_subcommand_does_not_read_is_one_warning(
     assert run_inspect("strudump", "-v", "-a", str(damaged_index_db)) == 0
 
     captured = capsys.readouterr()
-    assert captured.out == golden_stdout("crodump-strudump")
+    assert captured.out == golden_stdout("inspect-strudump")
     warnings = [line for line in captured.err.splitlines() if line.startswith("warning: ")]
     assert len(warnings) == 1
     assert warnings[0].startswith("warning: unreadable_file: CroIndex.dat: the file cannot be read and is left out: ")
