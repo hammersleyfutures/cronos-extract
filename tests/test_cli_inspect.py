@@ -1,6 +1,7 @@
 # ABOUTME: Tests for the inspect subcommands: their output matches the golden files, and they open only what they read.
 # ABOUTME: They run inspect on test_data and on crafted or damaged copies, in this process or as a subprocess.
 import io
+import os
 import re
 import shutil
 from pathlib import Path
@@ -217,6 +218,17 @@ def test_kodump_nokod_and_n_are_the_same_option() -> None:
     assert long_option.returncode == 0, long_option.stderr
     assert short_option.returncode == 0, short_option.stderr
     assert long_option.stdout == short_option.stdout
+
+
+def test_kodump_of_a_fifo_exits_1_without_hanging(tmp_path: Path) -> None:
+    fifo = tmp_path / "CroStru.dat"
+    os.mkfifo(fifo)
+
+    result = run_command("cli", ["inspect", "kodump", str(fifo)], timeout=60)
+
+    assert result.returncode == 1
+    assert "Traceback" not in result.stderr
+    assert result.stderr.splitlines()[-1] == "Error: CroStru.dat is not a regular file"
 
 
 def test_strudump_stops_with_a_clear_message_without_crostru(tmp_path: Path) -> None:

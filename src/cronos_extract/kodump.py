@@ -7,6 +7,7 @@ This module has the functions for the 'inspect kodump' subcommand of cronos-extr
 import io
 import struct
 
+from ._format.files import open_regular_file
 from .hexdump import hexdump, toout, unhex
 
 
@@ -62,7 +63,7 @@ def kod_hexdump(kod, args):
         args.width = 64 if args.ascdump else 16
 
     if args.filename:
-        with open(args.filename, "rb") as fh:
+        with open_regular_file(args.filename) as fh:
             if args.length is None:
                 fh.seek(0, io.SEEK_END)
                 filesize = fh.tell()
