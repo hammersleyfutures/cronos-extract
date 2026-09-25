@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 import pytest
-from cli import run_in_process
+from cli import run_command, run_in_process
 from cronos_builder import (
     TEST_DB,
     TEST_TABLE_FIELD_COUNT,
@@ -20,6 +20,7 @@ from cronos_builder import (
     file_record,
     file_reference_field,
     patched_table_definition,
+    random_kod,
     record_with_file_field,
     renamed_table_definition,
     write_database,
@@ -29,6 +30,7 @@ from cronos_extract import DatabaseDefinitionError, FieldDefinition
 from cronos_extract import open as open_bank
 from cronos_extract._cli import export
 from cronos_extract._cli.sql_out import unique_sql_column_names, unique_sql_table_name
+from cronos_extract.Database import KOD_HINT
 
 HEADER = ["Системный номер", *(f"Entry #{number}" for number in range(1, 12))]
 # Both of TEST_DB's table definitions report that their Section 2 is not marked with a 2.
@@ -583,3 +585,120 @@ def test_jsonl_writes_to_the_file_o_names(tmp_path: Path, capsys: pytest.Capture
 
     assert jsonl_lines(output.read_text(encoding="utf-8")) == [*SECTION_2_DIAGNOSTICS, TEST_TABLE_LINE]
     assert capsys.readouterr().out == ""
+
+
+def last_line(stderr: str) -> str:
+    return stderr.splitlines()[-1]
+
+
+def test_export_exits_0_when_it_finishes(tmp_path: Path) -> None:
+    result = run_command("cli", ["export", "--csv", "-o", str(tmp_path / "out"), str(TEST_DB)])
+
+    assert result.returncode == 0, result.stderr
+    assert last_line(result.stderr) == TEST_DB_SUMMARY
+
+
+def test_export_of_an_undecodable_definition_exits_1_naming_the_crack_command() -> None:
+    result = run_command("cli", ["export", "--postgres", "--nokod", str(TEST_DB)])
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    lines = result.stderr.splitlines()
+    assert lines[-2] == "1 diagnostic: 1 unexpected_structure"
+    assert lines[-1].startswith("Error: the database definition in CroStru.dat of ")
+    assert lines[-1].endswith(KOD_HINT)
+    assert "cronos_extract.crack_kod" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (["--postgres", "--no-files"], "--no-files applies only to --csv"),
+        (["--jsonl", "--delimiter", ";"], "--delimiter applies only to --csv"),
+        (["--csv", "--delimiter", "ab"], "cannot be a CSV delimiter"),
+        (["--jsonl", "--kod", "00" * 256], "each number from 0 to 255 exactly once"),
+        (["--csv", "--jsonl"], "not allowed with"),
+        (["--nokod"], "one of the arguments --csv --postgres --jsonl is required"),
+    ],
+    ids=["no-files", "delimiter-format", "delimiter-length", "kod", "two-formats", "no-format"],
+)
+def test_export_usage_errors_exit_2(args: list[str], message: str) -> None:
+    result = run_command("cli", ["export", *args, str(TEST_DB)])
+
+    assert result.returncode == 2
+    assert message in result.stderr
+    assert "invalid kod_argument value" not in result.stderr
+
+
+def test_export_to_an_existing_target_exits_2(tmp_path: Path) -> None:
+    (tmp_path / "out").mkdir()
+
+    result = run_command("cli", ["export", "--csv", "-o", str(tmp_path / "out"), str(TEST_DB)])
+
+    assert result.returncode == 2
+    assert "already exists" in result.stderr
+
+
+@pytest.mark.parametrize("problem", ["missing", "file"])
+def test_a_database_directory_that_cannot_be_listed_exits_1(tmp_path: Path, problem: str) -> None:
+    dbdir = tmp_path / "db"
+    if problem == "file":
+        dbdir.write_text("not a directory")
+
+    result = run_command("cli", ["export", "--jsonl", str(dbdir)])
+
+    assert result.returncode == 1
+    assert "Traceback" not in result.stderr
+    assert last_line(result.stderr).startswith("Error: ")
+
+
+def test_an_output_in_a_missing_directory_exits_1(tmp_path: Path) -> None:
+    result = run_command("cli", ["export", "--csv", "-o", str(tmp_path / "missing" / "out"), str(TEST_DB)])
+
+    assert result.returncode == 1
+    assert "Traceback" not in result.stderr
+    assert last_line(result.stderr).startswith("Error: [Errno 2]")
+
+
+@pytest.mark.skipif(os.name != "posix" or os.geteuid() == 0, reason="needs a POSIX user that permissions apply to")
+def test_an_output_in_a_directory_that_is_not_writable_exits_1(tmp_path: Path) -> None:
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    locked.chmod(0o500)
+    try:
+        result = run_command("cli", ["export", "--csv", "-o", str(locked / "out"), str(TEST_DB)])
+    finally:
+        locked.chmod(0o700)
+
+    assert result.returncode == 1
+    assert last_line(result.stderr).startswith("Error: [Errno 13]")
+
+
+def test_a_crack_that_recovers_nothing_exits_1(tmp_path: Path) -> None:
+    dbdir = write_database(
+        tmp_path / "db", [table_record({0: b"x"})], random_kod(seed=7), index_records=[bytes(12)] * 3
+    )
+
+    result = run_command("cli", ["export", "--jsonl", "--crack", "dbcrack", dbdir])
+
+    assert result.returncode == 1
+    assert "cronos-extract crack strucrack" in last_line(result.stderr)
+
+
+def test_strict_exits_1_after_writing_the_output(tmp_path: Path) -> None:
+    # Every crafted database reports unexpected_structure for its table definitions (D17), so --strict exits 1.
+    outdir = tmp_path / "out"
+
+    result = run_command("cli", ["export", "--csv", "--strict", "-o", str(outdir), str(TEST_DB)])
+
+    assert result.returncode == 1
+    assert (outdir / "erdgeist.csv").is_file()
+    assert last_line(result.stderr) == TEST_DB_SUMMARY
+
+
+def test_strict_does_not_lower_a_usage_error(tmp_path: Path) -> None:
+    (tmp_path / "out").mkdir()
+
+    result = run_command("cli", ["export", "--csv", "--strict", "-o", str(tmp_path / "out"), str(TEST_DB)])
+
+    assert result.returncode == 2

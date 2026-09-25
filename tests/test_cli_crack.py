@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 import pytest
-from cli import run_in_process
+from cli import run_command, run_in_process
 from cronos_builder import (
     TEST_TABLE_ID,
     UNUSED_TABLE_ID,
@@ -184,3 +184,43 @@ def test_a_fix_that_cannot_be_parsed_is_a_usage_error(encrypted_db: str, capsys:
 
     assert stopped.value.code == 2
     assert "Non-hexadecimal digit" in capsys.readouterr().err
+
+
+def test_a_resolved_crack_exits_0_with_only_the_kod_on_stdout(encrypted_db: str) -> None:
+    result = run_command("cli", ["crack", "dbcrack", "--silent", encrypted_db])
+
+    assert result.returncode == 0
+    assert (result.stdout, result.stderr) == (KOD_LINE, "")
+
+
+@pytest.mark.parametrize(
+    "args",
+    [["strucrack", "--noninteractive"], ["dbcrack"], ["dbcrack", "--silent"]],
+    ids=["strucrack", "dbcrack", "silent"],
+)
+def test_a_crack_that_fails_exits_1(uncrackable_db: str, args: list[str]) -> None:
+    result = run_command("cli", ["crack", *args, uncrackable_db])
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+
+
+def test_a_crack_missing_its_file_exits_1_with_an_error_line(tmp_path: Path) -> None:
+    write_datafile(tmp_path / "db", "Bank", [bank_record(TEST_TABLE_ID, PERSON_FIELDS)], KOD)
+
+    result = run_command("cli", ["crack", "dbcrack", "--silent", str(tmp_path / "db")])
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.startswith("Error: ")
+    assert "CroIndex" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "args", [["-f", "0000zz"], ["--text=99:0:0:a"], ["--width", "0"]], ids=["fix", "text", "width"]
+)
+def test_crack_input_that_does_not_fit_exits_2(encrypted_db: str, args: list[str]) -> None:
+    result = run_command("cli", ["crack", "strucrack", *args, encrypted_db])
+
+    assert result.returncode == 2
+    assert "Traceback" not in result.stderr
