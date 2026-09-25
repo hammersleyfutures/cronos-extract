@@ -34,15 +34,18 @@ class Writer(Protocol):
 
     def table(self, table: Table) -> bool:
         """Whether the writer accepted the table; the export reads its records only when it did."""
-        ...
 
-    def record(self, table: Table, record: Record) -> None: ...
+    def record(self, table: Table, record: Record) -> None:
+        """Write one record of a table the writer accepted."""
 
-    def diagnostic(self, problem: Problem) -> None: ...
+    def diagnostic(self, problem: Problem) -> None:
+        """Write one diagnostic found while exporting."""
 
-    def finish(self) -> None: ...
+    def finish(self) -> None:
+        """Finish the output once every table is written."""
 
-    def close(self) -> None: ...
+    def close(self) -> None:
+        """Release the writer's resources, at the end whether the export finished or not."""
 
 
 class Problems:
@@ -163,10 +166,9 @@ def open_stream(target: Path | None, parser: argparse.ArgumentParser, stack: Exi
             sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
         return cast(TextIO, sys.stdout)
     try:
-        stream = open(target, "x", encoding="utf-8", errors="backslashreplace", newline="\n")  # noqa: SIM115
+        return stack.enter_context(open(target, "x", encoding="utf-8", errors="backslashreplace", newline="\n"))
     except FileExistsError:
         exists_error(parser, target)
-    return stack.enter_context(stream)
 
 
 def check_format_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:

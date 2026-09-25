@@ -348,9 +348,9 @@ def test_postgres_export_writes_one_insert_per_record_with_null_for_empty_values
 
     assert insert_statements(capsys.readouterr().out) == [
         'INSERT INTO "erdgeist" VALUES '
-        "('1', 'O''Brien', 'C:\\x', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);",
+        + "('1', 'O''Brien', 'C:\\x', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);",
         'INSERT INTO "erdgeist" VALUES '
-        "('2', NULL, NULL, NULL, '2024-03-15', '09:30', NULL, NULL, NULL, NULL, NULL, NULL);",
+        + "('2', NULL, NULL, NULL, '2024-03-15', '09:30', NULL, NULL, NULL, NULL, NULL, NULL);",
     ]
 
 
@@ -798,11 +798,11 @@ def test_csv_export_skips_unreadable_file_references(tmp_path: Path) -> None:
     lines = result.stderr.splitlines()
     for warning in [
         "warning: unresolved_file_reference: CroBank.dat: a file reference cannot be read: "
-        "its record number is not a number",
+        + "its record number is not a number",
         "warning: unresolved_file_reference: CroBank.dat record 2: a file reference cannot be read: "
-        "CroBank record 2 is deleted or corrupt",
+        + "CroBank record 2 is deleted or corrupt",
         "warning: unresolved_file_reference: CroBank.dat record 99: a file reference cannot be read: "
-        "CroBank has no record 99",
+        + "CroBank has no record 99",
     ]:
         assert lines.count(warning) == 1, result.stderr
     assert [path.name for path in (outdir / "Files-Referenced").iterdir()] == ["good.pdf"]

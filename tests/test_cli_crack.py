@@ -18,8 +18,7 @@ from cronos_builder import (
     write_datafile,
 )
 
-import cronos_extract
-from cronos_extract import Kod, NotACronosFile
+from cronos_extract import Kod, NotACronosFile, crack_kod
 from cronos_extract._cli import crack
 from cronos_extract.koddecoder import KODcoding
 
@@ -378,7 +377,7 @@ def test_export_output_holds_no_cracking_dump(encrypted_db: str) -> None:
 
 @pytest.mark.parametrize("method", ["strucrack", "dbcrack"])
 def test_crack_kod_recovers_the_database_kod(encrypted_db: str, method: str) -> None:
-    assert cronos_extract.crack_kod(encrypted_db, cast(Any, method)) == Kod.from_table(KOD)
+    assert crack_kod(encrypted_db, cast(Any, method)) == Kod.from_table(KOD)
 
 
 @pytest.mark.parametrize("method", ["strucrack", "dbcrack"])
