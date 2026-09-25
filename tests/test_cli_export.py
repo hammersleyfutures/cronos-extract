@@ -25,6 +25,7 @@ from cronos_builder import (
     database_with_wrong_kod_record_out_of_range,
     duplicate_table_name_database,
     erdgeist_table_definition,
+    field_definition_with_nul_name,
     file_record,
     file_reference_field,
     key_referencing_a_deleted_record,
@@ -369,6 +370,32 @@ def test_postgres_export_replaces_nul_with_u_fffd_and_reports_it(
         "PostgreSQL text cannot hold; they are written as U+FFFD" in captured.err
     )
     assert captured.err.splitlines()[-1] == "3 diagnostics: 2 unexpected_structure, 1 replaced_nul"
+
+
+def test_postgres_export_replaces_nul_in_identifiers_and_reports_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    definition = field_definition_with_nul_name(
+        renamed_table_definition(patched_table_definition(tableid=2), name=b"ta\x00ble"), field_number=1
+    )
+    dbdir = database_with_extra_definition_key(
+        tmp_path / "db", "Base002", definition, [bank_record(2, [b""] * TEST_TABLE_FIELD_COUNT)]
+    )
+
+    assert export_to_stdout(dbdir, "--postgres") == 0
+
+    captured = capsys.readouterr()
+    assert "\x00" not in captured.out
+    assert '"ta�ble"' in captured.out
+    assert '"�ntry #1"' in captured.out
+    assert (
+        r'warning: replaced_nul: table "ta\x00ble": the name holds NUL characters, which a PostgreSQL identifier '
+        "cannot hold; they are written as U+FFFD" in captured.err
+    )
+    assert (
+        r'warning: replaced_nul: table "ta\x00ble", field "\x00ntry #1": the name holds NUL characters, which a '
+        "PostgreSQL identifier cannot hold; they are written as U+FFFD" in captured.err
+    )
 
 
 def test_postgres_export_writes_a_file_that_o_names(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

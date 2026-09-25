@@ -20,6 +20,7 @@ from cronos_builder import (
     database_without_files_table,
     duplicate_table_name_database,
     erdgeist_table_definition,
+    field_definition_with_nul_name,
     file_record,
     file_reference_field,
     key_referencing_a_deleted_record,
@@ -282,6 +283,15 @@ def test_renamed_table_definition_changes_the_name_and_the_abbreviation(tmp_path
             (1, "erdgeist", "ER"),
             (2, "other", "OT"),
         ]
+
+
+def test_field_definition_with_nul_name_puts_a_nul_in_the_first_fields_name(tmp_path: Path) -> None:
+    definition = field_definition_with_nul_name(patched_table_definition(tableid=2))
+    dbdir = database_with_extra_definition_key(tmp_path / "db", "Base002", definition)
+
+    with cronos_extract.open(dbdir) as bank:
+        table = next(table for table in bank.tables if table.id == 2)
+        assert "\x00" in table.fields[0].name
 
 
 def test_database_with_files_abbreviation_gives_the_files_table_that_abbreviation(tmp_path: Path) -> None:

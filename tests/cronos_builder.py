@@ -8,7 +8,9 @@ from pathlib import Path
 from typing import cast
 
 from cronos_extract.Database import Database
+from cronos_extract.Datamodel import TableDefinition
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
+from cronos_extract.readers import ByteReader
 
 TEST_DB = Path(__file__).resolve().parent.parent / "test_data" / "all_field_types"
 
@@ -252,6 +254,24 @@ def renamed_table_definition(
         else bytes([len(abbreviation)]) + abbreviation
     )
     return definition[:name_start] + new_name + new_abbreviation + definition[abbreviation_end:]
+
+
+def field_definition_with_nul_name(definition: bytes, *, field_number: int = 0) -> bytes:
+    """Return `definition` with a NUL byte written into the name of the field numbered `field_number`.
+
+    Fields are numbered in file order, in the first section that TableDefinition.decode reads (0 is the first
+    one defined, which is usually the system number). A field's name is a length-prefixed CP-1251 string right
+    after its type (word) and idx1 (dword); the length is unchanged, so nothing else in `definition` moves.
+    """
+    header_length = len(TableDefinition(definition, warn=lambda message: None).headerdata)
+    reader = ByteReader(definition[header_length:])
+    for _ in range(field_number):
+        deflen = reader.readword()
+        reader.readbytes(deflen)
+    name_offset = header_length + reader.o + 2 + 2 + 4 + 1  # deflen, typ (word), idx1 (dword), name length byte
+    patched = bytearray(definition)
+    patched[name_offset] = 0
+    return bytes(patched)
 
 
 def table_definition_without_fields(*, tableid: int) -> bytes:

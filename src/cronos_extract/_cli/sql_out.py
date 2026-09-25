@@ -12,13 +12,18 @@ BANK_FILE = "CroBank.dat"
 STRU_FILE = "CroStru.dat"
 
 
+def sql_identifier_text(name: str) -> str:
+    """`name` with double quotes turned to underscores and NUL, which PostgreSQL identifiers cannot hold, to U+FFFD."""
+    return name.replace('"', "_").replace("\x00", "�")
+
+
 def unique_sql_table_name(table: Table, used_names: dict[str, int]) -> str | None:
     """
     Return the name to give `table` in SQL output, or None when a table with the same name and table id
     is already written. Double quotes become underscores, an empty name becomes the table id, and the name
     fits in POSTGRES_IDENTIFIER_BYTES. See unique_name for how names are kept unique.
     """
-    name = table.name.replace('"', "_") or str(table.id)
+    name = sql_identifier_text(table.name) or str(table.id)
     return unique_name(name, "", table.id, used_names, POSTGRES_IDENTIFIER_BYTES)
 
 
@@ -33,7 +38,7 @@ def unique_sql_column_names(fields: Sequence[FieldDefinition]) -> list[str]:
     names = []
     for number, field in enumerate(fields):
         name = unique_name(
-            field.name.replace('"', "_") or str(number), "", number, used_names, POSTGRES_IDENTIFIER_BYTES
+            sql_identifier_text(field.name) or str(number), "", number, used_names, POSTGRES_IDENTIFIER_BYTES
         )
         assert name is not None, "each column has its own number, so its name is never taken to be its own"
         names.append(name)
@@ -75,6 +80,7 @@ class SqlWriter:
         stream.write("SET standard_conforming_strings = on;\n")
 
     def table(self, table: Table) -> bool:
+        self._report_nul_in_identifier(table.name, table=table.name)
         self._current = unique_sql_table_name(table, self._table_names)
         if self._current is None:
             self._on_problem(
@@ -86,9 +92,24 @@ class SqlWriter:
                 )
             )
             return False
+        for field in table.fields:
+            self._report_nul_in_identifier(field.name, table=table.name, field=field.name)
         columns = ",\n".join(f'    "{column}" TEXT' for column in unique_sql_column_names(table.fields))
         self._stream.write(f'\nCREATE TABLE "{self._current}" (\n{columns}\n);\n')
         return True
+
+    def _report_nul_in_identifier(self, name: str, *, table: str, field: str | None = None) -> None:
+        if "\x00" not in name:
+            return
+        self._on_problem(
+            Problem(
+                REPLACED_NUL,
+                "the name holds NUL characters, which a PostgreSQL identifier cannot hold; they are written as U+FFFD",
+                file=STRU_FILE,
+                table=table,
+                field=field,
+            )
+        )
 
     def record(self, table: Table, record: Record) -> None:
         """Write `record`; called only after table() accepted `table`, so self._current is not None."""
