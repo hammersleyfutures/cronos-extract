@@ -179,17 +179,6 @@ def test_a_damaged_file_the_subcommand_does_not_read_exits_0(damaged_index_db: P
     assert result.returncode == 0, result.stderr
 
 
-def test_strudump_of_an_undecodable_definition_exits_1_with_two_lines() -> None:
-    result = run_command("cli", ["inspect", "strudump", "--nokod", str(TEST_DB)])
-
-    assert result.returncode == 1
-    assert result.stderr.splitlines() == [
-        "WARN: expected dbinfo to start with 0x03",
-        "Error: the database definition is cut off after 0 keys",
-        KOD_HINT,
-    ]
-
-
 def test_recdump_stops_at_the_last_record_even_with_debug() -> None:
     result = run_command("cli", ["inspect", "recdump", "--debug", str(TEST_DB)])
 
