@@ -4,11 +4,12 @@ import argparse
 import csv
 import io
 import os
+import sys
 from collections.abc import Callable
 from contextlib import ExitStack
 from datetime import datetime
 from pathlib import Path
-from typing import NoReturn, Protocol, cast
+from typing import NoReturn, Protocol, TextIO, cast
 
 from .._api.bank import Bank, Table
 from .._api.bank import open as open_bank
@@ -18,6 +19,7 @@ from .._api.values import Record
 from .csv_out import CsvWriter
 from .options import Subcommands, kod_options, selected_kod
 from .report import DUPLICATE_TABLE, Failure, Problem, Report, error_message
+from .sql_out import SqlWriter
 
 STRU_FILE = "CroStru.dat"
 # The exit status of a command stopped by Ctrl-C, as a shell reports it: 128 plus SIGINT's number.
@@ -97,6 +99,9 @@ def add_parser(subcommands: Subcommands) -> None:
     output_format.add_argument(
         "--csv", action="store_true", help="create a directory holding a CSV file per table and the stored files"
     )
+    output_format.add_argument(
+        "--postgres", action="store_true", help="write PostgreSQL CREATE TABLE and INSERT statements"
+    )
     parser.add_argument(
         "-o",
         "--output",
@@ -136,8 +141,36 @@ def create_directory(directory: Path, parser: argparse.ArgumentParser) -> None:
         exists_error(parser, directory)
 
 
+def open_stream(target: Path | None, parser: argparse.ArgumentParser, stack: ExitStack) -> TextIO:
+    """
+    The text stream the export writes to: the new file `target`, or stdout, set to UTF-8, when there is no target.
+
+    Unencodable characters are written as backslash escapes. A file that appeared since the check is a usage error.
+    """
+    if target is None:
+        if isinstance(sys.stdout, io.TextIOWrapper):
+            sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+        return cast(TextIO, sys.stdout)
+    try:
+        stream = open(target, "x", encoding="utf-8", errors="backslashreplace", newline="\n")  # noqa: SIM115
+    except FileExistsError:
+        exists_error(parser, target)
+    return stack.enter_context(stream)
+
+
+def check_format_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Refuse the options that only --csv reads when another format is chosen, so nobody believes they applied."""
+    if args.csv:
+        return
+    if args.no_files:
+        parser.error("--no-files applies only to --csv, the one format that writes the stored files")
+    if args.delimiter is not None:
+        parser.error("--delimiter applies only to --csv")
+
+
 def run_export(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     """Export the database in args.dbdir in the format the options choose, returning the exit status."""
+    check_format_options(args, parser)
     target = output_target(args)
     if target is not None and os.path.lexists(target):
         exists_error(parser, target)
@@ -161,7 +194,7 @@ def export(args: argparse.Namespace, parser: argparse.ArgumentParser, target: Pa
             bank = stack.enter_context(
                 open_bank(args.dbdir, kod=selected_kod(args), compact=args.compact, on_diagnostic=problems.diagnostic)
             )
-            writer, created = make_writer(args, parser, bank, target, problems)
+            writer, created = make_writer(args, parser, bank, target, problems, stack)
             stack.callback(writer.close)
             problems.start(writer)
             walk(bank, writer, problems.problem)
@@ -177,13 +210,21 @@ def export(args: argparse.Namespace, parser: argparse.ArgumentParser, target: Pa
 
 
 def make_writer(
-    args: argparse.Namespace, parser: argparse.ArgumentParser, bank: Bank, target: Path | None, problems: Problems
-) -> tuple[Writer, Path]:
-    """Create the output of the chosen format, returning its writer and the path created."""
-    assert target is not None, "--csv always has a target"
-    create_directory(target, parser)
-    writer = CsvWriter(target, bank, problems.problem, delimiter=args.delimiter or ",", files=not args.no_files)
-    return writer, target
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+    bank: Bank,
+    target: Path | None,
+    problems: Problems,
+    stack: ExitStack,
+) -> tuple[Writer, Path | None]:
+    """Create the output of the chosen format, returning its writer and the path created, None for stdout."""
+    if args.csv:
+        assert target is not None, "--csv always has a target"
+        create_directory(target, parser)
+        writer = CsvWriter(target, bank, problems.problem, delimiter=args.delimiter or ",", files=not args.no_files)
+        return writer, target
+    stream = open_stream(target, parser, stack)
+    return SqlWriter(stream, problems.problem), target
 
 
 def walk(bank: Bank, writer: Writer, on_problem: Callable[[Problem], None]) -> None:

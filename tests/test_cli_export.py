@@ -14,6 +14,7 @@ from cronos_builder import (
     bank_record,
     database_with_extra_definition_key,
     database_with_files_abbreviation,
+    duplicate_table_name_database,
     erdgeist_table_definition,
     file_record,
     file_reference_field,
@@ -23,8 +24,10 @@ from cronos_builder import (
     write_database,
 )
 
-from cronos_extract import DatabaseDefinitionError
+from cronos_extract import DatabaseDefinitionError, FieldDefinition
+from cronos_extract import open as open_bank
 from cronos_extract._cli import export
+from cronos_extract._cli.sql_out import unique_sql_column_names, unique_sql_table_name
 
 HEADER = ["Системный номер", *(f"Entry #{number}" for number in range(1, 12))]
 # Both of TEST_DB's table definitions report that their Section 2 is not marked with a 2.
@@ -293,3 +296,141 @@ def test_hostile_names_stay_inside_the_output_directory(tmp_path: Path) -> None:
     assert all(path.resolve().is_relative_to(outdir.resolve()) for path in outdir.rglob("*"))
     assert names_in(outdir) == [".._.._etc_passwd.csv", "Files-FL", "Files-Referenced", "erdgeist.csv"]
     assert names_in(outdir / "Files-Referenced") == [".._.._etc_passwd"]
+
+
+def export_to_stdout(dbdir: str | Path, *options: str) -> int:
+    return run_in_process(export.add_parser, ["export", *options, str(dbdir)])
+
+
+def insert_statements(sql: str) -> list[str]:
+    return [line for line in sql.splitlines() if line.startswith("INSERT")]
+
+
+TEST_DB_SQL = (
+    "SET standard_conforming_strings = on;\n"
+    "\n"
+    'CREATE TABLE "erdgeist" (\n' + ",\n".join(f'    "{name}" TEXT' for name in HEADER) + "\n);\n"
+)
+
+
+def test_postgres_export_writes_the_layout_d9_describes(capsys: pytest.CaptureFixture[str]) -> None:
+    assert export_to_stdout(TEST_DB, "--postgres") == 0
+
+    captured = capsys.readouterr()
+    assert captured.out == TEST_DB_SQL
+    assert captured.err.splitlines()[-1] == TEST_DB_SUMMARY
+
+
+def test_postgres_export_writes_one_insert_per_record_with_null_for_empty_values(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dbdir = write_database(
+        tmp_path / "db",
+        [table_record({0: b"O'Brien", 1: b"C:\\x"}), table_record({3: b"1240315", 4: b"0930"})],
+    )
+
+    assert export_to_stdout(dbdir, "--postgres") == 0
+
+    assert insert_statements(capsys.readouterr().out) == [
+        'INSERT INTO "erdgeist" VALUES '
+        "('1', 'O''Brien', 'C:\\x', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);",
+        'INSERT INTO "erdgeist" VALUES '
+        "('2', NULL, NULL, NULL, '2024-03-15', '09:30', NULL, NULL, NULL, NULL, NULL, NULL);",
+    ]
+
+
+def test_postgres_export_replaces_nul_with_u_fffd_and_reports_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dbdir = write_database(tmp_path / "db", [table_record({1: b"a\x00b"})])
+
+    assert export_to_stdout(dbdir, "--postgres") == 0
+
+    captured = capsys.readouterr()
+    (insert,) = insert_statements(captured.out)
+    assert "'a\ufffdb'" in insert
+    assert "\x00" not in captured.out
+    assert (
+        'warning: replaced_nul: table "erdgeist", record 1, field "Entry #2": the value holds NUL characters, which '
+        "PostgreSQL text cannot hold; they are written as U+FFFD" in captured.err
+    )
+    assert captured.err.splitlines()[-1] == "3 diagnostics: 2 unexpected_structure, 1 replaced_nul"
+
+
+def test_postgres_export_writes_a_file_that_o_names(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    output = tmp_path / "out.sql"
+
+    assert export_to_stdout(TEST_DB, "--postgres", "-o", str(output)) == 0
+
+    assert output.read_text(encoding="utf-8") == TEST_DB_SQL
+    assert capsys.readouterr().out == ""
+
+
+def test_postgres_export_refuses_a_file_that_exists(tmp_path: Path) -> None:
+    output = tmp_path / "out.sql"
+    output.write_text("kept")
+
+    with pytest.raises(SystemExit) as stopped:
+        export_to_stdout(TEST_DB, "--postgres", "-o", str(output))
+
+    assert stopped.value.code == 2
+    assert output.read_text() == "kept"
+
+
+@pytest.mark.parametrize(
+    ("options", "message"),
+    [(["--no-files"], "--no-files applies only to --csv"), (["--delimiter", ";"], "--delimiter applies only to --csv")],
+    ids=["no-files", "delimiter"],
+)
+def test_csv_options_with_another_format_are_usage_errors(
+    options: list[str], message: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as stopped:
+        export_to_stdout(TEST_DB, "--postgres", *options)
+
+    assert stopped.value.code == 2
+    assert message in capsys.readouterr().err
+
+
+def test_sql_column_names_are_unique_and_fit_postgres_identifiers() -> None:
+    fields = [
+        FieldDefinition("Системный номер", 0),
+        FieldDefinition("я" * 40, 1),
+        FieldDefinition("я" * 40 + "ж", 1),
+        FieldDefinition("same", 1),
+        FieldDefinition("SAME", 1),
+        FieldDefinition("", 1),
+        FieldDefinition('say "hi"', 1),
+    ]
+
+    names = unique_sql_column_names(fields)
+
+    assert len({name.casefold() for name in names}) == len(fields), names
+    assert all(len(name.encode("utf-8")) <= 63 for name in names), names
+    assert names[3:] == ["same", "SAME-4", "5", "say _hi_"]
+
+
+def test_sql_table_names_are_unique_and_fit_postgres_identifiers(tmp_path: Path) -> None:
+    dbdir = duplicate_table_name_database(tmp_path / "db", second_table_name=("я" * 100).encode("cp1251"))
+    used_names: dict[str, int] = {}
+
+    with open_bank(dbdir) as bank:
+        names = [unique_sql_table_name(table, used_names) for table in bank.tables]
+
+    assert names[0] == "erdgeist"
+    assert names[1] is not None
+    assert len(names[1].encode("utf-8")) <= 63
+
+
+def test_a_table_whose_sql_name_and_id_repeat_another_is_skipped(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    second = renamed_table_definition(erdgeist_table_definition(), name=b"ERDGEIST")
+    dbdir = database_with_extra_definition_key(tmp_path / "db", "Base002", second, [table_record({0: b"one"})])
+
+    assert export_to_stdout(dbdir, "--postgres") == 0
+
+    captured = capsys.readouterr()
+    assert [line for line in captured.out.splitlines() if line.startswith("CREATE")] == ['CREATE TABLE "erdgeist" (']
+    assert len(insert_statements(captured.out)) == 1
+    assert 'warning: duplicate_table: table "ERDGEIST": ' in captured.err
