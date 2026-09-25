@@ -4,10 +4,13 @@ import contextlib
 import functools
 import io
 import itertools
+import json
 import struct
+import subprocess
 from pathlib import Path
 
 import pytest
+from cli import run_command
 from cronos_builder import tad_layout
 
 import cronos_extract
@@ -196,3 +199,79 @@ def test_dbcrack_recovers_a_kod_that_opens_a_v4_database(dbdir: Path) -> None:
     # compact=True reads .tad entries on demand, so a multi-GB CroBank.tad is not loaded into memory.
     with cronos_extract.open(dbdir, kod=kod, compact=True) as bank:
         assert bank.tables
+
+
+# A command run over one real database is killed after this many seconds.
+EXPORT_TIMEOUT = 1800
+# The CSV export, which also writes every stored file, runs on this many of the smallest databases.
+CSV_DATABASES = 3
+
+
+def export_command(dbdir: Path, output: Path, *options: str) -> subprocess.CompletedProcess[str]:
+    return run_command("cli", ["export", *options, "--compact", "-o", str(output), str(dbdir)], timeout=EXPORT_TIMEOUT)
+
+
+def finished_or_failed_cleanly(result: subprocess.CompletedProcess[str]) -> bool:
+    """Assert that the command exited 0, or 1 with one Error line last; return whether it finished."""
+    assert "Traceback" not in result.stderr
+    if result.returncode == 0:
+        return True
+    lines = result.stderr.splitlines()
+    assert result.returncode == 1
+    assert [line for line in lines if line.startswith("Error: ")] == [lines[-1]]
+    return False
+
+
+def api_record_count(dbdir: Path) -> int:
+    """The number of records the API reads from the tables of `dbdir`, counting a repeated table once."""
+    with open_or_skip(dbdir, compact=True) as bank:
+        written: set[tuple[str, int]] = set()
+        count = 0
+        for table in bank.tables:
+            if (table.name, table.id) not in written:
+                written.add((table.name, table.id))
+                count += sum(1 for _ in table.records())
+        return count
+
+
+@functools.cache
+def smallest_databases() -> set[Path]:
+    sized = []
+    for surveyed in found_databases():
+        tad = named(surveyed.directory, "CroBank.tad")
+        if tad is not None:
+            sized.append((tad.stat().st_size, surveyed.directory))
+    return {directory for _, directory in sorted(sized)[:CSV_DATABASES]}
+
+
+def test_export_jsonl_holds_every_record_the_api_reads(dbdir: Path, tmp_path: Path) -> None:
+    if not bank_is_small(dbdir):
+        pytest.skip("CroBank is too large to walk once per table")
+    output = tmp_path / "out.jsonl"
+
+    result = export_command(dbdir, output, "--jsonl")
+
+    if finished_or_failed_cleanly(result):
+        lines = [json.loads(line) for line in output.read_bytes().decode("utf-8").split("\n")[:-1]]
+        assert sum(line["type"] == "record" for line in lines) == api_record_count(dbdir)
+
+
+def test_export_postgres_writes_one_insert_per_record(dbdir: Path, tmp_path: Path) -> None:
+    if not bank_is_small(dbdir):
+        pytest.skip("CroBank is too large to walk once per table")
+    output = tmp_path / "out.sql"
+
+    result = export_command(dbdir, output, "--postgres")
+
+    if finished_or_failed_cleanly(result):
+        sql = output.read_bytes().decode("utf-8")
+        assert sum(line.startswith('INSERT INTO "') for line in sql.split("\n")) == api_record_count(dbdir)
+
+
+def test_export_csv_writes_the_smallest_databases_with_their_files(dbdir: Path, tmp_path: Path) -> None:
+    if dbdir not in smallest_databases():
+        pytest.skip(f"the CSV export runs on the {CSV_DATABASES} smallest databases")
+
+    result = export_command(dbdir, tmp_path / "out", "--csv")
+
+    finished_or_failed_cleanly(result)
