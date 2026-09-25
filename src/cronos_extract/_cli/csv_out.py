@@ -50,7 +50,8 @@ class CsvWriter:
         self._stream: TextIO | None = None
         self._rows: RowWriter | None = None
 
-    def table(self, table: Table) -> None:
+    def table(self, table: Table) -> bool:
+        """Write the CSV file's header, or report duplicate_table and refuse the table."""
         self._close_table()
         name = unique_file_name(table.name, "csv", table.id, self._names)
         if name is None:
@@ -62,15 +63,16 @@ class CsvWriter:
                     table=table.name,
                 )
             )
-            return
+            return False
         # Kept open across record() calls until the next table() or close(); a context manager cannot span those.
         self._stream = open(self._directory / name, "x", encoding="utf-8", newline="")  # noqa: SIM115
         self._rows = csv.writer(self._stream, delimiter=self._delimiter)
         self._rows.writerow([field.name for field in table.fields])
+        return True
 
     def record(self, table: Table, record: Record) -> None:
-        if self._rows is None:
-            return
+        """Write `record`; called only after table() accepted `table`, so self._rows is not None."""
+        assert self._rows is not None, "record() is called only for a table that table() accepted"
         self._rows.writerow([field.text for field in record.fields])
         if self._files:
             for field in record.fields:

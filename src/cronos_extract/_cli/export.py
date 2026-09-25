@@ -30,7 +30,9 @@ class Writer(Protocol):
     for each problem, finish() once every table is written, and close() at the end, finished or not.
     """
 
-    def table(self, table: Table) -> None: ...
+    def table(self, table: Table) -> bool:
+        """Whether the writer accepted the table; the export reads its records only when it did."""
+        ...
 
     def record(self, table: Table, record: Record) -> None: ...
 
@@ -199,6 +201,7 @@ def walk(bank: Bank, writer: Writer, on_problem: Callable[[Problem], None]) -> N
             )
             continue
         written.add((table.name, table.id))
-        writer.table(table)
+        if not writer.table(table):
+            continue
         for record in table.records():
             writer.record(table, record)

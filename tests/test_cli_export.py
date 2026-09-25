@@ -259,6 +259,19 @@ def test_a_table_whose_safe_name_and_id_repeat_another_is_skipped(
     assert 'warning: duplicate_table: table "ERDGEIST": ' in capsys.readouterr().err
 
 
+def test_a_refused_tables_records_are_not_read_again(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    second = renamed_table_definition(erdgeist_table_definition(), name=b"ERDGEIST")
+    dbdir = database_with_extra_definition_key(
+        tmp_path / "db", "Base002", second, [table_record({0: b"one", 3: b"12x"})]
+    )
+
+    assert export_csv(dbdir, tmp_path / "out") == 0
+
+    lines = capsys.readouterr().err.splitlines()
+    assert sum("invalid_value" in line and "warning" in line for line in lines) == 1
+    assert "1 invalid_value" in lines[-1]
+
+
 def test_hostile_names_stay_inside_the_output_directory(tmp_path: Path) -> None:
     hostile = "../../etc/passwd"
     second = renamed_table_definition(patched_table_definition(tableid=2), name=hostile.encode("cp1251"))
