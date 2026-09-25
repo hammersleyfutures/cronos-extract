@@ -1,6 +1,7 @@
 # ABOUTME: Tests for the export subcommand: each format's layout, the -o rules, diagnostics and exit statuses.
 # ABOUTME: They export crafted databases from tests/cronos_builder.py, in this process or by running the command.
 import csv
+import json
 import os
 import re
 from pathlib import Path
@@ -434,3 +435,151 @@ def test_a_table_whose_sql_name_and_id_repeat_another_is_skipped(
     assert [line for line in captured.out.splitlines() if line.startswith("CREATE")] == ['CREATE TABLE "erdgeist" (']
     assert len(insert_statements(captured.out)) == 1
     assert 'warning: duplicate_table: table "ERDGEIST": ' in captured.err
+
+
+def jsonl_lines(output: str) -> list[dict[str, object]]:
+    assert output.endswith("\n")
+    return [json.loads(line) for line in output.split("\n")[:-1]]
+
+
+SECTION_2_DIAGNOSTICS = [
+    {
+        "type": "diagnostic",
+        "kind": "unexpected_structure",
+        "message": f"{key}: FieldDefinition Section 2 not marked with a 2",
+        "file": "CroStru.dat",
+        "table": None,
+        "record": None,
+        "field": None,
+    }
+    for key in ("Base000", "Base001")
+]
+TEST_TABLE_LINE = {
+    "type": "table",
+    "table": "erdgeist",
+    "table_id": 1,
+    "abbreviation": "ER",
+    "fields": [
+        {"name": name, "type": field_type}
+        for name, field_type in zip(HEADER, [0, 1, 2, 3, 4, 5, 6, 29, 7, 8, 9, 17], strict=True)
+    ],
+}
+
+
+def record_line(number: int, values: dict[str, object]) -> dict[str, object]:
+    """The JSON Lines record line of the test table's record `number`, whose fields are `values` or null."""
+    return {
+        "type": "record",
+        "table": "erdgeist",
+        "table_id": 1,
+        "record": number,
+        "fields": [{"name": name, "value": str(number) if name == HEADER[0] else values.get(name)} for name in HEADER],
+    }
+
+
+def test_jsonl_writes_the_table_line_for_a_table_without_records(capsys: pytest.CaptureFixture[str]) -> None:
+    assert export_to_stdout(TEST_DB, "--jsonl") == 0
+
+    assert jsonl_lines(capsys.readouterr().out) == [*SECTION_2_DIAGNOSTICS, TEST_TABLE_LINE]
+
+
+def test_jsonl_writes_each_value_as_d4_describes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    dbdir = write_database(
+        tmp_path / "db",
+        [
+            table_record({0: b"42", 3: b"1240315", 4: b"0930", 5: file_reference_field("scan", "jpg", 40)}),
+            table_record({3: b"850000", 5: file_reference_field("scan", "jpg", "abc")}),
+        ],
+    )
+
+    assert export_to_stdout(dbdir, "--jsonl") == 0
+
+    assert jsonl_lines(capsys.readouterr().out)[3:] == [
+        record_line(
+            1,
+            {
+                "Entry #1": "42",
+                "Entry #4": "2024-03-15",
+                "Entry #5": "09:30",
+                "Entry #6": {"name": "scan", "extension": "jpg", "record": 40},
+            },
+        ),
+        record_line(2, {"Entry #4": "1985-00-00", "Entry #6": {"name": "scan", "extension": "jpg", "record": None}}),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("date", "value", "message"),
+    [
+        (b"\x00" * 6, "", "the value is not a date; it is kept as text"),
+        (b"12x", "12x", "the value is not a date; it is kept as text"),
+    ],
+    ids=["nul-only", "not-a-date"],
+)
+def test_jsonl_writes_a_record_s_diagnostics_before_it_and_on_stderr(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], date: bytes, value: str, message: str
+) -> None:
+    dbdir = write_database(tmp_path / "db", [table_record({3: date})])
+
+    assert export_to_stdout(dbdir, "--jsonl") == 0
+
+    captured = capsys.readouterr()
+    assert jsonl_lines(captured.out)[3:] == [
+        {
+            "type": "diagnostic",
+            "kind": "invalid_value",
+            "message": message,
+            "file": "CroBank.dat",
+            "table": "erdgeist",
+            "record": 1,
+            "field": "Entry #4",
+        },
+        record_line(1, {"Entry #4": value}),
+    ]
+    assert f'warning: invalid_value: table "erdgeist", record 1, field "Entry #4": {message}' in captured.err
+
+
+def test_jsonl_is_utf8_text_not_ascii_escapes(capsys: pytest.CaptureFixture[str]) -> None:
+    assert export_to_stdout(TEST_DB, "--jsonl") == 0
+
+    assert '"Системный номер"' in capsys.readouterr().out
+
+
+def test_jsonl_writes_a_repeated_table_once_and_says_so_in_the_stream(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dbdir = database_with_extra_definition_key(
+        tmp_path / "db", "Base002", erdgeist_table_definition(), [table_record({0: b"one"})]
+    )
+
+    assert export_to_stdout(dbdir, "--jsonl") == 0
+
+    lines = jsonl_lines(capsys.readouterr().out)
+    assert [line["type"] for line in lines if line["type"] != "diagnostic"] == ["table", "record"]
+    assert {"kind": "duplicate_table", "table": "erdgeist"}.items() <= lines[-1].items()
+
+
+def test_jsonl_writes_both_tables_whose_names_differ_only_in_case(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    second = renamed_table_definition(erdgeist_table_definition(), name=b"ERDGEIST")
+    dbdir = database_with_extra_definition_key(tmp_path / "db", "Base002", second, [table_record({0: b"one"})])
+
+    assert export_to_stdout(dbdir, "--jsonl") == 0
+
+    lines = jsonl_lines(capsys.readouterr().out)
+    assert [(line["type"], line["table"]) for line in lines if line["type"] != "diagnostic"] == [
+        ("table", "erdgeist"),
+        ("record", "erdgeist"),
+        ("table", "ERDGEIST"),
+        ("record", "ERDGEIST"),
+    ]
+
+
+def test_jsonl_writes_to_the_file_o_names(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    output = tmp_path / "out.jsonl"
+
+    assert export_to_stdout(TEST_DB, "--jsonl", "-o", str(output)) == 0
+
+    assert jsonl_lines(output.read_text(encoding="utf-8")) == [*SECTION_2_DIAGNOSTICS, TEST_TABLE_LINE]
+    assert capsys.readouterr().out == ""

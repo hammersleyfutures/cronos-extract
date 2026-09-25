@@ -17,6 +17,7 @@ from .._api.diagnostics import Diagnostic
 from .._api.errors import CronosError
 from .._api.values import Record
 from .csv_out import CsvWriter
+from .jsonl_out import JsonlWriter
 from .options import Subcommands, kod_options, selected_kod
 from .report import DUPLICATE_TABLE, Failure, Problem, Report, error_message
 from .sql_out import SqlWriter
@@ -101,6 +102,9 @@ def add_parser(subcommands: Subcommands) -> None:
     )
     output_format.add_argument(
         "--postgres", action="store_true", help="write PostgreSQL CREATE TABLE and INSERT statements"
+    )
+    output_format.add_argument(
+        "--jsonl", action="store_true", help="write JSON Lines: one object per table, record and diagnostic"
     )
     parser.add_argument(
         "-o",
@@ -224,7 +228,8 @@ def make_writer(
         writer = CsvWriter(target, bank, problems.problem, delimiter=args.delimiter or ",", files=not args.no_files)
         return writer, target
     stream = open_stream(target, parser, stack)
-    return SqlWriter(stream, problems.problem), target
+    writer: Writer = SqlWriter(stream, problems.problem) if args.postgres else JsonlWriter(stream)
+    return writer, target
 
 
 def walk(bank: Bank, writer: Writer, on_problem: Callable[[Problem], None]) -> None:
