@@ -18,18 +18,20 @@ Every decision below was made with Ben on 2026-09-15.
 4. **API shape:** a façade. `cronos_extract.open(...)` returns a `Bank`; today's `Datafile`, `Database` and `Datamodel` become internal, with one reader per format version behind the façade.
 5. **Problem reporting:** structured `Diagnostic` objects collected on the bank, with an optional callback. The library never prints. Fatal problems raise named exceptions.
 6. **Field values:** three views per field — `value` (typed), `text` (display string) and `raw` (bytes). Numeric fields stay `str` in 1.0 until real databases show how CronosPro formats numbers.
-7. **Format support in 1.0:** CronosPro v7 (`01.19`), tables with ids above 255, and CRC checking of compressed chunks. Link fields (7, 8, 9, 17), dictionary fields (3), external files (29) and multi-valued fields come after 1.0.
+7. **Format support in 1.0:** tables with ids above 255 and CRC checking of compressed chunks. CronosPro v7 (`01.19`) comes after 1.0 (decision 13). Link fields (7, 8, 9, 17), dictionary fields (3), external files (29) and multi-valued fields come after 1.0.
 8. **Exports in 1.0:** CSV, PostgreSQL and JSON Lines. The HTML export and its template are removed.
-9. **Release:** nothing is published to PyPI before 1.0, and the repository stays private until then. If Phase 4 finds no real v7 file, 1.0 labels v7 as experimental; if v7 hits a blocker, the release plan is revisited with Ben.
+9. **Release:** nothing is published to PyPI before 1.0, and the repository stays private until then. 1.0 does not read v7 (decision 13).
 10. **Specs and plans** are committed to the repository.
-11. **v7 test files (decided 2026-09-16):** the Phase 0 survey of Ben's databases found no v7 — only `01.02` and `01.03` (v3) and `01.11` (v4). v7 samples will come from a file found online or one made with the CronosPro 7 trial software. Without one, decision 9 applies and 1.0 labels v7 as experimental.
+11. **v7 test files (decided 2026-09-16):** the Phase 0 survey of Ben's databases found no v7 — only `01.02` and `01.03` (v3) and `01.11` (v4). v7 samples will come from a file found online or one made with the CronosPro 7 trial software. No v7 file had been found by 2026-09-25, so v7 moved after 1.0 (decision 13).
 12. **`compact=False` stays the default (decided 2026-09-17):** `cronos_extract.open()` keeps `compact=False`, even
     though it reads the whole CroBank `.tad` index into memory, 4.1 GB for one real database. `--compact` and
     `compact=True` are the documented way to read a very large database. See the Phase 2 design, decision D13.
+13. **v7 after 1.0 (decided 2026-09-25):** the v7 reader (Phase 4) becomes a goal for after 1.0, because no real v7
+    file has been found to design and test it against. The phases before 1.0 are 3 and 5, in that order.
 
 ## Roadmap
 
-Each phase is a separate spec, plan and pull request, in this order.
+Each phase is a separate spec, plan and pull request, in this order. Phase 4 (v7) comes after 1.0 (decision 13).
 
 **Status (2026-09-25):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is complete: it is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below, and was merged as PR #9. Phase 2 is designed in `2026-09-17-phase2-command-line-design.md` and complete: implemented on branch `phase2-implementation` (`2026-09-25-phase2-command-line.md`), pull request pending Ben's approval.
 
@@ -49,9 +51,9 @@ The `cronos-extract` subcommands (`survey`, `export`, `inspect`, `crack`), globa
 
 Type annotations throughout; one record-decoding path in place of the copies in `Datafile.readrec` and `Datafile.dump`; a reader interface per format version; one CP-1251 decoding policy; one KOD-selection function; diagnostics in place of `print`. Fixes: tables with ids above 255, CRC checking, a diagnostic when a supplied KOD is not used, warnings printed once per problem instead of once per table pass, and the Files table header. The Phase 1 and Phase 2 tests guard every step.
 
-### Phase 4 — v7 reader
+### Phase 4 — v7 reader (after 1.0)
 
-A `01.19` reader behind the façade, from the research in alephdata/cronodump#24 (record envelope, plaintext CroBank, per-bank KOD, known-plaintext recovery) and a real v7 file (decision 11), with v7 support in `tests/cronos_builder.py` for crafted databases.
+A goal for after 1.0 (decision 13). A `01.19` reader behind the façade, from the research in alephdata/cronodump#24 (record envelope, plaintext CroBank, per-bank KOD, known-plaintext recovery) and a real v7 file (decision 11), with v7 support in `tests/cronos_builder.py` for crafted databases.
 
 ### Phase 5 — 1.0 release
 
@@ -59,7 +61,7 @@ Version 1.0, API documentation, PyPI publishing, making the repository public, d
 
 ### After 1.0
 
-KOD recovery that chooses the best whole permutation (an assignment problem, e.g. the Hungarian algorithm) instead of deciding each entry independently; link, dictionary, external-file and multi-valued fields; numeric value types; `crodump destruct` error handling; interactive crack exit statuses.
+KOD recovery that chooses the best whole permutation (an assignment problem, e.g. the Hungarian algorithm) instead of deciding each entry independently; link, dictionary, external-file and multi-valued fields; numeric value types; `inspect destruct` error handling; interactive crack exit statuses; the v7 reader of Phase 4.
 
 ### Open items carried forward
 
