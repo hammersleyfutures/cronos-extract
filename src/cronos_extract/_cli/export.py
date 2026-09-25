@@ -6,7 +6,7 @@ import io
 import os
 import sys
 from collections.abc import Callable, Iterator
-from contextlib import ExitStack, contextmanager
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import NoReturn, Protocol, TextIO, cast
@@ -209,15 +209,23 @@ def export(args: argparse.Namespace, parser: argparse.ArgumentParser, target: Pa
     """
     created: Path | None = None
     try:
-        with ExitStack() as stack:
-            bank = stack.enter_context(
-                open_bank(args.dbdir, kod=selected_kod(args), compact=args.compact, on_diagnostic=problems.diagnostic)
-            )
-            writer, created = make_writer(args, parser, bank, target, problems, stack)
-            stack.callback(writer.close)
-            problems.start(writer)
-            walk(bank, writer, problems.problem)
-            writer.finish()
+        with open_bank(
+            args.dbdir, kod=selected_kod(args), compact=args.compact, on_diagnostic=problems.diagnostic
+        ) as bank:
+            if args.csv:
+                assert target is not None, "--csv always has a target"
+                create_directory(target, parser)
+                created = target
+                write(
+                    bank,
+                    CsvWriter(target, bank, problems.problem, delimiter=args.delimiter or ",", files=not args.no_files),
+                    problems,
+                )
+            else:
+                with output_stream(target, parser) as stream:
+                    created = target
+                    writer: Writer = SqlWriter(stream, problems.problem) if args.postgres else JsonlWriter(stream)
+                    write(bank, writer, problems)
     except BrokenPipeError:
         raise
     except (CronosError, OSError, KeyboardInterrupt) as e:
@@ -228,23 +236,14 @@ def export(args: argparse.Namespace, parser: argparse.ArgumentParser, target: Pa
         raise Failure(f"{error_message(e)}; the output written so far is in {created}") from e
 
 
-def make_writer(
-    args: argparse.Namespace,
-    parser: argparse.ArgumentParser,
-    bank: Bank,
-    target: Path | None,
-    problems: Problems,
-    stack: ExitStack,
-) -> tuple[Writer, Path | None]:
-    """Create the output of the chosen format, returning its writer and the path created, None for stdout."""
-    if args.csv:
-        assert target is not None, "--csv always has a target"
-        create_directory(target, parser)
-        writer = CsvWriter(target, bank, problems.problem, delimiter=args.delimiter or ",", files=not args.no_files)
-        return writer, target
-    stream = stack.enter_context(output_stream(target, parser))
-    writer: Writer = SqlWriter(stream, problems.problem) if args.postgres else JsonlWriter(stream)
-    return writer, target
+def write(bank: Bank, writer: Writer, problems: Problems) -> None:
+    """Give `writer` every table of `bank` and finish it, closing it whether or not the export finished."""
+    try:
+        problems.start(writer)
+        walk(bank, writer, problems.problem)
+        writer.finish()
+    finally:
+        writer.close()
 
 
 def walk(bank: Bank, writer: Writer, on_problem: Callable[[Problem], None]) -> None:
