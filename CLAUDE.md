@@ -14,15 +14,15 @@ uv sync                                   # dev environment (Python 3.12+)
 uv run pre-commit install                 # ruff, ty and pytest before each commit
 uv run pytest -q                          # all tests
 uv run pytest -q -m realdata              # the real databases listed in local/, deselected by default; a node id needs -m realdata too
-uv run pytest -q tests/test_crodump.py::test_strudump_without_the_database_kod_stops_with_a_message
+uv run pytest -q tests/test_cli_inspect.py::test_strudump_without_the_database_kod_stops_with_a_message
 uv run ruff check && uv run ruff format --check && uv run ty check
 uv run pip-audit --skip-editable          # CI runs this in the lint job
 uv run pytest --update-golden             # rewrite tests/golden/ after a deliberate output change
-uv run croconvert --csv -o out test_data/all_field_types
-uv run croconvert -t postgres test_data/all_field_types
-uv run crodump strudump -v -a test_data/all_field_types
+uv run cronos-extract export --csv -o out test_data/all_field_types
+uv run cronos-extract export --postgres test_data/all_field_types
+uv run cronos-extract export --jsonl test_data/all_field_types
+uv run cronos-extract inspect strudump -v -a test_data/all_field_types
 uv run cronos-extract survey test_data    # report each database's format version
-uv run python -m cronos_extract.dumpdbfields test_data/all_field_types   # example script, no console entry point
 ```
 
 - pytest runs with `filterwarnings = error`, so any warning fails a test.
@@ -37,9 +37,9 @@ The code is layered, from bytes up to commands (`src/cronos_extract/`):
 - **Public API** (`cronos_extract/__init__.py`, implemented in `_api/`): `open()` returns a `Bank` of `Table`s whose
   `records()` yield `Record`s of `Field`s with `value`, `text` and `raw`; problems it survives are `Diagnostic`s,
   and a database it cannot read raises a `CronosError`. It drives `Datafile`, `Database.read_db_definition`,
-  `TableDefinition` and `Datamodel.Record` directly, never the printing `enumerate_*` generators, and passes a
-  `warn` hook to the readers that print. Only names in `__all__` are public. `_format/files.py`'s
-  `open_regular_file` is the one way Cro files are opened.
+  `TableDefinition` and `Datamodel.Record` directly, never the printing `enumerate_*` generators, which only tests
+  still call, and passes a `warn` hook to the readers that print. Only names in `__all__` are public.
+  `_format/files.py`'s `open_regular_file` is the one way Cro files are opened.
 - **`Datafile`**: one `.dat`/`.tad` pair. The `.tad` is an index of `(offset, length, flags)` entries, where a length of
   `0xFFFFFFFF` means deleted. Record numbers start at 1. `readrec(idx)` reassembles extended records from extension
   blocks, KOD-decodes the data using the record number as the shift (when bit 0 of the `.dat` header's encoding field
@@ -49,22 +49,25 @@ The code is layered, from bytes up to commands (`src/cronos_extract/`):
   and closes them via `with Database(...)`. CroStru record 1 holds the *database definition*, a list of key/value pairs.
   A value is either inline, or a reference to another CroStru record when the high bit of its length is clear.
   `BaseNNN` keys are table definitions, and `Base000` is the Files table that stores embedded files.
-  `enumerate_tables`, `enumerate_records` and `enumerate_files` are the API that exports use. The Database directory
-  maps to the Cronos "Bank", a table to a "Base", and a record id to the "System Number".
+  `enumerate_tables` is also used internally, by `files_tableid`; `enumerate_records` is used only by tests (the
+  Phase 1 parity tests and `test_cronos_builder.py`), and `enumerate_files` has no caller left. The Database
+  directory maps to the Cronos "Bank", a table to a "Base", and a record id to the "System Number".
 - **`Datamodel`**: `TableDefinition`/`FieldDefinition` decode definitions, and `Record`/`Field` turn record bytes into
   presentable content (dates, times, text). Field type 6 is a file reference into the Files table. Record fields that
-  fail to decode are left empty and counted in `Database.incomplete_records`.
+  fail to decode are left empty and counted in `Database.incomplete_records`, which no caller reads anymore.
 - **Commands**:
-  - `cronos-extract` (`cli.py`) has one subcommand, `survey`, which walks the directories it is given for `Cro*.dat`
-    files and reports each file's format version, generation and encoding flags from `survey.py`. It reads only the
-    19-byte `.dat` header, never a `.tad` file or a record. `--counts` and `--jsonl` choose the output format, and
-    `--list` takes a file naming the directories.
-  - `croconvert` exports CSV (`csv_output`) or renders a Jinja2 template from `src/cronos_extract/templates/`. The
-    templates call `db.enumerate_*` and helpers passed in from `croconvert.py`, such as `unique_sql_table_name` and
-    `sql_value`. Only `html.j2` is autoescaped.
-  - `crodump` has the inspection subcommands (`strudump`, `crodump`, `recdump`, `destruct`, `kodump`) plus `strucrack`
-    and `dbcrack`.
-  - `dumpdbfields` is an example of the Database API.
+  - `cronos-extract` (`cli.py`) builds the parser and dispatches to four subcommands; its `main()` is the one place
+    that turns an exception into an `Error:` line and an exit status (0 finished, 1 cannot read or failed, 2 usage,
+    130 interrupted), and it escapes everything written to stderr.
+  - `survey` walks directories for `Cro*.dat` files and reports each file's format version, generation and encoding
+    flags from `survey.py`, reading only the 19-byte `.dat` header. `--counts` and `--jsonl` choose the output
+    format, and `--list` takes a file naming the directories.
+  - `export` (`_cli/export.py`) opens the database through the public API and walks its tables once, handing each
+    table and record to one writer: `_cli/csv_out.py`, `_cli/sql_out.py` or `_cli/jsonl_out.py`. `_cli/report.py`
+    prints each diagnostic and the summary; `_cli/names.py` makes file names and SQL identifiers safe and unique.
+  - `inspect` (`_cli/inspect.py`) has `strudump`, `recdump`, `crodump`, `destruct` and `kodump` over the internal
+    readers, opening the Cro files itself so that only a file the subcommand reads can stop it.
+  - `crack` (`_cli/crack.py`) has `strucrack` and `dbcrack` over `_api/crack.py`'s statistics.
 - **`readers.ByteReader`** is the sequential reader every decoder uses. It raises `EOFError` past the end and decodes
   names as CP-1251, replacing undefined bytes.
 
@@ -75,21 +78,22 @@ Records are obfuscated with a byte substitution table (KOD): `plain[i] = (KOD[en
 
 `Datafile` uses a KOD table given with `--kod` only when the file is encrypted with its own table: versions `01.04`,
 `01.05` and v4. For other files it quietly substitutes the default `INITIAL_KOD`. `--nokod` passes no KOD, which turns
-decoding off for every file. So `--kod` has no effect on `test_data/all_field_types`, whose records are encoded with
-`INITIAL_KOD`, but `--nokod` does. To test a wrong or custom KOD, build an encrypted database, e.g.
+decoding off for every file. So `export --kod` has no effect on `test_data/all_field_types`, whose records are
+encoded with `INITIAL_KOD`, but `--nokod` does. To test a wrong or custom KOD, build an encrypted database, e.g.
 `write_database(dir, records, kod=random_kod(seed=1))`.
 
-`strucrack` and `dbcrack` derive a KOD statistically. They return `None` when they can't produce a permutation. Every
-command's `--strucrack`/`--dbcrack` goes through `crodump.crack_kod(method, dbdir, compact)`.
+`crack strucrack` and `crack dbcrack` derive a KOD statistically and print it; `cronos_extract.crack_kod(path, method)`
+does the same without printing and returns `None` when it can't produce a permutation. `export --crack` and
+`inspect … --crack` call `crack_kod`.
 
 ### Error-handling conventions
 
-- Diagnostics (warnings, errors, crack output) go to **stderr**. croconvert writes HTML/SQL to stdout, so a stray
-  `print` corrupts the export.
+- Diagnostics go to **stderr**, escaped, one line each, through `_cli/report.py`; `export` writes SQL and JSON Lines
+  to stdout, so a stray `print` corrupts the export.
 - Corrupt structures raise `ValueError` naming the record and file. Readers of CroBank records turn that into
   `LookupError`, then warn and skip the record (`Database.readbankrec`). Exports keep going and report counts at the end.
-- A database definition that can't be decoded prints the error and then `KOD_HINT`. `strudump` exits 1 with
-  `Error: ...` instead of a traceback.
+- A database definition that can't be decoded is `DatabaseDefinitionError`: `export` exits 1 with one `Error:` line
+  naming `cronos-extract crack strucrack`; `inspect strudump` prints the error and `KOD_HINT`.
 
 ## Tests
 
@@ -98,6 +102,8 @@ command's `--strucrack`/`--dbcrack` goes through `crodump.crack_kod(method, dbdi
   `write_raw_datafile` lays out `.dat`/`.tad` bytes directly.
 - Command tests run the real command in a subprocess via `tests/cli.py::run_command(module, args, cwd=None, stdin=None)`
   and assert on stdout, stderr and the exit status.
+- Before a subcommand is wired into `cli.py`, or to read its output in this process,
+  `tests/cli.py::run_in_process(add_parser, args)` parses real arguments and runs the handler.
 - `tests/test_cli_characterisation.py` compares full command output with `tests/golden/`.
 - `local/` is gitignored and holds machine-local test assets. `local/mash_datasets_with_CroIndex_dat.txt` lists
   real CronosPro database directories (v3 `01.02` and `01.03`, v4 `01.11`, no v7) for

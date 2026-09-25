@@ -14,16 +14,87 @@ is kept in this repository.
 
 # Quick start
 
-In its simplest form, the croconvert command creates a [CSV](https://en.wikipedia.org/wiki/Comma-separated_values) representation of all the database's tables and a copy of all files contained in the database:
-
 ```bash
 uv tool install git+https://github.com/hammersleyfutures/cronos-extract
-croconvert --csv test_data/all_field_types
+cronos-extract export --csv test_data/all_field_types
 ```
 
-By default it creates a `cronodump-YYYY-mm-DD-HH-MM-SS-ffffff/` directory containing CSV files for each table found. It will under this directory also create a `Files-FL/` directory containing all the files stored in the Database, regardless if they are (still) referenced in any data table. All files that are actually referenced (and thus are known by their filename) will be stored under the `Files-Referenced` directory. With the `--outputdir` option you can chose your own dump location.
+This creates a `cronos-extract-YYYY-mm-dd-HH-MM-SS-ffffff/` directory holding a CSV file for each table, a
+`Files-FL/` directory holding every file stored in the database, whether or not a record still refers to it, and,
+once a record refers to a file, a `Files-Referenced/` directory holding the files the records refer to, under their
+own names. `-o DIR` names the directory instead; it must not exist, because an export never overwrites anything.
 
-When you get an error message, or just unreadable data, chances are your database is protected. You may need to look into the `--dbcrack` or `--strucrack` options, explained below.
+If the export stops with an error about the database definition, or its output is unreadable, the database is
+probably encrypted with its own KOD; see [Recovering the KOD](#recovering-the-kod-of-an-encrypted-database).
+
+
+# Exporting
+
+`cronos-extract export` writes every table of a database in one of three formats: `--csv`, `--postgres` or
+`--jsonl`. Every problem it meets while reading, such as a corrupt record, is printed on stderr as it happens, one
+line each, and the export carries on. The last line of stderr counts them by kind:
+
+```
+warning: corrupt_record: CroBank.dat record 88: CroBank record 88 is corrupt and is skipped: EOFError
+
+1 diagnostic: 1 corrupt_record
+```
+
+The export exits with status 0 when it finished, whatever it reported; with 1 when the database cannot be read at
+all, with one `Error:` line last on stderr; and with 2 for a mistake in the command. `--strict` makes it exit 1 when
+anything was reported, after writing the whole export. The databases in `test_data` report that their table
+definitions are laid out unexpectedly, so `--strict` exits 1 for them.
+
+Write the PostgreSQL and JSON Lines exports to a file with `-o FILE`, which must not exist, rather than to a
+terminal: a database's names and values can hold characters that a terminal interprets. stderr is safe: everything
+the command prints there is escaped.
+
+## CSV
+
+`--csv` creates a directory holding `<table name>.csv` for each table, UTF-8 without a byte order mark. The first row
+holds the field names, starting with the system number. `--delimiter ';'` changes the delimiter, and `--no-files`
+leaves out the two file directories. Names are made safe for Linux, macOS and Windows, unique within the directory,
+and at most 255 bytes long.
+
+The cells hold exactly what the database holds, including text that a spreadsheet reads as a formula. Open a CSV
+file through the spreadsheet's CSV import, as UTF-8, never by double-clicking it.
+
+## PostgreSQL
+
+`--postgres` writes a `CREATE TABLE` statement per table and an `INSERT` statement per record. Every column is
+declared `TEXT`, the system number included, so every record loads even when a value does not match its field type.
+Values are written exactly as they are decoded: dates as `YYYY-MM-DD`, times as `HH:MM`, and empty values as `NULL`.
+Cast columns in SQL when you need types, for example `"Entry #4"::date`. The output starts with
+`SET standard_conforming_strings = on;`, so its string literals load correctly whatever the server's setting.
+PostgreSQL text cannot hold a NUL character, so a NUL in a value is written as U+FFFD and reported as `replaced_nul`.
+Stored files are not included; use `--csv` for them.
+
+## JSON Lines
+
+`--jsonl` writes one JSON object per line: a `table` line before the table's records, a `record` line per record,
+and a `diagnostic` line for each problem, where it happened, so a script can tell which records had problems
+without reading stderr.
+
+```json
+{"type": "table", "table": "Люди", "table_id": 1, "abbreviation": "ЛЮ", "fields": [{"name": "Системный номер", "type": 0}, {"name": "ФИО", "type": 2}]}
+{"type": "record", "table": "Люди", "table_id": 1, "record": 12, "fields": [{"name": "Системный номер", "value": "3"}, {"name": "ФИО", "value": "Иванов"}]}
+{"type": "diagnostic", "kind": "invalid_value", "message": "the value is not a date; it is kept as text", "file": "CroBank.dat", "table": "Люди", "record": 13, "field": "Дата"}
+```
+
+Each record line names its table and its fields, in the order the table defines them, so it can be read on its own.
+A field's `value` is `null` when the field is empty, a date as `"1985-04-02"` (or `"1985-00-00"` when only the year is
+stored), a time as `"14:30"`, `{"name": …, "extension": …, "record": …}` for a stored file, and otherwise the text.
+Stored files are not included; use `--csv` for them.
+
+```bash
+cronos-extract export --jsonl -o people.jsonl test_data/all_field_types
+jq -r 'select(.type == "record") | .fields[] | select(.name == "Entry #1") | .value' people.jsonl
+```
+
+## Large databases
+
+`--compact` reads the indexes from disk instead of memory. Use it for a very large database, whose CroBank index can
+take gigabytes of memory; it is about 15% slower.
 
 
 # Surveying databases
@@ -54,6 +125,49 @@ version it finds, including v7 and versions it does not recognise. The export an
 and do not read v7 yet.
 
 
+# Inspection
+
+`cronos-extract inspect` shows what the export hides, for studying the file format. Some experience with binary
+dumps helps: not all of the format is understood yet.
+
+```bash
+cronos-extract inspect strudump -v -a test_data/all_field_types   # the database and table definitions, as text
+cronos-extract inspect crodump -v test_data/all_field_types        # every Cro file, byte range by byte range
+cronos-extract inspect recdump test_data/all_field_types           # a hexdump of every CroBank record
+```
+
+`recdump --stru`, `--index` or `--sys` dumps that file's records instead. `destruct` decodes a definition given as
+hex on stdin, and `kodump` KOD-decodes a byte range of any file. Each takes `--help`.
+
+
+# Recovering the KOD of an encrypted database
+
+CronosPro can protect a database with a password, which encrypts it with its own KOD table in place of the default
+one. `cronos-extract crack` recovers that KOD from the encrypted records without the password. Both methods are
+statistical and may not find every entry.
+
+`crack dbcrack` reads the fourth byte of the CroBank and CroIndex records, which decodes to zero when a record is
+compressed:
+
+```bash
+KOD=$(cronos-extract crack dbcrack --silent /path/to/database)
+cronos-extract export --csv --kod "$KOD" /path/to/database
+```
+
+`crack strucrack` reads CroStru, most of whose bytes are zero. When it cannot resolve every entry, it shows the
+records as far as it can decode them, suggests `-f` switches where it recognises known text, and prints the missing
+entries and its estimate on stderr. Add the switches, or `--text record:line:offset:plaintext` for text you can read,
+and run it again until it prints the KOD:
+
+```bash
+cronos-extract crack strucrack /path/to/database
+cronos-extract crack strucrack -f f103=B -f f10342 /path/to/database
+```
+
+`export --crack dbcrack` or `--crack strucrack` recovers the KOD first and exports with it in one step, and exits 1
+when the method cannot.
+
+
 # Python API
 
 cronos-extract is also a library. The command line is being rebuilt on it.
@@ -75,81 +189,12 @@ a `cronos_extract.CronosError`. `cronos_extract.crack_kod(path, "strucrack")` or
 database encrypted with its own. The module docstring (`help(cronos_extract)`) lists what the API promises.
 
 
-# Templates
-
-The croconvert command uses the [jinja templating framework](https://jinja.palletsprojects.com/) to render more file formats like PostgreSQL and HTML.
-The default action for `croconvert` is to convert the database using the `html` template:
-
-```bash
-croconvert test_data/all_field_types > test_data.html
-```
-
-This dumps an HTML file with all tables found in the database, files listed and ready for download as inlined [data URI](https://en.wikipedia.org/wiki/Data_URI_scheme) and all table images inlined as well. Note that the resulting HTML file can be huge for large databases, causing a lot of load on browsers when trying to open them.
-
-
-The `-t postgres` command will dump the table schemes and records as valid `CREATE TABLE` and `INSERT INTO` statements to stdout. This dump can then be imported in a PostgreSQL database. Each record becomes its own `INSERT` statement. Every column is declared `TEXT`, the system number included, so every record loads even when a value doesn't match its field type. Values are written exactly as croconvert decodes them: dates as `YYYY-MM-DD`, times as `HH:MM`, and empty values as `NULL`. Cast columns in SQL when you need types, for example `"Entry #4"::date`. Values are written as standard SQL string literals: single quotes are doubled and backslashes are kept as they are. This is correct when the [`standard_conforming_strings`](https://www.postgresql.org/docs/current/runtime-config-compatible.html#GUC-STANDARD-CONFORMING-STRINGS) option is on, which is the default since PostgreSQL 9.1. Do not import the dump with that option turned off.
-
-Pull requests for [more templates supporting other output types](src/cronos_extract/templates) are welcome.
-
-
-# Inspection
-
-The `crodump` command helps to further investigate databases. This might be useful for extracting metadata like path names of table image files or input and output forms. Not all metadata has yet been completely reverse engineered, so some experience with understanding binary dumps might be required.
-
-The crodump command has a plethora of options but in the most basic for the `strudump` sub command will provide a rich variety of metadata to look further:
-
-```bash
-crodump strudump -v -a test_data/all_field_types/
-```
-The `-a` option tells strudump to output ascii instead of a hexdump.
-
-For a low level dump of the database contents, use:
-```bash
-crodump crodump -v  test_data/all_field_types/
-```
-The `-v` option tells crodump to include all unused byte ranges, this may be useful when identifying deleted records.
-
-For a bit higher level dump of the database contents, use:
-```bash
-crodump recdump  test_data/all_field_types/
-```
-This will print a hexdump of all records for all tables.
-
-
-## decoding password protected databases
-
-Cronos v4 and higher are able to password protect databases, the protection works
-by modifying the KOD sbox. cronos-extract has two methods of deriving the KOD sbox from
-a database:
-
-Both these methods are statistics based operations, it may not always
-yield the correct KOD sbox.
-
-
-### 1. strudump
-
-When the database has a sufficiently large CroStru.dat file,
-it is easy to derive the nodified KOD-sbox from the CroStru file, the `--strucrack` option
-will do this. 
-
-    crodump --strucrack  recdump <dbpath>
-
-### 2. dbdump
-
-When the Bank and Index files are compressed, we can derive the KOD sbox by inspecting
-the fourth byte of each record, which should decode to a zero.
-
-The `--dbcrack` option will do this.
-
-    crodump --dbcrack  recdump <dbpath>
-
-
 # Installing
 
-cronos-extract requires Python 3.12 or later and installs the `Jinja2` templating engine as its only dependency.
+cronos-extract requires Python 3.12 or later and has no other dependencies.
 
- * Install the `cronos-extract`, `crodump` and `croconvert` commands with `uv tool install git+https://github.com/hammersleyfutures/cronos-extract`.
- * Or run them from a clone of this repository with `uv run cronos-extract ...`, `uv run crodump ...` and `uv run croconvert ...`.
+ * Install the `cronos-extract` command with `uv tool install git+https://github.com/hammersleyfutures/cronos-extract`.
+ * Or run it from a clone of this repository with `uv run cronos-extract ...`.
 
 
 # Development
