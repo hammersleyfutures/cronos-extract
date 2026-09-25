@@ -28,6 +28,10 @@ Every decision below was made with Ben on 2026-09-15.
     `compact=True` are the documented way to read a very large database. See the Phase 2 design, decision D13.
 13. **v7 after 1.0 (decided 2026-09-25):** the v7 reader (Phase 4) becomes a goal for after 1.0, because no real v7
     file has been found to design and test it against. The phases before 1.0 are 3 and 5, in that order.
+14. **Phase 3 in four parts (decided 2026-09-25):** 3a the Datafile core (one record-decoding path, a `.tad`
+    layout per version, CRC checking, a decompression limit), 3b definitions and diagnostics, 3c bank reading (the
+    single-pass walk, KOD selection, file-reference context) and 3d research into v4 on real databases. Each has its
+    own spec, plan and pull request; 3a is designed in `2026-09-25-phase3a-datafile-core-design.md`.
 
 ## Roadmap
 
@@ -49,7 +53,7 @@ The `cronos-extract` subcommands (`survey`, `export`, `inspect`, `crack`), globa
 
 ### Phase 3 — restructure behind the façade
 
-Type annotations throughout; one record-decoding path in place of the copies in `Datafile.readrec` and `Datafile.dump`; a reader interface per format version; one CP-1251 decoding policy; one KOD-selection function; diagnostics in place of `print`. Fixes: tables with ids above 255, CRC checking, a diagnostic when a supplied KOD is not used, warnings printed once per problem instead of once per table pass, and the Files table header. The Phase 1 and Phase 2 tests guard every step.
+Type annotations throughout; one record-decoding path in place of the copies in `Datafile.readrec` and `Datafile.dump`; a reader interface per format version; one CP-1251 decoding policy; one KOD-selection function; diagnostics in place of `print`. Fixes: tables with ids above 255, CRC checking, a diagnostic when a supplied KOD is not used, warnings printed once per problem instead of once per table pass, and the Files table header. The Phase 1 and Phase 2 tests guard every step. Delivered as 3a–3d (decision 14).
 
 ### Phase 4 — v7 reader (after 1.0)
 
