@@ -10,6 +10,9 @@ from .._api.bank import DEFINITION_HINT
 from .._api.diagnostics import Diagnostic, DiagnosticKind
 from ..Database import KOD_HINT
 
+# The canonical names of the two files a Problem can name, as the API names them.
+STRU_FILE = "CroStru.dat"
+BANK_FILE = "CroBank.dat"
 # Kinds the command reports itself, for problems of writing the output rather than of reading the database.
 DUPLICATE_TABLE = "duplicate_table"
 REPLACED_NUL = "replaced_nul"
@@ -141,6 +144,8 @@ class Report:
         self._counts: Counter[str] = Counter()
 
     def problem(self, problem: Problem) -> None:
+        if problem.kind not in KIND_ORDER:
+            raise ValueError(f"{problem.kind!r} is not a known kind of problem")
         self._counts[problem.kind] += 1
         print(format_problem(problem), file=sys.stderr)
 

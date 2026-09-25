@@ -19,10 +19,9 @@ from .._api.values import Record
 from .csv_out import CsvWriter
 from .jsonl_out import JsonlWriter
 from .options import Subcommands, kod_options, selected_kod
-from .report import DUPLICATE_TABLE, Failure, Problem, Report, error_message
+from .report import DUPLICATE_TABLE, STRU_FILE, Failure, Problem, Report, error_message
 from .sql_out import SqlWriter
 
-STRU_FILE = "CroStru.dat"
 # The exit status of a command stopped by Ctrl-C, as a shell reports it: 128 plus SIGINT's number.
 INTERRUPTED_STATUS = 130
 

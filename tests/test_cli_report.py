@@ -8,6 +8,7 @@ from cronos_extract import DatabaseDefinitionError, Diagnostic, DiagnosticKind
 from cronos_extract._api.bank import DEFINITION_HINT
 from cronos_extract._cli.report import (
     DUPLICATE_TABLE,
+    KIND_ORDER,
     REPLACED_NUL,
     EscapingStream,
     Failure,
@@ -139,6 +140,22 @@ def test_the_summary_counts_kinds_in_declaration_order_with_command_kinds_last(
     assert capsys.readouterr().err == (
         "\n5 diagnostics: 1 corrupt_record, 2 invalid_value, 1 duplicate_table, 1 replaced_nul\n"
     )
+
+
+def test_the_summary_includes_every_kind_in_kind_order() -> None:
+    report = Report()
+    for kind in KIND_ORDER:
+        report.problem(Problem(kind, "m"))
+
+    summary = report.summary()
+
+    for kind in KIND_ORDER:
+        assert kind in summary, summary
+
+
+def test_report_problem_rejects_a_kind_not_in_kind_order() -> None:
+    with pytest.raises(ValueError, match="not_a_real_kind"):
+        Report().problem(Problem("not_a_real_kind", "m"))
 
 
 def test_one_diagnostic_is_counted_in_the_singular() -> None:

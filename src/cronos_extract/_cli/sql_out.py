@@ -6,10 +6,7 @@ from typing import TextIO
 from .._api.bank import Table
 from .._api.values import Field, FieldDefinition, Record
 from .names import POSTGRES_IDENTIFIER_BYTES, unique_name
-from .report import DUPLICATE_TABLE, REPLACED_NUL, Problem
-
-BANK_FILE = "CroBank.dat"
-STRU_FILE = "CroStru.dat"
+from .report import BANK_FILE, DUPLICATE_TABLE, REPLACED_NUL, STRU_FILE, Problem
 
 
 def sql_identifier_text(name: str) -> str:

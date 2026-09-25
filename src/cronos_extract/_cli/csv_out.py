@@ -10,10 +10,9 @@ from typing import TextIO
 from .._api.bank import Bank, Table
 from .._api.values import FieldValue, FileReference, Record
 from .names import unique_file_name
-from .report import DUPLICATE_TABLE, Problem
+from .report import DUPLICATE_TABLE, STRU_FILE, Problem
 
 FIELD_TYPE_FILE = 6
-STRU_FILE = "CroStru.dat"
 REFERENCED_DIRECTORY = "Files-Referenced"
 # The number Files-Referenced is claimed with: no table id is negative, so no other name can be taken for it.
 REFERENCED_NUMBER = -1
