@@ -1,0 +1,9 @@
+
+Ambiguous result when cracking. 6 entries unsolved. Missing mappings:
+[6f, 82, 95, 97, bd, dc] => [5d, 62, 79, b1, e2, e6]
+
+KOD estimate:
+08638138a36b82a6180dacd5febe15f6a53676e12d41b5124bd83c5634464fa4d0018b600f70573e0667027af88c80e8c3fd0a3aa773b04d99a2f1fb5ac7c2179671ba2aa99af387ea8e099eb947d497e4b3bc58535f2e21d11aee2c6495f2b8c6338d2b1ff725adff7f39a8bf6a91??ed207ba1bb4569cddce731aaf065d7a03293??24d65b9f27428507443fb411685e49291394??1b??7dc82ffa781de3de504e89b630480c100543ced3615183da776f929d747c04888655caf4c1??0e28b70bc0f5cf35c54c16e098009bd9ae03afecc9db6d3b26753dbdb24a??6c72407eab5952549cd2e9efdd371e8fcb8a90fc84e5f91419df6e23c466ebcc221c5c
+
+If you can provide clues for unresolved KOD entries by looking at the output, pass them via
+cronos-extract crack strucrack -f f103=B  -f f10342

@@ -19,7 +19,7 @@ from .readers import ByteReader
 # Printed after a database definition error: a KOD that isn't the database's own decodes the definition as garbage.
 KOD_HINT = (
     "If the KOD used to read this database is not its own, the definition decodes as garbage; "
-    "crodump strucrack can derive the database's KOD."
+    "cronos-extract crack strucrack can derive the database's KOD."
 )
 
 # The files a Database opens unless told otherwise.
