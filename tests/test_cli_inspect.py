@@ -482,6 +482,17 @@ def test_destruct_of_a_definition_it_cannot_decode_fails_with_one_error_line(
     assert result.stderr.splitlines() == [error]
 
 
+def test_destruct_of_a_crosys_type_3_record_says_it_cannot_be_decoded() -> None:
+    result = run_command("cli", ["inspect", "destruct", "-t", "3"], stdin="03")
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == (
+        "Error: the definition on stdin cannot be decoded: "
+        "ValueError: CroSys record type 3 cannot be decoded: its layout is not known\n"
+    )
+
+
 def test_crodump_prints_a_reader_diagnostic_as_a_warning_line(tmp_path: Path) -> None:
     dbdir = write_database(tmp_path / "db", [])
     with (Path(dbdir) / "CroBank.tad").open("ab") as tad:
