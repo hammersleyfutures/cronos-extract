@@ -37,7 +37,7 @@ Every decision below was made with Ben on 2026-09-15.
 
 Each phase is a separate spec, plan and pull request, in this order. Phase 4 (v7) comes after 1.0 (decision 13).
 
-**Status (2026-09-25):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is complete: it is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below, and was merged as PR #9. Phase 2 is designed in `2026-09-17-phase2-command-line-design.md` and complete: implemented on branch `phase2-implementation` (`2026-09-25-phase2-command-line.md`), pull request pending Ben's approval. Phase 3a is designed in `2026-09-25-phase3a-datafile-core-design.md` and complete: implemented on branch `phase3a-datafile-core` (`2026-09-25-phase3a-datafile-core.md`), pull request pending. Phase 3b is designed in `2026-09-26-phase3b-definitions-diagnostics-design.md` and complete: implemented on branch `phase3b-definitions-diagnostics`, pull request pending.
+**Status (2026-09-26):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is complete: it is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below, and was merged as PR #9. Phase 2 is designed in `2026-09-17-phase2-command-line-design.md` and was merged as PR #11. Phase 3a is designed in `2026-09-25-phase3a-datafile-core-design.md` and was merged as PR #12. Phase 3b is designed in `2026-09-26-phase3b-definitions-diagnostics-design.md` and complete: implemented on branch `phase3b-definitions-diagnostics` (`2026-09-26-phase3b-definitions-diagnostics.md`), pull request pending.
 
 ### Phase 0 — version survey
 
