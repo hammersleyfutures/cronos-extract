@@ -27,7 +27,7 @@ class Diagnostic:
 
     `file` is a canonical file name such as "CroBank.dat", `table` a table name, `record` a record number in `file`
     (in CroBank when a table is named) and `field` a field name, each None when it does not apply. The message never
-    holds record data.
+    holds CroBank record data.
     """
 
     kind: DiagnosticKind
