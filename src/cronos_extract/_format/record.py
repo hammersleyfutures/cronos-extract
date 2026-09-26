@@ -95,15 +95,15 @@ def read_extended(source: RecordSource, where: str, first: bytes, flags: int) ->
 
     data = bytearray(first[headersize:])
     chain = [extofs]
-    seen = {extofs}
+    seen: set[int] = set()
     while len(data) < extlen:
+        if extofs in seen:
+            raise ValueError(f"{where} has a loop in its extension blocks at offset {extofs:#x}")
+        seen.add(extofs)
         block = source.read(extofs, source.blocksize)
         if len(block) <= pointersize:
             raise ValueError(f"{where} has an extension block past the end of the file at offset {extofs:#x}")
         (extofs,) = struct.unpack(pointerformat, block[:pointersize])
-        if extofs in seen:
-            raise ValueError(f"{where} has a loop in its extension blocks at offset {extofs:#x}")
-        seen.add(extofs)
         chain.append(extofs)
         data += block[pointersize:]
     return RecordParts(

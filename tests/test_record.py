@@ -70,6 +70,27 @@ def test_a_record_in_extension_blocks_is_reassembled() -> None:
     assert parts == RecordParts(b"0123456789abcdefghij", 0, extended=True, chain=(100, 200), length=20)
 
 
+def test_a_records_last_extension_block_may_point_back_to_an_earlier_offset() -> None:
+    first = struct.pack("<LL", 100, 32) + b"01234567"
+    block_at_100 = struct.pack("<L", 116) + b"89abcdefghij"
+    block_at_116 = struct.pack("<L", 100) + b"KLMNOPQRSTUV"
+    data = first + bytes(100 - len(first)) + block_at_100 + block_at_116
+
+    parts = decode_record(source_of(data), 1, extended(0, len(first)))
+
+    assert parts == RecordParts(b"0123456789abcdefghijKLMNOPQRSTUV", 0, extended=True, chain=(100, 116, 100), length=32)
+
+
+def test_a_records_last_extension_block_may_point_at_itself() -> None:
+    first = struct.pack("<LL", 100, 20) + b"01234567"
+    block = struct.pack("<L", 100) + b"89abcdefghij"
+    data = first + bytes(100 - len(first)) + block
+
+    parts = decode_record(source_of(data), 1, extended(0, len(first)))
+
+    assert parts == RecordParts(b"0123456789abcdefghij", 0, extended=True, chain=(100, 100), length=20)
+
+
 def test_a_record_the_file_cuts_short_is_reassembled_as_far_as_it_goes_without_require_whole() -> None:
     data = b"1234"
     entry = extended(0, 9)
