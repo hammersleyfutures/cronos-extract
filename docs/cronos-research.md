@@ -79,6 +79,9 @@ versions `01.03`, `01.05` and `01.11` use 64 bit offsets:
 where size can be 0xffffffff (indicating a free/deleted block).
 Bit 31 of the size indicates that this is an extended record.
 
+Across 70 real v3 `.tad` files, the top byte of a live entry's size field is always `0x00` (1,417,422 entries) or
+`0x80` (10,690,012 entries); no entry sets any of bits 24-30.
+
 Extended records start with plaintext: { uint32 offset, uint32 size }  or { uint64 offset, uint32 size }
 
 
@@ -291,6 +294,9 @@ some records are compressed, the format is like this:
         uint8   compdata[size-6]
     }
     uint8   tail[3] = { 0, 0, 2 }
+
+Across 8 small real databases, 11,885 compressed chunks in 11,772 records all store the CRC-32 (`zlib.crc32`) of
+their decompressed data; none mismatched.
 
 
 # v4 format
