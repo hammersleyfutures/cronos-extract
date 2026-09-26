@@ -41,6 +41,9 @@ warning: corrupt_record: CroBank.dat record 88: CroBank record 88 is corrupt and
 1 diagnostic: 1 corrupt_record
 ```
 
+A compressed record whose CRC-32 does not match its data is kept and reported as `checksum_mismatch`; a record that
+would decompress to more than 256 MiB is skipped and reported as `corrupt_record`.
+
 The export exits with status 0 when it finished, whatever it reported; with 1 when the database cannot be read at
 all, with one `Error:` line last on stderr; and with 2 for a mistake in the command. `--strict` makes it exit 1 when
 anything was reported, after writing the whole export. The databases in `test_data` report that their table

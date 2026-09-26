@@ -139,7 +139,7 @@ def open_component(db: Database, base: str, *, required: bool) -> Datafile | Non
     try:
         return cast(Datafile, db.opendatafile(base, datname, tadname))
     except Exception as e:
-        # Datafile raises OSError, ValueError, struct.error and a bare Exception for a file it cannot read.
+        # Opening a file raises OSError; Datafile's construction raises ValueError for a file it cannot read.
         if required:
             raise NotACronosFile(f"Cro{base}.dat in {db.dbdir} cannot be read: {describe_error(e)}") from e
         Report().problem(

@@ -3,7 +3,7 @@
 import os
 from collections.abc import Iterator
 from contextlib import ExitStack
-from typing import Literal, cast
+from typing import Literal
 
 from ..Datafile import Datafile
 from .datafiles import database_directory, list_directory, open_datafile
@@ -25,7 +25,7 @@ def readable_records(datafile: Datafile, limit: int | None = None) -> Iterator[t
     count = datafile.nrofrecords if limit is None else min(limit, datafile.nrofrecords)
     for recno in range(1, count + 1):
         try:
-            data = cast(bytes | None, datafile.readrec(recno))
+            data = datafile.readrec(recno)
         except OSError:
             raise
         except Exception:

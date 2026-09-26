@@ -6,10 +6,11 @@ from pathlib import Path
 import pytest
 from cronos_builder import (
     DAT_PREFIX_SIZE,
-    INLINE_RECORD_FLAGS,
     TEST_TABLE_FILE_FIELD_INDEX,
     TEST_TABLE_ID,
+    V3_INLINE_BIT,
     bank_record,
+    compressed_record,
     corrupt_compressed_record,
     database_with_extra_definition_key,
     database_without_files_table,
@@ -22,6 +23,7 @@ from cronos_builder import (
 )
 
 import cronos_extract
+from cronos_extract import DiagnosticKind
 from cronos_extract._api.diagnostics import DIAGNOSTICS_KEPT
 from cronos_extract.Database import Database
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
@@ -77,7 +79,7 @@ def test_records_are_read_one_crobank_record_per_step(tmp_path: Path) -> None:
 def test_records_the_dat_file_does_not_hold_are_corrupt(tmp_path: Path) -> None:
     dbdir = Path(write_database(tmp_path / "db", []))
     data = person()
-    inline = INLINE_RECORD_FLAGS << 24
+    inline = V3_INLINE_BIT
     write_raw_datafile(
         dbdir,
         "Bank",
@@ -96,6 +98,32 @@ def test_records_the_dat_file_does_not_hold_are_corrupt(tmp_path: Path) -> None:
 
     assert [(d.file, d.record) for d in corrupt] == [("CroBank.dat", 2), ("CroBank.dat", 3)]
     assert all("past the end" in d.message for d in corrupt)
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_a_record_pointing_far_past_the_end_of_the_file_is_corrupt(tmp_path: Path) -> None:
+    # 1 << 50 does not fit a 32-bit offset, so this uses a 64-bit v3 version; on an ordinary disk, seeking that far
+    # past the end of the file raises OSError, which readdata must avoid so the record is reported as corrupt
+    # instead of stopping the whole export.
+    dbdir = Path(write_database(tmp_path / "db", [], version=b"01.03"))
+    data = person()
+    write_raw_datafile(
+        dbdir,
+        "Bank",
+        data,
+        [
+            (DAT_PREFIX_SIZE, len(data) | V3_INLINE_BIT),
+            (1 << 50, 5 | V3_INLINE_BIT),
+        ],
+        version=b"01.03",
+    )
+
+    with cronos_extract.open(dbdir) as bank:
+        assert [record.number for record in bank.tables[0].records()] == [1]
+        corrupt = [d for d in bank.diagnostics if d.kind == cronos_extract.DiagnosticKind.CORRUPT_RECORD]
+
+    assert [(d.file, d.record) for d in corrupt] == [("CroBank.dat", 2)]
+    assert "past the end" in corrupt[0].message
 
 
 @pytest.mark.usefixtures("prints_nothing")
@@ -377,3 +405,21 @@ def test_field_text_matches_database_enumerate_records(
     assert len(actual) == 4
     captured = capfd.readouterr()
     assert (captured.out, captured.err) == ("", "")
+
+
+def test_a_checksum_mismatch_keeps_the_record_and_is_reported_once(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [compressed_record(person(), wrong_checksums={0})])
+
+    with cronos_extract.open(dbdir) as bank:
+        first = list(bank.tables[0].records())
+        second = list(bank.tables[0].records())
+        counts = bank.diagnostic_counts[DiagnosticKind.CHECKSUM_MISMATCH]
+        diagnostics = [d for d in bank.diagnostics if d.kind == DiagnosticKind.CHECKSUM_MISMATCH]
+
+    assert len(first) == len(second) == 1
+    assert counts == 1
+    assert diagnostics[0].record == 1
+    assert diagnostics[0].file == "CroBank.dat"
+    assert diagnostics[0].message == (
+        "CroBank record 1 has 1 compressed chunk whose checksum does not match; the record is kept as it decompressed"
+    )

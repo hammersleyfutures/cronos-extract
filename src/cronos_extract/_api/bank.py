@@ -7,6 +7,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Self, cast, override
 
+from .._format.record import RecordParts
 from ..Database import Database
 from ..Datamodel import TableDefinition, describe_error
 from .datafiles import database_directory, list_directory, open_datafile, optional_file_info, warn_into
@@ -90,6 +91,7 @@ class Bank:
         self._files_table_id: int | None = None
         self._files_abbreviation: str | None = None
         self._corrupt_records = RecordNumbers(database.bank.nrofrecords)
+        self._checksum_mismatches = RecordNumbers(database.bank.nrofrecords)
         self._unsupported_tables: set[int] = set()
 
     @property
@@ -189,12 +191,13 @@ class Bank:
         """
         CroBank record `number`, or None when it is deleted or cannot be read.
 
-        A record that cannot be read is reported as corrupt_record the first time only. OSError propagates.
+        A record that cannot be read is reported as corrupt_record the first time only. A record whose compressed
+        data fails its CRC-32 is returned and reported as checksum_mismatch the first time only. OSError propagates.
         Raises ValueError when the bank is closed.
         """
         self._check_open()
         try:
-            return cast(bytes | None, self._database.bank.readrec(number))
+            parts = cast(RecordParts | None, self._database.bank.read_record(number))
         except OSError:
             raise
         except Exception as e:
@@ -208,6 +211,21 @@ class Bank:
                     )
                 )
             return None
+        if parts is None:
+            return None
+        mismatched = len(parts.mismatched_chunks)
+        if mismatched and self._checksum_mismatches.add(number):
+            chunks = "chunk" if mismatched == 1 else "chunks"
+            self._log.record(
+                Diagnostic(
+                    DiagnosticKind.CHECKSUM_MISMATCH,
+                    f"CroBank record {number} has {mismatched} compressed {chunks} whose checksum does not match; "
+                    "the record is kept as it decompressed",
+                    file=BANK_FILE,
+                    record=number,
+                )
+            )
+        return parts.data
 
     def _records(self, table: Table) -> Iterator[Record]:
         if table.id > LARGEST_TABLE_ID:

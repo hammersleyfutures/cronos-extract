@@ -14,6 +14,7 @@ from cronos_builder import (
     TEST_TABLE_FIELD_COUNT,
     TEST_TABLE_ID,
     bank_record,
+    compressed_record,
     corrupt_compressed_record,
     database_with_missing_definition,
     database_with_wrong_kod_record_out_of_range,
@@ -312,3 +313,21 @@ def test_inspect_crodump_shows_a_corrupt_compressed_record_and_dumps_the_next(tm
     assert "good" in first
     assert " <corrupt compressed data: " in second
     assert second.endswith(">")
+
+
+def test_inspect_crodump_marks_a_record_whose_checksum_does_not_match(tmp_path: Path) -> None:
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[0] = b"good"
+    dbdir = write_database(
+        tmp_path / "db",
+        [compressed_record(bank_record(TEST_TABLE_ID, fields)), compressed_record(b"bad", wrong_checksums={0})],
+    )
+
+    result = run_command("cli", ["inspect", "crodump", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    lines = result.stdout.splitlines()
+    bank_start = next(i for i, line in enumerate(lines) if line.startswith("hdr: Bank"))
+    first, second = [line for line in lines[bank_start + 1 :] if line.startswith(("    1:", "    2:"))]
+    assert not first.endswith("<checksum mismatch>")
+    assert second.endswith(" <checksum mismatch>")

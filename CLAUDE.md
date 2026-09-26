@@ -41,10 +41,13 @@ The code is layered, from bytes up to commands (`src/cronos_extract/`):
   still call, and passes a `warn` hook to the readers that print. Only names in `__all__` are public.
   `_format/files.py`'s `open_regular_file` is the one way Cro files are opened.
 - **`Datafile`**: one `.dat`/`.tad` pair. The `.tad` is an index of `(offset, length, flags)` entries, where a length of
-  `0xFFFFFFFF` means deleted. Record numbers start at 1. `readrec(idx)` reassembles extended records from extension
-  blocks, KOD-decodes the data using the record number as the shift (when bit 0 of the `.dat` header's encoding field
-  is set), then decompresses zlib chunks. v3 (`01.02`–`01.05`) and v4 (`01.11`, `01.13`, `01.14`) store the flags in
-  different bits; v7 (`01.19`) is not supported.
+  `0xFFFFFFFF` means deleted. Record numbers start at 1. Each `.tad` entry is parsed by `_format/tad.py`'s layout for
+  its generation: v3 keeps the inline flag in bit 31 of the length, v4 in the top byte of the offset. Every record is
+  decoded by `_format/record.py`'s `decode_record`, one pipeline of reassembling extension blocks, KOD-decoding the
+  data using the record number as the shift (when bit 0 of the `.dat` header's encoding field is set), then
+  CRC-checking and decompressing zlib chunks, at most 256 MiB decompressed. `read_record` returns the decoded parts
+  together with the chunks whose CRC did not match. v3 (`01.02`–`01.05`) and v4 (`01.11`, `01.13`, `01.14`) store the
+  flags in different bits; v7 (`01.19`) is not supported.
 - **`Database`**: opens `CroStru`, `CroIndex`, `CroBank` and `CroSys` in a directory, matching names case-insensitively,
   and closes them via `with Database(...)`. CroStru record 1 holds the *database definition*, a list of key/value pairs.
   A value is either inline, or a reference to another CroStru record when the high bit of its length is clear.

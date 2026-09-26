@@ -29,6 +29,7 @@ def raise_corrupt() -> None:
 def test_the_diagnostic_kinds_have_stable_snake_case_values() -> None:
     assert [kind.value for kind in DiagnosticKind] == [
         "corrupt_record",
+        "checksum_mismatch",
         "undecodable_field",
         "invalid_value",
         "undecodable_table",

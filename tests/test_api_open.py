@@ -6,7 +6,10 @@ from pathlib import Path
 import pytest
 from cronos_builder import (
     DAT_PREFIX_SIZE,
-    INLINE_RECORD_FLAGS,
+    TEST_TABLE_FIELD_COUNT,
+    TEST_TABLE_ID,
+    V3_INLINE_BIT,
+    bank_record,
     database_with_extra_definition_key,
     database_with_missing_definition,
     database_with_wrong_kod_record_out_of_range,
@@ -66,6 +69,28 @@ def test_open_reports_the_section_2_warning_of_each_table_definition(tmp_path: P
 def test_open_accepts_a_path_object(tmp_path: Path) -> None:
     with cronos_extract.open(Path(write_database(tmp_path / "db", []))) as bank:
         assert [table.name for table in bank.tables] == ["erdgeist"]
+
+
+def test_open_reads_a_record_spread_over_many_extension_blocks(tmp_path: Path) -> None:
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[1] = b"x" * (2 * 1024 * 1024)
+    dbdir = write_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, fields)], extended=True)
+
+    with cronos_extract.open(dbdir) as bank:
+        (table,) = bank.tables
+        (record,) = list(table.records())
+        assert record["Entry #2"].text == fields[1].decode()
+
+
+def test_open_with_compact_reads_the_indexes_from_disk(tmp_path: Path) -> None:
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[1] = b"one"
+    dbdir = write_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, fields)])
+
+    with cronos_extract.open(dbdir, compact=True) as bank:
+        (table,) = bank.tables
+        (record,) = list(table.records())
+        assert record["Entry #2"].text == "one"
 
 
 def test_bank_info_lists_the_files_found_in_order(tmp_path: Path) -> None:
@@ -157,9 +182,7 @@ def test_a_deleted_definition_record_is_a_definition_error(tmp_path: Path) -> No
 
 def test_a_stru_file_cut_to_its_header_is_a_definition_error(tmp_path: Path) -> None:
     dbdir = Path(write_database(tmp_path / "db", []))
-    entries = [
-        (DAT_PREFIX_SIZE, len(record or b"") | INLINE_RECORD_FLAGS << 24) for record in stru_records_from_test_db()
-    ]
+    entries = [(DAT_PREFIX_SIZE, len(record or b"") | V3_INLINE_BIT) for record in stru_records_from_test_db()]
     write_raw_datafile(dbdir, "Stru", b"", entries)
 
     with pytest.raises(cronos_extract.DatabaseDefinitionError, match=r"record 1 in CroStru\.dat .* past the end"):

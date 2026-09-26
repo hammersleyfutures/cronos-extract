@@ -28,12 +28,16 @@ Every decision below was made with Ben on 2026-09-15.
     `compact=True` are the documented way to read a very large database. See the Phase 2 design, decision D13.
 13. **v7 after 1.0 (decided 2026-09-25):** the v7 reader (Phase 4) becomes a goal for after 1.0, because no real v7
     file has been found to design and test it against. The phases before 1.0 are 3 and 5, in that order.
+14. **Phase 3 in four parts (decided 2026-09-25):** 3a the Datafile core (one record-decoding path, a `.tad`
+    layout per version, CRC checking, a decompression limit), 3b definitions and diagnostics, 3c bank reading (the
+    single-pass walk, KOD selection, file-reference context) and 3d research into v4 on real databases. Each has its
+    own spec, plan and pull request; 3a is designed in `2026-09-25-phase3a-datafile-core-design.md`.
 
 ## Roadmap
 
 Each phase is a separate spec, plan and pull request, in this order. Phase 4 (v7) comes after 1.0 (decision 13).
 
-**Status (2026-09-25):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is complete: it is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below, and was merged as PR #9. Phase 2 is designed in `2026-09-17-phase2-command-line-design.md` and complete: implemented on branch `phase2-implementation` (`2026-09-25-phase2-command-line.md`), pull request pending Ben's approval.
+**Status (2026-09-25):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is complete: it is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below, and was merged as PR #9. Phase 2 is designed in `2026-09-17-phase2-command-line-design.md` and complete: implemented on branch `phase2-implementation` (`2026-09-25-phase2-command-line.md`), pull request pending Ben's approval. Phase 3a is designed in `2026-09-25-phase3a-datafile-core-design.md` and complete: implemented on branch `phase3a-datafile-core` (`2026-09-25-phase3a-datafile-core.md`), pull request pending.
 
 ### Phase 0 — version survey
 
@@ -49,7 +53,7 @@ The `cronos-extract` subcommands (`survey`, `export`, `inspect`, `crack`), globa
 
 ### Phase 3 — restructure behind the façade
 
-Type annotations throughout; one record-decoding path in place of the copies in `Datafile.readrec` and `Datafile.dump`; a reader interface per format version; one CP-1251 decoding policy; one KOD-selection function; diagnostics in place of `print`. Fixes: tables with ids above 255, CRC checking, a diagnostic when a supplied KOD is not used, warnings printed once per problem instead of once per table pass, and the Files table header. The Phase 1 and Phase 2 tests guard every step.
+Type annotations throughout; one record-decoding path in place of the copies in `Datafile.readrec` and `Datafile.dump`; a reader interface per format version; one CP-1251 decoding policy; one KOD-selection function; diagnostics in place of `print`. Fixes: tables with ids above 255, CRC checking, a diagnostic when a supplied KOD is not used, warnings printed once per problem instead of once per table pass, and the Files table header. The Phase 1 and Phase 2 tests guard every step. Delivered as 3a–3d (decision 14).
 
 ### Phase 4 — v7 reader (after 1.0)
 
@@ -69,18 +73,18 @@ Found during Phase 0 and its reviews and not fixed there, each with the phase th
 
 - **Phase 1 (done):** `survey.survey_roots` streams its results (Phase 1 plan, Task 6).
 - **Phase 2 (done, D14):** `cli.main` now dispatches `survey`, `export`, `inspect` and `crack` through the `run_*(args, parser) -> int` signature; `dumpdbfields.py` is deleted.
-- **Phase 3:** `Datafile.isv3`, `isv4`, `isv7` and `isencrypted` keep their own copies of the version lists that `_format/header.py` now holds. (The survey's stat-then-open window is closed: every Cro file is opened by `_format/files.open_regular_file`, which checks `fstat` on the open descriptor.)
+- **Phase 3 (done, Phase 3a):** `Datafile.isv3`, `isv4`, `isv7` and `isencrypted` are removed; `Datafile` reads version lists from `_format/header.py` directly. (The survey's stat-then-open window is closed: every Cro file is opened by `_format/files.open_regular_file`, which checks `fstat` on the open descriptor.)
 - **Phase 3, from Phase 1:**
-  - `Datafile.decompress` does not limit the decompressed size, so a crafted record can exhaust memory; do it with CRC checking.
-  - v4 deleted records: no real `01.11` `.tad` entry uses the `0xFFFFFFFF` length `readrec` treats as deleted, while many carry flag `02`, which `docs/cronos-research.md` calls deleted; today they are read as live records. One real v4 database's `.tad` entries hold what look like 2024 Unix timestamps in their third field.
+  - **(done, Phase 3a)** `Datafile.decompress` does not limit the decompressed size, so a crafted record can exhaust memory; do it with CRC checking. `_format/record.py`'s `decompress` now checks each chunk's CRC-32 and refuses past `MAX_DECOMPRESSED_BYTES` (256 MiB).
+  - **(now Phase 3d)** v4 deleted records: no real `01.11` `.tad` entry uses the `0xFFFFFFFF` length `readrec` treats as deleted, while many carry flag `02`, which `docs/cronos-research.md` calls deleted; today they are read as live records (flags `02` and `03` both). One real v4 database's `.tad` entries hold what look like 2024 Unix timestamps in their third field. `_format/tad.py`'s v4 layout keeps this behaviour and its comment names 3d as the phase that researches these flags and the third field against real databases.
   - KOD recovery fails on the real v4 databases whose CroBank and CroIndex headers are not KOD-encoded (both crack methods return `None`); how those databases encode records needs investigating. `tests/test_realdata.py` marks this as a strict xfail.
   - KOD selection: an own-KOD file read with `Kod.default()` is decoded with the wrong table and no diagnostic; `kod=None` on a KOD-encoded file gives a `DatabaseDefinitionError` whose hint suggests cracking.
   - `Database.enumerate_records` is used only by tests (the Phase 1 parity tests and `tests/test_cronos_builder.py`);
     before removing it, turn the parity tests into golden output of the façade. `Database.enumerate_files`,
     `incomplete_records`, `files_tableid` and `get_record` have no production caller left either, now that
     `croconvert` and `dumpdbfields` are gone.
-  - v3 `.tad` lengths are masked with `0x0FFFFFFF` while the flags are read as `ln >> 24`, so bits 24–27 count as both flag and length; `docs/cronos-research.md` says only the top bit is a flag. With the short-read check, an entry with those bits set now raises instead of reading to the end of the file. No real database sets them.
-  - Add a committed, seeded random-damage test of the reading path, and the builder gaps the Phase 1 reviews noted (32-bit v3 flag placement, `01.02`/`01.03` written KOD-encoded).
+  - **(done, Phase 3a)** v3 `.tad` lengths are masked with `0x0FFFFFFF` while the flags are read as `ln >> 24`, so bits 24–27 count as both flag and length; `docs/cronos-research.md` says only the top bit is a flag. `_format/tad.py`'s v3 layout now reads the inline flag from bit 31 only and keeps bits 0-30 as the length; no real database sets bits 24-30 (`docs/cronos-research.md`'s evidence over 70 files).
+  - **(done, Phase 3a)** Add a committed, seeded random-damage test of the reading path, and the builder gaps the Phase 1 reviews noted (32-bit v3 flag placement, `01.02`/`01.03` written KOD-encoded). `tests/test_damage.py` flips, truncates and overwrites random bytes of built `.dat`/`.tad` files, inline and extended, unencoded and KOD-encoded (default and own tables); `tests/cronos_builder.py` gained the `extended=` and `encoded=` options it needed.
 - **Phase 2, from Phase 1 (done, D5/D8/D10/D12):** diagnostic and exception text is now escaped before printing
   (`_cli/report.py`'s `EscapingStream`, D10). A date or time field holding only NUL bytes keeps `""` plus
   `invalid_value` (D5; unchanged, since a realdata count found no such field in any of the 30 listed databases).
@@ -99,6 +103,9 @@ Found during Phase 0 and its reviews and not fixed there, each with the phase th
   - `report.py` counts `replaced_nul` itself, because writing a NUL to a PostgreSQL `TEXT` column is a problem of
     the SQL writer, not of reading; if Phase 3 gives the API a diagnostic kind for output problems, this moves
     there.
+- **Phase 3b, from Phase 3a:** a CroStru checksum mismatch (the database definition or a table definition) reaches
+  the API only through the `warn` hook, recorded as `unexpected_structure`, until 3b turns warnings into
+  diagnostics.
 - **Before 1.0, from Phase 1:** `FileInfo` does not enforce that either `problem` or the header fields are set; `Generation` is a PEP 695 alias, so `typing.get_args(Generation)` is empty; `bank.diagnostic_counts[kind]` reads 0 for a kind that never occurred (documented).
 - **Cosmetic, no phase:** an unreadable directory reachable from two overlapping roots is warned about twice. A directory named `Cro*.dat` that itself holds databases is reported as a problem under its parent and as its own database, so `--counts` also scores it as one unreadable file. `--jsonl` writes undecodable path bytes as `\udcXX` escapes, which strict JSON parsers may reject. The README's sentence about unreadable directories sits in the `--list` paragraph, though the warning applies to any root.
 - **Decided, not open:** `survey_file` follows symlinks (`stat`, not `lstat`) on purpose, and each plan keeps its pre-implementation wording as the record of what was planned.
@@ -124,7 +131,7 @@ with cronos_extract.open(path, kod=..., compact=False, on_diagnostic=None) as ba
 - **`Record`** — `number: int`, `fields: Sequence[Field]`, `__getitem__(name)`, `diagnostics`.
 - **`Field`** — `definition`, `value`, `text: str`, `raw: bytes`. `value` is `str`, `datetime.date`, `datetime.time`, `FileReference` or `None`; a value that does not parse as its type falls back to the text and records a diagnostic.
 - **`FileReference`** — `name`, `extension`, `record`. **`EmbeddedFile`** — `record: int`, `data: bytes`, `name: str | None` (`None` from `files()`, where the Files table stores no name).
-- **`Diagnostic`** — frozen: `kind` (`DiagnosticKind`: `corrupt_record`, `undecodable_field`, `invalid_value`, `undecodable_table`, `unsupported_table`, `unexpected_structure`, `unresolved_file_reference`, `unreadable_file`, `unused_kod`), `message`, `file`, `table`, `record`, `field`.
+- **`Diagnostic`** — frozen: `kind` (`DiagnosticKind`: `corrupt_record`, `checksum_mismatch`, `undecodable_field`, `invalid_value`, `undecodable_table`, `unsupported_table`, `unexpected_structure`, `unresolved_file_reference`, `unreadable_file`, `unused_kod`), `message`, `file`, `table`, `record`, `field`.
 - **Exceptions** — `CronosError` base; `NotACronosFile`, `UnsupportedVersion`, `DatabaseDefinitionError`. Anything survivable (one record, field or file reference) is a diagnostic, not an exception.
 
 **Documented promises:** iteration is lazy, and `bank.diagnostics` grows while reading, up to its first 1,000 entries; a `Bank` is not thread-safe; the set of `Field.value` types may grow in later versions.

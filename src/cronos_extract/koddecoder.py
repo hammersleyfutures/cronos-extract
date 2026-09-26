@@ -280,7 +280,7 @@ class KODcoding:
             if self.confidence[i] > 0:
                 self.inv[x] = i
 
-    def decode(self, o, data):
+    def decode(self, o: int, data: bytes) -> bytes:
         """
         decode : shift, a[0]..a[n-1] -> b[0]..b[n-1]
             b[i] = KOD[a[i]]- (i+shift)
@@ -297,7 +297,7 @@ class KODcoding:
             [self.confidence[b] for b in data],
         )
 
-    def encode(self, o, data):
+    def encode(self, o: int, data: bytes) -> bytes:
         """
         encode : shift, b[0]..b[n-1] -> a[0]..a[n-1]
             a[i] = INV[b[i]+ (i+shift)]

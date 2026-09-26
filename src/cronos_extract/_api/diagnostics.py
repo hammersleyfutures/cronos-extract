@@ -16,6 +16,7 @@ class DiagnosticKind(StrEnum):
     """What kind of problem a Diagnostic reports. Later versions may add kinds."""
 
     CORRUPT_RECORD = "corrupt_record"
+    CHECKSUM_MISMATCH = "checksum_mismatch"
     UNDECODABLE_FIELD = "undecodable_field"
     INVALID_VALUE = "invalid_value"
     UNDECODABLE_TABLE = "undecodable_table"

@@ -2,6 +2,7 @@
 # ABOUTME: They prove the fixture builder before other tests rely on it to reproduce bugs.
 import io
 import struct
+import zlib
 from pathlib import Path
 
 import pytest
@@ -9,9 +10,12 @@ from cronos_builder import (
     BLOCKSIZE,
     BUILDER_VERSIONS,
     DAT_PREFIX_SIZE,
+    OWN_KOD_VERSIONS,
     TEST_DB,
+    TEST_TABLE_FIELD_COUNT,
     TEST_TABLE_FILE_FIELD_INDEX,
     TEST_TABLE_ID,
+    V3_INLINE_BIT,
     bank_record,
     compressed_record,
     database_with_extra_definition_key,
@@ -30,6 +34,7 @@ from cronos_builder import (
     renamed_table_definition,
     stru_records_from_test_db,
     table_definition_without_fields,
+    tad_layout,
     write_database,
     write_datafile,
     write_header_only_datafile,
@@ -314,3 +319,107 @@ def test_record_with_file_field_puts_the_reference_in_the_file_field(tmp_path: P
     with cronos_extract.open(dbdir) as bank:
         (record,) = bank.tables[0].records()
         assert record["Entry #6"].value == cronos_extract.FileReference("scan", "jpg", 7)
+
+
+def test_compressed_record_holds_the_crc_of_each_chunk() -> None:
+    record = compressed_record(b"one", b"two", wrong_checksums={1})
+
+    offset = 0
+    crcs = []
+    while offset < len(record) - 3:
+        size, _ = struct.unpack_from(">HH", record, offset)
+        (crc,) = struct.unpack_from("<L", record, offset + 4)
+        crcs.append(crc)
+        offset += size + 2
+
+    assert crcs == [zlib.crc32(b"one"), zlib.crc32(b"two") ^ 0xFFFFFFFF]
+    assert record.endswith(b"\x00\x00\x02")
+
+
+@pytest.mark.parametrize("version", [b"01.02", b"01.03", b"01.04"])
+def test_a_v3_inline_record_sets_bit_31_of_its_length(tmp_path: Path, version: bytes) -> None:
+    write_datafile(tmp_path, "Bank", [b"hello"], version=version)
+
+    header, entry = tad_layout(version)
+    tad = (tmp_path / "CroBank.tad").read_bytes()
+    _, length, _ = entry.unpack_from(tad, len(header))
+
+    assert length == 5 | V3_INLINE_BIT
+
+
+@pytest.mark.parametrize("version", [b"01.02", b"01.03"])
+def test_a_database_of_a_default_kod_version_can_be_written_kod_encoded(tmp_path: Path, version: bytes) -> None:
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[0] = b"encoded"
+    dbdir = write_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, fields)], version=version, encoded=True)
+
+    assert (Path(dbdir) / "CroBank.dat").read_bytes()[15] & 1
+    with cronos_extract.open(dbdir) as bank:
+        (record,) = bank.tables[0].records()
+        assert record.fields[1].text == "encoded"
+
+
+def extended_test_records() -> tuple[bytes, bytes]:
+    """A record long enough to span several extension blocks, and a compressed record."""
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[0] = b"long"
+    fields[1] = b"z" * (3 * BLOCKSIZE)
+    long_record = bank_record(TEST_TABLE_ID, fields)
+    small_fields = [b""] * TEST_TABLE_FIELD_COUNT
+    small_fields[0] = b"small"
+    small_record = compressed_record(bank_record(TEST_TABLE_ID, small_fields))
+    return long_record, small_record
+
+
+@pytest.mark.parametrize("version", BUILDER_VERSIONS)
+def test_a_database_of_extended_records_reads_back_the_same_as_inline(tmp_path: Path, version: bytes) -> None:
+    long_record, small_record = extended_test_records()
+
+    inline_dir = write_database(tmp_path / "inline", [long_record, small_record], version=version)
+    extended_dir = write_database(tmp_path / "extended", [long_record, small_record], version=version, extended=True)
+
+    with cronos_extract.open(inline_dir) as bank:
+        inline_texts = [[field.text for field in record.fields] for record in bank.tables[0].records()]
+    with cronos_extract.open(extended_dir) as bank:
+        extended_texts = [[field.text for field in record.fields] for record in bank.tables[0].records()]
+
+    assert extended_texts == inline_texts
+
+
+@pytest.mark.parametrize("version", BUILDER_VERSIONS)
+def test_a_database_of_extended_kod_encoded_records_reads_back_the_same_as_inline(
+    tmp_path: Path, version: bytes
+) -> None:
+    long_record, small_record = extended_test_records()
+
+    inline_dir = write_database(tmp_path / "inline", [long_record, small_record], version=version)
+    with cronos_extract.open(inline_dir) as bank:
+        inline_texts = [[field.text for field in record.fields] for record in bank.tables[0].records()]
+
+    extended_dir = write_database(
+        tmp_path / "extended", [long_record, small_record], version=version, encoded=True, extended=True
+    )
+    with cronos_extract.open(extended_dir) as bank:
+        extended_texts = [[field.text for field in record.fields] for record in bank.tables[0].records()]
+
+    assert extended_texts == inline_texts
+
+
+@pytest.mark.parametrize("version", OWN_KOD_VERSIONS)
+def test_a_database_of_extended_records_kod_encoded_with_its_own_table_reads_back_the_same_as_inline(
+    tmp_path: Path, version: bytes
+) -> None:
+    long_record, small_record = extended_test_records()
+
+    inline_dir = write_database(tmp_path / "inline", [long_record, small_record], version=version)
+    with cronos_extract.open(inline_dir) as bank:
+        inline_texts = [[field.text for field in record.fields] for record in bank.tables[0].records()]
+
+    kod = random_kod(seed=11)
+    extended_dir = write_database(
+        tmp_path / "extended", [long_record, small_record], kod=kod, version=version, extended=True
+    )
+    with cronos_extract.open(extended_dir, kod=cronos_extract.Kod.from_table(kod)) as bank:
+        extended_texts = [[field.text for field in record.fields] for record in bank.tables[0].records()]
+
+    assert extended_texts == inline_texts

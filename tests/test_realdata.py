@@ -130,6 +130,17 @@ def test_open_reads_every_table_or_raises_a_cronos_error(dbdir: Path, capfd: pyt
     assert (captured.out, captured.err) == ("", "")
 
 
+def test_no_real_database_reports_a_checksum_mismatch(dbdir: Path) -> None:
+    if not bank_is_small(dbdir):
+        pytest.skip("CroBank is too large to walk once per table")
+    with open_or_skip(dbdir) as bank:
+        for table in bank.tables:
+            for _ in itertools.islice(table.records(), RECORDS_COMPARED):
+                pass
+        list(itertools.islice(bank.files(), RECORDS_COMPARED))
+        assert bank.diagnostic_counts[cronos_extract.DiagnosticKind.CHECKSUM_MISMATCH] == 0
+
+
 def test_field_text_matches_database_enumerate_records(dbdir: Path) -> None:
     if not bank_is_small(dbdir):
         pytest.skip("CroBank is too large to walk once per table")

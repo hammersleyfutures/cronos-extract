@@ -1,5 +1,6 @@
 # ABOUTME: Tests for cronos_extract.Datafile reading records stored in extension blocks, including corrupt ones.
 # ABOUTME: Lays out .dat and .tad files byte by byte with tests/cronos_builder.write_raw_datafile.
+import argparse
 import struct
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -10,8 +11,9 @@ from cli import run_command
 from cronos_builder import (
     BLOCKSIZE,
     DAT_PREFIX_SIZE,
-    INLINE_RECORD_FLAGS,
+    V3_INLINE_BIT,
     V4_INLINE_RECORD_FLAGS,
+    compressed_record,
     corrupt_compressed_record,
     write_datafile,
     write_raw_datafile,
@@ -96,7 +98,7 @@ def inline_tad_entry(version: bytes, offset: int, length: int) -> tuple[int, int
     """The (offset field, length field) of an inline record's .tad entry, with the flags where `version` keeps them."""
     if version == b"01.11":
         return (offset | V4_INLINE_RECORD_FLAGS << 56, length)
-    return (offset, length | INLINE_RECORD_FLAGS << 24)
+    return (offset, length | V3_INLINE_BIT)
 
 
 @pytest.mark.parametrize("version", [b"01.04", b"01.11"], ids=["v3", "v4"])
@@ -123,7 +125,7 @@ def test_record_of_length_zero_is_empty(tmp_path: Path) -> None:
 
 def test_corrupt_compressed_record_is_reported_as_a_value_error(tmp_path: Path) -> None:
     data = corrupt_compressed_record()
-    write_raw_datafile(tmp_path, "Bank", data, [(FIRST_BLOCK, len(data) | INLINE_RECORD_FLAGS << 24)])
+    write_raw_datafile(tmp_path, "Bank", data, [(FIRST_BLOCK, len(data) | V3_INLINE_BIT)])
 
     with open_bank(tmp_path) as bank, pytest.raises(ValueError, match="corrupt compressed data"):
         bank.readrec(1)
@@ -135,7 +137,7 @@ def test_inspect_crodump_reports_a_corrupt_record_and_dumps_the_next(tmp_path: P
         tmp_path,
         "Bank",
         corrupt + inline,
-        [(FIRST_BLOCK, len(corrupt)), (FIRST_BLOCK + len(corrupt), len(inline) | INLINE_RECORD_FLAGS << 24)],
+        [(FIRST_BLOCK, len(corrupt)), (FIRST_BLOCK + len(corrupt), len(inline) | V3_INLINE_BIT)],
     )
 
     result = run_command("cli", ["inspect", "crodump", str(tmp_path)])
@@ -170,3 +172,77 @@ def test_leftover_tad_bytes_are_printed_without_a_warn_hook(tmp_path: Path, capf
         Datafile("Bank", dat, tad, False, None)
 
     assert capfd.readouterr().err == "WARN: leftover data in .tad\n"
+
+
+def dump_args(**options: object) -> argparse.Namespace:
+    return argparse.Namespace(maxrecs=0xFFFFFFFF, verbose=False, ascdump=False, decompress=True, **options)
+
+
+def test_readrec_reports_a_checksum_mismatch_through_warn(tmp_path: Path) -> None:
+    write_datafile(tmp_path, "Stru", [compressed_record(b"definition", wrong_checksums={0})])
+    messages: list[str] = []
+
+    with (tmp_path / "CroStru.dat").open("rb") as dat, (tmp_path / "CroStru.tad").open("rb") as tad:
+        datafile = Datafile("Stru", dat, tad, False, None, warn=messages.append)
+        assert datafile.readrec(1) == b"definition"
+
+    assert messages == ["WARN: record 1 in CroStru.dat has compressed data whose checksum does not match; it is kept"]
+
+
+def test_read_record_gives_the_mismatched_chunks(tmp_path: Path) -> None:
+    write_datafile(tmp_path, "Bank", [compressed_record(b"a", b"b", wrong_checksums={1})])
+
+    with open_bank(tmp_path) as bank:
+        parts = bank.read_record(1)
+
+    assert parts is not None
+    assert (parts.data, parts.mismatched_chunks) == (b"ab", (1,))
+
+
+@pytest.mark.parametrize("recno", [0, -1, 2])
+def test_a_record_number_outside_the_file_is_a_value_error(tmp_path: Path, recno: int) -> None:
+    write_datafile(tmp_path, "Bank", [b"only"])
+
+    with open_bank(tmp_path) as bank, pytest.raises(ValueError, match=f"CroBank.dat has no record {recno}"):
+        bank.readrec(recno)
+
+
+@pytest.mark.parametrize("index", [-1, 1])
+def test_an_entry_index_outside_the_file_is_a_value_error(tmp_path: Path, index: int) -> None:
+    write_datafile(tmp_path, "Bank", [b"only"])
+
+    with open_bank(tmp_path) as bank, pytest.raises(ValueError, match=f"CroBank.tad has no entry {index}"):
+        bank.entry(index)
+
+
+def test_a_tad_shorter_than_its_header_is_a_value_error(tmp_path: Path) -> None:
+    write_datafile(tmp_path, "Bank", [b"x"])
+    (tmp_path / "CroBank.tad").write_bytes(b"\x00\x00\x00")
+
+    with pytest.raises(ValueError, match=r"CroBank\.tad is shorter than its 8-byte header"), open_bank(tmp_path):
+        pass
+
+
+def test_readdata_past_the_end_of_the_file_returns_nothing(tmp_path: Path) -> None:
+    write_datafile(tmp_path, "Bank", [b"only"])
+
+    with open_bank(tmp_path) as bank:
+        assert bank.readdata(bank.datsize + 1, 10) == b""
+
+
+def test_readdata_at_a_negative_offset_returns_nothing(tmp_path: Path) -> None:
+    write_datafile(tmp_path, "Bank", [b"only"])
+
+    with open_bank(tmp_path) as bank:
+        assert bank.readdata(-1, 10) == b""
+
+
+def test_dump_prints_the_bytes_of_a_truncated_inline_record(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    write_raw_datafile(tmp_path, "Bank", b"abc", [(DAT_PREFIX_SIZE, 10 | V3_INLINE_BIT)], version=b"01.02")
+
+    with open_bank(tmp_path) as bank:
+        bank.dump(dump_args())
+
+    (line,) = [line for line in capsys.readouterr().out.splitlines() if line.startswith("    1:")]
+    assert "616263" in line
+    assert "<" not in line
