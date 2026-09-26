@@ -1565,6 +1565,10 @@ skipped, 0 failed. No real database reported a checksum mismatch or a change in 
 - **Task 8:** the plan's damage corpus wrote only inline, unencoded records, which never reached extended-record
   reassembly or KOD decoding. The controller ruled to give the builder an `extended=` option and vary KOD encoding
   (none, default table, own table) per case, so the corpus reaches the code the damage test exists to protect.
+- **Task 10:** the spec's Documentation item "the API module docstring lists `checksum_mismatch` among the kinds"
+  had no target: `src/cronos_extract/__init__.py`'s docstring names no specific kinds, only that later versions may
+  add `DiagnosticKind` members. The roadmap's Public API contract line, which does list every kind, was updated
+  instead.
 
 ### Deferred minors (not carried into the roadmap as open items)
 
@@ -1579,4 +1583,14 @@ skipped, 0 failed. No real database reported a checksum mismatch or a change in 
 
 ### Final review
 
-Recorded after the whole-branch review.
+The whole-branch review (Fable) found no Critical issues and one Important one, `read_extended`'s quadratic
+reassembly of extension blocks, fixed with a test. It also raised five minors: `decompress`'s docstring wrongly
+saying the deflate error names the record; an unreachable branch in `decompress` left uncommented; a missing test
+of `open`'s `compact=True` branch; the spec's Documentation item that named no real target in
+`src/cronos_extract/__init__.py`; and the roadmap's Diagnostic kinds listed out of enum order. All five were fixed.
+The review confirmed `inspect` and export output byte-identical to `master` on seven crafted databases, apart from
+the spec-mandated A2 flag byte and the cut-off-chunk ruling, and that a 64-bit v3 offset with bit 63 set now prints
+an error line in `inspect crodump` where `master` printed a traceback. Left for later: the ledger's deferred minors
+that the review triaged as not blocking (`decompress` not checking the chunk flag itself; no CroIndex or written
+deleted records in the damage corpus; the loop and length guards unreachable by random damage; the "directly"
+wording), and the commit `e177618` bundling several review fixes.

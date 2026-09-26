@@ -131,7 +131,7 @@ with cronos_extract.open(path, kod=..., compact=False, on_diagnostic=None) as ba
 - **`Record`** — `number: int`, `fields: Sequence[Field]`, `__getitem__(name)`, `diagnostics`.
 - **`Field`** — `definition`, `value`, `text: str`, `raw: bytes`. `value` is `str`, `datetime.date`, `datetime.time`, `FileReference` or `None`; a value that does not parse as its type falls back to the text and records a diagnostic.
 - **`FileReference`** — `name`, `extension`, `record`. **`EmbeddedFile`** — `record: int`, `data: bytes`, `name: str | None` (`None` from `files()`, where the Files table stores no name).
-- **`Diagnostic`** — frozen: `kind` (`DiagnosticKind`: `corrupt_record`, `undecodable_field`, `invalid_value`, `undecodable_table`, `unsupported_table`, `unexpected_structure`, `unresolved_file_reference`, `unreadable_file`, `unused_kod`, `checksum_mismatch`), `message`, `file`, `table`, `record`, `field`.
+- **`Diagnostic`** — frozen: `kind` (`DiagnosticKind`: `corrupt_record`, `checksum_mismatch`, `undecodable_field`, `invalid_value`, `undecodable_table`, `unsupported_table`, `unexpected_structure`, `unresolved_file_reference`, `unreadable_file`, `unused_kod`), `message`, `file`, `table`, `record`, `field`.
 - **Exceptions** — `CronosError` base; `NotACronosFile`, `UnsupportedVersion`, `DatabaseDefinitionError`. Anything survivable (one record, field or file reference) is a diagnostic, not an exception.
 
 **Documented promises:** iteration is lazy, and `bank.diagnostics` grows while reading, up to its first 1,000 entries; a `Bank` is not thread-safe; the set of `Field.value` types may grow in later versions.
