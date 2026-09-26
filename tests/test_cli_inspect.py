@@ -448,3 +448,35 @@ def test_strudump_reports_a_truncated_table_definition_and_dumps_the_later_table
     assert headings[:3] == ["== Base000 ==", "== Base009 ==", "== Base001 =="]
     lines = result.stdout.splitlines()
     assert lines[lines.index("== Base009 ==") + 1] == "== Base001 =="
+
+
+@pytest.mark.parametrize("args", [[], ["-t", "4"]])
+def test_destruct_without_a_type_it_knows_is_a_usage_error(args: list[str]) -> None:
+    result = run_command("cli", ["inspect", "destruct", *args], stdin="00")
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert "--type/-t" in result.stderr.splitlines()[-1]
+
+
+@pytest.mark.parametrize(
+    ("args", "stdin", "error"),
+    [
+        (["-t", "2"], "01", "Error: the definition on stdin cannot be decoded: EOFError"),
+        (
+            ["-t", "3"],
+            "05",
+            "Error: the definition on stdin cannot be decoded: ValueError: unsupported CroSys record type 5",
+        ),
+        (["-t", "3"], "04", "Error: the definition on stdin cannot be decoded: EOFError"),
+        (["-t", "2"], "zz", "Error: stdin does not hold a definition in hex: Non-hexadecimal digit found"),
+    ],
+)
+def test_destruct_of_a_definition_it_cannot_decode_fails_with_one_error_line(
+    args: list[str], stdin: str, error: str
+) -> None:
+    result = run_command("cli", ["inspect", "destruct", *args], stdin=stdin)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.splitlines() == [error]

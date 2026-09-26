@@ -54,7 +54,7 @@ def destruct_sys_definition(args: argparse.Namespace, data: bytes) -> None:
     elif systype == 4:
         destruct_sys4_def(rd)
     else:
-        raise Exception("unsupported sys record")
+        raise ValueError(f"unsupported CroSys record type {systype:d}")
 
 
 def add_parser(subcommands: Subcommands) -> None:
@@ -97,7 +97,14 @@ def add_parser(subcommands: Subcommands) -> None:
     )
     p.add_argument("--verbose", "-v", action="store_true")
     p.add_argument("--ascdump", "-a", action="store_true")
-    p.add_argument("--type", "-t", type=int, help="what type of record to destruct")
+    p.add_argument(
+        "--type",
+        "-t",
+        type=int,
+        choices=(1, 2, 3),
+        required=True,
+        help="what type of record to destruct: 1 database, 2 table or 3 CroSys definition",
+    )
     p.add_argument(
         "dbdir", nargs="?", default=".", help="the database whose CroStru holds keys stored by reference (-t 1)"
     )
@@ -220,17 +227,24 @@ def run_crodump(args: argparse.Namespace, parser: argparse.ArgumentParser) -> in
 
 def run_destruct(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     """Decode the definition given as hex on stdin: a database (-t 1), table (-t 2) or CroSys (-t 3) definition."""
-    data = unhex(sys.stdin.buffer.read())
+    try:
+        data = unhex(sys.stdin.buffer.read())
+    except ValueError as e:
+        raise Failure(f"stdin does not hold a definition in hex: {e}") from e
     if args.type == 1:
         with open_database(args, required=()) as db:
             try:
                 db.dump_db_definition(args, db.decode_db_definition(data))
             except ValueError as e:
                 raise Failure(str(e)) from e
-    elif args.type == 2:
-        TableDefinition(data, report=Report().diagnostic).dump(args)
-    elif args.type == 3:
-        destruct_sys_definition(args, data)
+        return 0
+    try:
+        if args.type == 2:
+            TableDefinition(data, report=Report().diagnostic).dump(args)
+        else:
+            destruct_sys_definition(args, data)
+    except (ValueError, EOFError) as e:
+        raise Failure(f"the definition on stdin cannot be decoded: {describe_error(e)}") from e
     return 0
 
 
