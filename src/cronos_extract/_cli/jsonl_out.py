@@ -1,4 +1,4 @@
-# ABOUTME: The JSON Lines export: one self-contained JSON object per table, record and diagnostic, in order.
+# ABOUTME: The JSON Lines export: one self-contained JSON object per table, record, diagnostic and deleted count.
 # ABOUTME: Each field carries its value only: a string, null, or an object for a file reference.
 import datetime
 import json
@@ -24,7 +24,10 @@ def json_value(value: FieldValue) -> object:
 
 
 class JsonlWriter:
-    """Writes the JSON Lines export to `stream`: a line per table before its records, per record and per problem."""
+    """
+    Writes the JSON Lines export to `stream`: a line per table before its records, per record and per problem, and
+    one with the number of deleted records.
+    """
 
     def __init__(self, stream: TextIO) -> None:
         self._stream = stream
@@ -66,6 +69,9 @@ class JsonlWriter:
                 "field": problem.field,
             }
         )
+
+    def deleted_records(self, count: int) -> None:
+        self._write({"type": "deleted_records", "count": count})
 
     def finish(self) -> None:
         self._stream.flush()

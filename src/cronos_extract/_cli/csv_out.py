@@ -82,6 +82,9 @@ class CsvWriter:
     def diagnostic(self, problem: Problem) -> None:
         """CSV output holds no diagnostics; they are on stderr."""
 
+    def deleted_records(self, count: int) -> None:
+        """CSV output holds no note of the deleted records; the export prints it on stderr."""
+
     def finish(self) -> None:
         self._close_table()
         if self._files_directory is None:

@@ -118,6 +118,9 @@ class SqlWriter:
     def diagnostic(self, problem: Problem) -> None:
         """SQL output holds no diagnostics; they are on stderr."""
 
+    def deleted_records(self, count: int) -> None:
+        """SQL output holds no note of the deleted records; the export prints it on stderr."""
+
     def finish(self) -> None:
         self._stream.flush()
 

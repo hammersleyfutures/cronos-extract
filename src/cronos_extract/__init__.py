@@ -19,6 +19,9 @@ This API promises:
 - The library never prints. Problems that reading survives are ``Diagnostic``s: ``bank.diagnostics`` keeps the first
   1,000, ``bank.diagnostic_counts`` counts every one, and ``on_diagnostic`` receives every one. Diagnostics from
   decoding a record are recorded each time the record is decoded. Later versions may add ``DiagnosticKind`` members.
+- Deleted records are not read. ``bank.deleted_records`` is the number CroBank's ``.tad`` header lists; a header
+  listing more than the ``.tad`` has entries is reported as ``unexpected_structure``, and the count is then the
+  number of entries.
 - A database ``open()`` cannot read raises a ``CronosError``: ``NotACronosFile``, ``UnsupportedVersion``,
   ``OwnKodRequired`` (a v4 CroBank encrypted with the database's own KOD, with the default KOD given or left out) or
   ``DatabaseDefinitionError``.

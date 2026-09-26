@@ -75,6 +75,50 @@ def test_a_deleted_v4_record_is_not_read(tmp_path: Path, extended: bool) -> None
 
 
 @pytest.mark.usefixtures("prints_nothing")
+@pytest.mark.parametrize(
+    ("version", "records", "expected"),
+    [
+        (b"01.02", [person(), None, person()], 1),
+        (b"01.11", [person(), DeletedRecord(person()), person()], 1),
+        (b"01.02", [person(), person()], 0),
+        (b"01.11", [person(), person()], 0),
+    ],
+    ids=["v3-one-deleted", "v4-one-deleted", "v3-none-deleted", "v4-none-deleted"],
+)
+def test_deleted_records_is_the_crobank_tad_header_count(
+    tmp_path: Path, version: bytes, records: list[bytes | DeletedRecord | None], expected: int
+) -> None:
+    dbdir = write_database(tmp_path / "db", records, version=version)
+
+    with cronos_extract.open(dbdir) as bank:
+        assert bank.deleted_records == expected
+        assert [d for d in bank.diagnostics if d.file == "CroBank.dat"] == []
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_a_tad_header_listing_more_deleted_records_than_entries_is_capped_and_reported(tmp_path: Path) -> None:
+    dbdir = Path(write_database(tmp_path / "db", []))
+    data = person()
+    entries = [(DAT_PREFIX_SIZE, len(data) | V3_INLINE_BIT)] * 2
+    write_raw_datafile(dbdir, "Bank", data, entries, deleted_count=999)
+    seen: list[cronos_extract.Diagnostic] = []
+
+    with cronos_extract.open(dbdir, on_diagnostic=seen.append) as bank:
+        assert bank.deleted_records == 2
+        assert [record.number for record in bank.tables[0].records()] == [1, 2]
+
+    assert [(d.kind, d.message, d.table, d.record, d.field) for d in seen if d.file == "CroBank.dat"] == [
+        (
+            cronos_extract.DiagnosticKind.UNEXPECTED_STRUCTURE,
+            "the .tad header lists 999 deleted records, more than its 2 entries",
+            None,
+            None,
+            None,
+        )
+    ]
+
+
+@pytest.mark.usefixtures("prints_nothing")
 def test_records_are_read_one_crobank_record_per_step(tmp_path: Path) -> None:
     dbdir = write_database(tmp_path / "db", [person(), corrupt_compressed_record(), person()])
 
