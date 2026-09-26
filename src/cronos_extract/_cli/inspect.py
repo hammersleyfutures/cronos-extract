@@ -223,7 +223,10 @@ def run_destruct(args: argparse.Namespace, parser: argparse.ArgumentParser) -> i
     data = unhex(sys.stdin.buffer.read())
     if args.type == 1:
         with open_database(args, required=()) as db:
-            db.dump_db_definition(args, db.decode_db_definition(data))
+            try:
+                db.dump_db_definition(args, db.decode_db_definition(data))
+            except ValueError as e:
+                raise Failure(str(e)) from e
     elif args.type == 2:
         TableDefinition(data, report=Report().diagnostic).dump(args)
     elif args.type == 3:

@@ -167,12 +167,11 @@ class Database:
     def decode_db_definition(self, data: bytes) -> dict[str, bytes]:
         """
         decode the 'bank' / database definition
+
+        Raises ValueError when a key stored by reference names a CroStru record that is not open, out of range,
+        deleted, or when the definition is cut off.
         """
         rd = ByteReader(data)
-
-        # self.stru is None only for `inspect destruct -t 1` in a directory without CroStru, where a key stored
-        # by reference then fails with AttributeError, as it always has.
-        stru = cast(Datafile, self.stru)
 
         d: dict[str, bytes] = dict()
         try:
@@ -185,12 +184,16 @@ class Database:
                 if index_or_length >> 31:
                     d[keyname] = rd.readbytes(index_or_length & 0x7FFFFFFF)
                 else:
-                    if not 1 <= index_or_length <= stru.nrofrecords:
+                    if self.stru is None:
+                        raise ValueError(
+                            f'key "{keyname}" refers to CroStru record {index_or_length}, but CroStru is not open'
+                        )
+                    if not 1 <= index_or_length <= self.stru.nrofrecords:
                         raise ValueError(
                             f'key "{keyname}" refers to CroStru record {index_or_length}, '
-                            f"which CroStru does not hold ({stru.nrofrecords} records)"
+                            f"which CroStru does not hold ({self.stru.nrofrecords} records)"
                         )
-                    refdata = stru.readrec(index_or_length)
+                    refdata = self.stru.readrec(index_or_length)
                     if refdata is None:
                         raise ValueError(
                             f'key "{keyname}" refers to CroStru record {index_or_length}, which is deleted'
@@ -215,13 +218,14 @@ class Database:
     def read_db_definition(self) -> dict[str, bytes]:
         """
         Read and decode the database definition from CroStru record 1.
-        Raises ValueError when CroStru has no record 1, when it is deleted, or when it can't be decoded.
+        Raises ValueError when CroStru is not open, has no record 1, when it is deleted, or when it can't be
+        decoded.
         """
-        # A caller reads the database definition only once self.stru is open.
-        stru = cast(Datafile, self.stru)
-        if stru.nrofrecords < 1:
+        if self.stru is None:
+            raise ValueError("CroStru is not open, so it has no database definition")
+        if self.stru.nrofrecords < 1:
             raise ValueError("CroStru holds no records, so it has no database definition")
-        dbinfo = stru.readrec(1)
+        dbinfo = self.stru.readrec(1)
         if dbinfo is None:
             raise ValueError("CroStru record 1, which holds the database definition, is deleted")
         if dbinfo[:1] != b"\x03":

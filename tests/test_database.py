@@ -60,6 +60,13 @@ def test_enumerate_tables_names_the_missing_crostru_files(tmp_path: Path) -> Non
     assert str(tmp_path) in str(error.value)
 
 
+def test_read_db_definition_without_crostru_raises_value_error(tmp_path: Path) -> None:
+    db = Database(str(tmp_path), False, None, ignore_problems, files=())
+
+    with pytest.raises(ValueError, match="CroStru is not open, so it has no database definition"):
+        db.read_db_definition()
+
+
 def test_decode_db_definition_rejects_a_record_number_crostru_does_not_hold(tmp_path: Path) -> None:
     dbdir = write_database(tmp_path / "db", [], kod=random_kod(seed=1))
 

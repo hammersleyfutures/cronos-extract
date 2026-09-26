@@ -5,7 +5,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack
 from pathlib import Path
 from types import TracebackType
-from typing import Self, cast, override
+from typing import Self, override
 
 from .._diagnostic import STRU_FILE, for_table_definition
 from ..Database import Database
@@ -81,9 +81,17 @@ class Bank:
     A Bank is not thread-safe. Generators from one bank may be interleaved on one thread.
     """
 
-    def __init__(self, directory: Path, database: Database, info: tuple[FileInfo, ...], log: DiagnosticLog) -> None:
+    def __init__(
+        self,
+        directory: Path,
+        database: Database,
+        bank_file: Datafile,
+        info: tuple[FileInfo, ...],
+        log: DiagnosticLog,
+    ) -> None:
         self._directory = directory
         self._database = database
+        self._bank_file = bank_file
         self._info = info
         self._log = log
         self._closed = False
@@ -144,11 +152,6 @@ class Bank:
     def _check_open(self) -> None:
         if self._closed:
             raise ValueError(f"the bank in {self._directory} is closed")
-
-    @property
-    def _bank_file(self) -> Datafile:
-        """The open CroBank Datafile; a Bank is only built with one, by open()."""
-        return cast(Datafile, self._database.bank)
 
     def files(self) -> Iterator[EmbeddedFile]:
         """
@@ -351,7 +354,13 @@ def open(
                 )
             )
         database = Database.from_datafiles(str(directory), compact, kod_coder(kod), stru, bank_file, log.record)
-        bank = Bank(directory, database, (stru_info, bank_info, *(info for info in optional if info is not None)), log)
+        bank = Bank(
+            directory,
+            database,
+            bank_file,
+            (stru_info, bank_info, *(info for info in optional if info is not None)),
+            log,
+        )
         bank._load_tables()
         stack.pop_all()
     return bank

@@ -153,6 +153,17 @@ def test_destruct_type_1_reads_keys_stored_by_reference_from_the_database(
     assert 'BankName             - "nowa"' in capsys.readouterr().out
 
 
+def test_destruct_type_1_with_a_key_stored_by_reference_and_no_crostru_fails_cleanly(tmp_path: Path) -> None:
+    # A definition holding one key, "X", stored by reference to CroStru record 2 (readname's byte-length prefix,
+    # then a dword whose top bit is clear, so decode_db_definition reads it as an index rather than inline bytes).
+    definition = bytes([1]) + b"X" + (2).to_bytes(4, "little")
+
+    result = run_command("cli", ["inspect", "destruct", "-t", "1", str(tmp_path)], stdin=definition.hex())
+
+    assert result.returncode == 1
+    assert result.stderr == 'Error: key "X" refers to CroStru record 2, but CroStru is not open\n'
+
+
 def test_recdump_debug_stops_at_the_last_record(capsys: pytest.CaptureFixture[str]) -> None:
     assert run_inspect("recdump", "--debug", str(TEST_DB)) == 0
 
