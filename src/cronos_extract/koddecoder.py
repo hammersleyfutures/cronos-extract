@@ -319,11 +319,11 @@ def new(*args: list[int]) -> KODcoding:
 
 def select_kod(header: DatHeader, kod: KODcoding | None, filename: str) -> tuple[KODcoding | None, Diagnostic | None]:
     """
-    The coder to decode the records of the file whose header is `header` with, when `kod` is given (None: no KOD
-    decoding), and at most one diagnostic, naming `filename`, when `kod` does not fit the file.
+    Return the coder for this file's records (None: no KOD decoding) and at most one diagnostic naming `filename`.
 
-    A file that is not KOD-encoded is read without KOD decoding, and one encrypted with the default KOD is read with
-    it, whatever KOD is given; only a file encrypted with its own KOD is read with the KOD given.
+    With no KOD given, nothing is decoded. When a KOD is given, a file that is not KOD-encoded is read without KOD
+    decoding, one encrypted with the default KOD is read with the default, and only a file encrypted with its own
+    KOD is read with the KOD given.
     """
 
     def problem(kind: DiagnosticKind, message: str) -> Diagnostic:
