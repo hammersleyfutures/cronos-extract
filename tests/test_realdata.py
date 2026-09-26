@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 from cli import run_command
-from cronos_builder import tad_layout
+from cronos_builder import ignore_problems, tad_layout
 
 import cronos_extract
 import cronos_extract.koddecoder
@@ -147,7 +147,7 @@ def test_field_text_matches_database_enumerate_records(dbdir: Path) -> None:
     with (
         open_or_skip(dbdir) as bank,
         contextlib.redirect_stderr(io.StringIO()),
-        Database(str(dbdir), False, cronos_extract.koddecoder.new(), report=lambda diagnostic: None) as db,
+        Database(str(dbdir), False, cronos_extract.koddecoder.new(), report=ignore_problems) as db,
     ):
         internal = {(table.tableid, table.tablename): table for table in db.enumerate_tables()}
         assert {(table.id, table.name) for table in bank.tables} == set(internal)

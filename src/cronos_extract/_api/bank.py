@@ -7,7 +7,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Self, cast, override
 
-from .._diagnostic import for_table_definition
+from .._diagnostic import STRU_FILE, for_table_definition
 from .._format.record import RecordParts
 from ..Database import Database
 from ..Datamodel import TableDefinition, describe_error
@@ -19,7 +19,6 @@ from .kod import Kod, kod_coder
 from .values import EmbeddedFile, FieldDefinition, FileReference, Record, decode_record
 
 DEFAULT_KOD = Kod.default()
-STRU_FILE = "CroStru.dat"
 BANK_FILE = "CroBank.dat"
 # Record data holds the table id in one byte.
 LARGEST_TABLE_ID = 255

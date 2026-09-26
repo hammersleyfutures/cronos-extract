@@ -20,6 +20,7 @@ from cronos_builder import (
     database_with_wrong_kod_record_out_of_range,
     definition_with_extra_key,
     erdgeist_table_definition,
+    ignore_problems,
     key_referencing_a_deleted_record,
     stru_records_from_test_db,
     write_database,
@@ -75,7 +76,7 @@ def damaged_index_db(tmp_path: Path) -> Path:
     return dbdir
 
 
-def test_a_damaged_file_the_subcommand_does_not_read_is_one_warning(
+def test_a_damaged_file_the_subcommand_does_not_read_is_one_unreadable_file_warning(
     damaged_index_db: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(REPO_ROOT)
@@ -127,7 +128,7 @@ def test_strudump_of_an_undecodable_definition_fails_with_the_kod_hint(capsys: p
 
 
 def definition_hex() -> str:
-    with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD), report=lambda diagnostic: None) as db:
+    with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD), report=ignore_problems) as db:
         record = cast(bytes, db.stru.readrec(1))
     return record[1:].hex()
 
@@ -199,7 +200,7 @@ def test_recdump_stops_at_the_last_record_even_with_debug() -> None:
 
 
 def test_destruct_type_1_prints_a_database_definition() -> None:
-    with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD), report=lambda diagnostic: None) as db:
+    with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD), report=ignore_problems) as db:
         assert db.stru is not None
         definition_record = db.stru.readrec(1)
     assert definition_record is not None

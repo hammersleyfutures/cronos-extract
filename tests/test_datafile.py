@@ -15,6 +15,7 @@ from cronos_builder import (
     V4_INLINE_RECORD_FLAGS,
     compressed_record,
     corrupt_compressed_record,
+    ignore_problems,
     write_datafile,
     write_raw_datafile,
 )
@@ -48,7 +49,7 @@ def write_bank_with_extended_record(
 @contextmanager
 def open_bank(directory: Path) -> Iterator[Datafile]:
     with open(directory / "CroBank.dat", "rb") as dat, open(directory / "CroBank.tad", "rb") as tad:
-        yield Datafile("Bank", dat, tad, False, None, report=lambda diagnostic: None)
+        yield Datafile("Bank", dat, tad, False, None, report=ignore_problems)
 
 
 def test_record_spread_over_extension_blocks_is_reassembled(tmp_path: Path) -> None:
