@@ -39,11 +39,8 @@ class StopReading(Exception):
     pass
 
 
-@pytest.fixture(autouse=True)
-def prints_nothing(capfd: pytest.CaptureFixture[str]):
-    yield
-    captured = capfd.readouterr()
-    assert (captured.out, captured.err) == ("", "")
+# Every test here also asserts that opening and reading printed nothing.
+pytestmark = pytest.mark.usefixtures("prints_nothing")
 
 
 def kinds(bank: cronos_extract.Bank) -> list[cronos_extract.DiagnosticKind]:
