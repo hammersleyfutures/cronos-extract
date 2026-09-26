@@ -396,7 +396,8 @@ subagent-driven: an implementer and a task review per task, then a whole-branch 
 Fable, `f169e6d..a496465`: ready to merge with fixes; no behavioural defect under hostile, interleaved, abandoned and
 re-entrant probing, and a crafted 1,000,000-entry `.tad` built a 4.0 MB index. Two Important findings, both
 documentation: `select_kod`'s docstring was false for `kod=None`, and `CLAUDE.md` gave the Files table a
-`records()`. Fixed in `3986414`; a scoped re-review found both addressed. Minors left as Fable triaged them: a
-throwaway `array` per scanned record in `_table_records` (negligible next to decoding), and four test-style points
+`records()`. Fixed in `3986414`; a scoped re-review found both addressed. The throwaway `array` that `setdefault` built
+for every scanned record in `_table_records`, a minor Fable left and Copilot raised on the pull request, was removed
+afterwards with a `_listed` helper. Minors left as Fable triaged them: four test-style points
 (the type-3 destruct test could join the parametrised one; the per-file KOD test branches on its expected value; the
 strudump `unused_kod` test checks membership only; the interleaving test indexes a tuple with a bool).

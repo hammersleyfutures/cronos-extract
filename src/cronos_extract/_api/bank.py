@@ -283,7 +283,7 @@ class Bank:
         the index whole, and a step whose record a re-entrant call (from on_diagnostic) indexed meanwhile does not
         index it again.
         """
-        listed = self._index.setdefault(table_id, array(self._index_typecode))
+        listed = self._listed(table_id)
         taken = 0
         while True:
             if taken < len(listed):
@@ -301,12 +301,20 @@ class Bank:
                 # A re-entrant call from on_diagnostic indexed this record meanwhile.
                 continue
             if data:
-                self._index.setdefault(data[0], array(self._index_typecode)).append(number)
+                self._listed(data[0]).append(number)
             self._scan_position = number + 1
             if data and data[0] == table_id:
                 # The record just appended to `listed`.
                 taken += 1
                 yield number, data
+
+    def _listed(self, table_id: int) -> array[int]:
+        """The index's array of record numbers for `table_id`, created empty the first time it is asked for."""
+        listed = self._index.get(table_id)
+        if listed is None:
+            created: array[int] = array(self._index_typecode)
+            listed = self._index[table_id] = created
+        return listed
 
     def _load_tables(self) -> None:
         """Decode the database definition and every table definition in it."""
