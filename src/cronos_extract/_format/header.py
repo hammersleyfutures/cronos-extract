@@ -11,7 +11,9 @@ VERSIONS_64BIT = (b"01.03", b"01.05", b"01.11")
 # Versions whose records are encoded with the database's own KOD table instead of the default one.
 VERSIONS_OWN_KOD = (b"01.04", b"01.05")
 V3_VERSIONS = (b"01.02", b"01.03", b"01.04", b"01.05")
+# 01.13 has not been seen in a real database.
 V4_VERSIONS = (b"01.11", b"01.13", b"01.14")
+# 01.19 has not been seen in a real database; this release does not read its .tad index.
 V7_VERSIONS = (b"01.19",)
 
 # The CronosPro generations a header's version belongs to.

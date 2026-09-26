@@ -8,14 +8,13 @@ from pathlib import Path
 
 from .._format.files import open_regular_file
 from .._format.header import read_dat_header
+from .._format.tad import tad_layout
 from ..Datafile import Datafile
 from .diagnostics import Diagnostic, DiagnosticKind, DiagnosticLog
 from .errors import NotACronosFile, UnsupportedVersion
 from .info import FileInfo, info_from_header, info_from_problem, read_file_info
 from .kod import Kod, kod_coder
 
-# The size of a .tad file's header for each generation the readers support.
-TAD_HEADER_SIZES = {"v3": 8, "v4": 16}
 # The prefixes the internal readers put before a warning they print.
 WARNING_PREFIX = re.compile(r"^(?:WARN|Warning): ")
 
@@ -102,14 +101,14 @@ def open_datafile(
             header = read_dat_header(dat, where=datname)
         except ValueError as e:
             raise NotACronosFile(f"{e}, in {directory}") from e
-        tad_header_size = TAD_HEADER_SIZES.get(header.generation)
-        if tad_header_size is None:
+        layout = tad_layout(header.version)
+        if layout is None:
             raise UnsupportedVersion(
                 f"{datname} in {directory} is CronosPro version {header.version_text} ({header.generation}), "
                 "which this release cannot read"
             )
-        if os.fstat(tad.fileno()).st_size < tad_header_size:
-            raise NotACronosFile(f"{tadname} in {directory} is shorter than its {tad_header_size}-byte header")
+        if os.fstat(tad.fileno()).st_size < layout.header.size:
+            raise NotACronosFile(f"{tadname} in {directory} is shorter than its {layout.header.size}-byte header")
         datafile = Datafile(base, dat, tad, compact, kod_coder(kod), warn_into(log, datname))
         stack.pop_all()
     return datafile, info_from_header(datpath.name[3:-4], datpath, header)
