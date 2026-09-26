@@ -109,6 +109,10 @@ its `report` callback; `open()`'s own `unused_kod` check goes. Every reader of a
 | the default | encoded with its own KOD | the default | `mismatched_kod`: `the file is encrypted with its own KOD, but is read with the default one; if its records do not decode, recover its KOD by cracking it` |
 | another | encoded with its own KOD | the KOD given | none |
 
+**(2026-09-26, Phase 3d):** for a v4 CroBank, the row above (the default KOD given or left as default, against a
+CroBank encoded with its own KOD) is no longer `mismatched_kod`: `open()` now refuses it with `OwnKodRequired`. See
+3d D2.
+
 "KOD-encoded" is bit 0 of the `.dat` header's encoding field (`DatHeader.kod_encoded`); "its own KOD" is
 `DatHeader.own_kod` (versions `01.04`, `01.05` and v4). `kod_encoded` is tested first: `own_kod` matters only for an
 encoded file, so a v4 file whose header is not KOD-encoded (as some real v4 databases are) takes the "not KOD-encoded"

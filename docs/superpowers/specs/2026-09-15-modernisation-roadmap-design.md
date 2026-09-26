@@ -31,13 +31,16 @@ Every decision below was made with Ben on 2026-09-15.
 14. **Phase 3 in four parts (decided 2026-09-25):** 3a the Datafile core (one record-decoding path, a `.tad`
     layout per version, CRC checking, a decompression limit), 3b definitions and diagnostics, 3c bank reading (the
     single-pass walk, KOD selection, file-reference context) and 3d research into v4 on real databases. Each has its
-    own spec, plan and pull request; 3a is designed in `2026-09-25-phase3a-datafile-core-design.md`.
+    own spec, plan and pull request; 3a is designed in `2026-09-25-phase3a-datafile-core-design.md`. **Phase 3e
+    added (decided 2026-09-26):** research into the locked v4 CroStru files (the `.dat` header's 256 bytes, known
+    plaintext from CroStru's known structure), the unexplained v4 `.tad` flags `04`, `08`, `0c` and `07`, and the
+    third `.tad` field's timestamps, with `2026-09-26-phase3d-v4-fixes-design.md`'s Evidence as its brief.
 
 ## Roadmap
 
 Each phase is a separate spec, plan and pull request, in this order. Phase 4 (v7) comes after 1.0 (decision 13).
 
-**Status (2026-09-26):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is complete: it is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below, and was merged as PR #9. Phase 2 is designed in `2026-09-17-phase2-command-line-design.md` and was merged as PR #11. Phase 3a is designed in `2026-09-25-phase3a-datafile-core-design.md` and was merged as PR #12. Phase 3b is designed in `2026-09-26-phase3b-definitions-diagnostics-design.md` and was merged as PR #13. Phase 3c is designed in `2026-09-26-phase3c-bank-reading-design.md` and implemented on branch `phase3c-bank-reading`, pull request pending.
+**Status (2026-09-26):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is complete: it is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below, and was merged as PR #9. Phase 2 is designed in `2026-09-17-phase2-command-line-design.md` and was merged as PR #11. Phase 3a is designed in `2026-09-25-phase3a-datafile-core-design.md` and was merged as PR #12. Phase 3b is designed in `2026-09-26-phase3b-definitions-diagnostics-design.md` and was merged as PR #13. Phase 3c is designed in `2026-09-26-phase3c-bank-reading-design.md` and was merged as PR #14. Phase 3d is designed in `2026-09-26-phase3d-v4-fixes-design.md` and implemented on branch `phase3d-v4-fixes`, pull request pending.
 
 ### Phase 0 — version survey
 
@@ -53,7 +56,7 @@ The `cronos-extract` subcommands (`survey`, `export`, `inspect`, `crack`), globa
 
 ### Phase 3 — restructure behind the façade
 
-Type annotations throughout; one record-decoding path in place of the copies in `Datafile.readrec` and `Datafile.dump`; a reader interface per format version; one CP-1251 decoding policy; one KOD-selection function; diagnostics in place of `print`. Fixes: tables with ids above 255, CRC checking, a diagnostic when a supplied KOD is not used, warnings printed once per problem instead of once per table pass, and the Files table header. The Phase 1 and Phase 2 tests guard every step. Delivered as 3a–3d (decision 14).
+Type annotations throughout; one record-decoding path in place of the copies in `Datafile.readrec` and `Datafile.dump`; a reader interface per format version; one CP-1251 decoding policy; one KOD-selection function; diagnostics in place of `print`. Fixes: tables with ids above 255, CRC checking, a diagnostic when a supplied KOD is not used, warnings printed once per problem instead of once per table pass, and the Files table header. The Phase 1 and Phase 2 tests guard every step. Delivered as 3a–3d (decision 14), with research into what 3d could not settle carried forward as Phase 3e.
 
 ### Phase 4 — v7 reader (after 1.0)
 
@@ -80,8 +83,20 @@ Found during Phase 0 and its reviews and not fixed there, each with the phase th
   with `croconvert` in Phase 2.
 - **Phase 3, from Phase 1:**
   - **(done, Phase 3a)** `Datafile.decompress` does not limit the decompressed size, so a crafted record can exhaust memory; do it with CRC checking. `_format/record.py`'s `decompress` now checks each chunk's CRC-32 and refuses past `MAX_DECOMPRESSED_BYTES` (256 MiB).
-  - **(now Phase 3d)** v4 deleted records: no real `01.11` `.tad` entry uses the `0xFFFFFFFF` length `readrec` treats as deleted, while many carry flag `02`, which `docs/cronos-research.md` calls deleted; today they are read as live records (flags `02` and `03` both). One real v4 database's `.tad` entries hold what look like 2024 Unix timestamps in their third field. `_format/tad.py`'s v4 layout keeps this behaviour and its comment names 3d as the phase that researches these flags and the third field against real databases. Phase 3c measured the cost: one real v4 database has 22,870,344 `.tad` entries, nearly all read as live, of which about 89,000 belong to its one table or its Files table; KOD-decoding each in Python (about 120 µs a record) makes one full read take about 22 minutes and a full realdata run several hours.
+  - **(done, Phase 3d)** v4 deleted records: no real `01.11` `.tad` entry uses the `0xFFFFFFFF` length `readrec`
+    treats as deleted, but every one with a nonzero header deleted count carries flag `02`, which
+    `docs/cronos-research.md` calls deleted. `_format/tad.py`'s v4 layout now marks an entry deleted when its flag
+    byte has bit `0x02` set, so it is no longer read as live; flags `04`, `08`, `0c` and `07`, and the third field's
+    2023–2024 Unix timestamps seen in one real database, are unexplained and become Phase 3e's research. One real
+    database is a mixed-generation database (v3 CroStru, v4 own-KOD KOD-encoded CroBank and CroIndex) with
+    22,870,296 genuine live records: read with the wrong, default KOD before 3d its export was garbage; `open()`
+    now refuses it with `OwnKodRequired` unless its own KOD is given, and `crack_kod(path, "dbcrack")` recovers that
+    KOD in 2 s. Its slowness is the record count and per-byte KOD decoding (about 120 µs a record), not flag-`02`
+    entries read as live.
   - KOD recovery fails on the real v4 databases whose CroBank and CroIndex headers are not KOD-encoded (both crack methods return `None`); how those databases encode records needs investigating. `tests/test_realdata.py` marks this as a strict xfail.
+  - Decoding KOD faster: `koddecoder.KODcoding.decode` decodes one byte at a time in Python, about 120 µs a record,
+    so about 45 minutes for the 22.87 million records of the slowest real database. `bytes.translate` for the table
+    lookup, then a position ramp, could do this faster.
   - **(done, Phase 3c)** KOD selection: `koddecoder.select_kod` chooses and reports the KOD for every reader, so an
     own-KOD file read with `Kod.default()` and a KOD-encoded file read with `kod=None` are now each reported as
     `mismatched_kod`.
@@ -100,7 +115,8 @@ Found during Phase 0 and its reviews and not fixed there, each with the phase th
 - **Phase 3, from Phase 2:**
   - **(done, Phase 3c)** `Table.records()` no longer reads all of CroBank on every call; `Bank` indexes CroBank once,
     as it is read, so a table read after another reads only its own records. The slowest real database was not
-    slow for this reason: it has one data table, and reading it still takes about 22 minutes (see the v4 item).
+    slow for this reason: it has one data table with 22.87 million genuine live records, and KOD-decoding them
+    still takes about 45 minutes (see the v4 item).
   - **(done, Phase 3c)** an `unresolved_file_reference` diagnostic now names the table, record and field of the
     reference itself, alongside the target record and the reason.
   - **(done, Phase 3b)** the `inspect` subcommands now pass a `_cli/report.py` `Report` to the readers they

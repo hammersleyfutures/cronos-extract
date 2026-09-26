@@ -401,3 +401,14 @@ for every scanned record in `_table_records`, a minor Fable left and Copilot rai
 afterwards with a `_listed` helper. Minors left as Fable triaged them: four test-style points
 (the type-3 destruct test could join the parametrised one; the per-file KOD test branches on its expected value; the
 strudump `unused_kod` test checks membership only; the interleaving test indexes a tuple with a bool).
+
+### Correction (2026-09-26, Phase 3d)
+
+The Timing paragraph above is wrong about that database. Its `.tad` holds 22,870,296 entries, not 22,870,344, and
+they are not "nearly all read as live" with only some belonging to its table: every one is a genuine live record, in
+a mixed-generation database (v3 CroStru, v4 own-KOD KOD-encoded CroBank and CroIndex) that 3c read with the wrong,
+default KOD, so its export was garbage (about 89,000 records by chance, out of 22,870,296 / 256 ≈ 89,337 expected).
+Its slowness is the record count and per-byte KOD decoding (about 120 µs a record, so about 45 minutes for 22.87
+million records), not flag-`02` entries read as live. With Phase 3d, `open()` refuses this database with
+`OwnKodRequired` unless its own KOD is given; `crack_kod(path, "dbcrack")` recovers that KOD in 2 s. See the 3d
+spec's Evidence and D2, D5.
