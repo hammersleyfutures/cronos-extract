@@ -375,6 +375,23 @@ def database_with_extra_definition_key(
     return str(directory)
 
 
+def table_definition_key_before_base001(directory: Path, keyname: str, value: bytes) -> str:
+    """Write a database whose database definition holds `keyname` with `value` inline, just before TEST_DB's Base001.
+
+    Base000 comes before it and Base001 after it, so a reader shows what it does with the tables around the key.
+    """
+    stru = stru_records_from_test_db()
+    dbinfo = stru[0]
+    assert dbinfo is not None
+    assert dbinfo.count(b"\x07Base001") == 1
+    name = keyname.encode("cp1251")
+    entry = bytes([len(name)]) + name + struct.pack("<L", len(value) | INLINE_DEFINITION_VALUE) + value
+    stru[0] = dbinfo.replace(b"\x07Base001", entry + b"\x07Base001")
+    write_datafile(directory, "Stru", stru)
+    write_datafile(directory, "Bank", [])
+    return str(directory)
+
+
 def database_with_files_abbreviation(
     directory: Path, abbreviation: bytes, bank_records: Sequence[bytes | None] = ()
 ) -> str:

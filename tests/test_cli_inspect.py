@@ -24,6 +24,7 @@ from cronos_builder import (
     ignore_problems,
     key_referencing_a_deleted_record,
     stru_records_from_test_db,
+    table_definition_key_before_base001,
     write_database,
     write_datafile,
 )
@@ -430,3 +431,20 @@ def test_recdump_of_an_absent_file_fails_naming_it(tmp_path: Path) -> None:
     assert result.returncode == 1
     assert result.stdout == ""
     assert result.stderr.splitlines() == [f"Error: {dbdir} has no CroSys.dat and CroSys.tad"]
+
+
+def test_strudump_reports_a_truncated_table_definition_and_dumps_the_later_tables(tmp_path: Path) -> None:
+    dbdir = table_definition_key_before_base001(tmp_path, "Base009", b"\x01")
+
+    result = run_command("cli", ["inspect", "strudump", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.splitlines() == [
+        "warning: unexpected_structure: CroStru.dat: Base000: FieldDefinition Section 2 not marked with a 2",
+        "warning: undecodable_table: CroStru.dat: Base009 cannot be decoded and is left out: EOFError",
+        "warning: unexpected_structure: CroStru.dat: Base001: FieldDefinition Section 2 not marked with a 2",
+    ]
+    headings = [line for line in result.stdout.splitlines() if line.startswith("== ")]
+    assert headings[:3] == ["== Base000 ==", "== Base009 ==", "== Base001 =="]
+    lines = result.stdout.splitlines()
+    assert lines[lines.index("== Base009 ==") + 1] == "== Base001 =="

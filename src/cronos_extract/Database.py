@@ -13,7 +13,7 @@ from . import koddecoder
 from ._diagnostic import STRU_FILE, Diagnostic, DiagnosticKind, Reporter, for_table_definition
 from ._format.files import open_regular_file
 from .Datafile import Datafile
-from .Datamodel import TableDefinition
+from .Datamodel import TableDefinition, undecodable_table
 from .hexdump import strescape, toout
 from .koddecoder import KODcoding
 from .readers import ByteReader, decode_cp1251
@@ -26,6 +26,33 @@ KOD_HINT = (
 
 # The files a Database opens unless told otherwise.
 ALL_FILES = ("Stru", "Index", "Bank", "Sys")
+
+
+class StoppingReporter:
+    """
+    A Reporter that passes each Diagnostic to `report` and remembers the first exception `report` raises.
+
+    The readers catch broad exceptions, so they can swallow a callback's request to stop. Once an exception is
+    remembered, every later call raises it again without calling `report`, and raise_remembered raises it for the
+    caller to check after a reader returns or raises.
+    """
+
+    def __init__(self, report: Reporter) -> None:
+        self._report = report
+        self._error: BaseException | None = None
+
+    def __call__(self, diagnostic: Diagnostic) -> None:
+        self.raise_remembered()
+        try:
+            self._report(diagnostic)
+        except BaseException as e:
+            self._error = e
+            raise
+
+    def raise_remembered(self) -> None:
+        """Raise the exception `report` raised, if it raised one."""
+        if self._error is not None:
+            raise self._error
 
 
 class Database:
@@ -237,12 +264,19 @@ class Database:
         dbdef = self.read_db_definition()
         self.dump_db_definition(args, dbdef)
 
+        report = StoppingReporter(self.report)
         for k, v in dbdef.items():
             if k.startswith("Base") and k[4:].isnumeric():
                 print(f"== {k} ==")
-                tbdef = TableDefinition(
-                    v, dbdef.get("BaseImage" + k[4:], b""), report=for_table_definition(self.report, k)
-                )
+                try:
+                    tbdef = TableDefinition(
+                        v, dbdef.get("BaseImage" + k[4:], b""), report=for_table_definition(report, k)
+                    )
+                except Exception as e:
+                    report.raise_remembered()
+                    report(undecodable_table(k, e))
+                    continue
+                report.raise_remembered()
                 tbdef.dump(args)
             elif k == "NS1":
                 self.dump_ns1(v)

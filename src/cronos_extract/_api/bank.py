@@ -10,7 +10,7 @@ from typing import Self, override
 from .._diagnostic import STRU_FILE, for_table_definition
 from ..Database import Database
 from ..Datafile import Datafile
-from ..Datamodel import TableDefinition, describe_error
+from ..Datamodel import TableDefinition, describe_error, undecodable_table
 from .datafiles import database_directory, list_directory, open_datafile, optional_file_info
 from .diagnostics import Diagnostic, DiagnosticKind, DiagnosticLog, RecordNumbers
 from .errors import DatabaseDefinitionError
@@ -290,13 +290,7 @@ class Bank:
                         report=for_table_definition(self._log.record, key),
                     )
                 except Exception as e:
-                    self._log.record(
-                        Diagnostic(
-                            DiagnosticKind.UNDECODABLE_TABLE,
-                            f"{key} cannot be decoded and is left out: {describe_error(e)}",
-                            file=STRU_FILE,
-                        )
-                    )
+                    self._log.record(undecodable_table(key, e))
                     continue
             if key[4:] == "000":
                 self._files_table_id = table_definition.tableid

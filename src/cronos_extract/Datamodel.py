@@ -4,7 +4,7 @@
 import argparse
 from typing import cast, override
 
-from ._diagnostic import Diagnostic, DiagnosticKind, Reporter
+from ._diagnostic import STRU_FILE, Diagnostic, DiagnosticKind, Reporter
 from .hexdump import ashex, tohex
 from .readers import ByteReader, decode_cp1251
 
@@ -287,3 +287,12 @@ def describe_error(error: Exception) -> str:
     """Return the type and, when it has one, the message of `error`, such as "EOFError" or "ValueError: bad"."""
     message = str(error)
     return f"{type(error).__name__}: {message}" if message else type(error).__name__
+
+
+def undecodable_table(key: str, error: Exception) -> Diagnostic:
+    """The undecodable_table Diagnostic for the table definition under `key`, which raised `error` and is left out."""
+    return Diagnostic(
+        DiagnosticKind.UNDECODABLE_TABLE,
+        f"{key} cannot be decoded and is left out: {describe_error(error)}",
+        file=STRU_FILE,
+    )

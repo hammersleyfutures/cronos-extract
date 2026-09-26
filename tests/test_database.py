@@ -1,5 +1,6 @@
 # ABOUTME: Tests for cronos_extract.Database: opening and closing a database's files and decoding its definition.
 # ABOUTME: Uses the sample database in test_data, small hand-written files and databases from tests/cronos_builder.py.
+import argparse
 import os
 import struct
 from pathlib import Path
@@ -9,9 +10,11 @@ from cli import run_command
 from cronos_builder import (
     TEST_DB,
     database_with_extra_definition_key,
+    erdgeist_table_definition,
     ignore_problems,
     random_kod,
     stru_records_from_test_db,
+    table_definition_key_before_base001,
     write_database,
     write_datafile,
 )
@@ -148,3 +151,42 @@ def test_a_database_made_from_open_datafiles_reads_its_definition(tmp_path: Path
         assert (db.stru, db.bank, db.index, db.sys) == (opened.stru, opened.bank, None, None)
         assert "Base001" in db.read_db_definition()
     assert problems == []
+
+
+class StopReading(Exception):
+    """What a report callback raises to stop a reader."""
+
+
+def test_a_report_callback_that_raises_once_stops_dump_db_table_defs(tmp_path: Path) -> None:
+    dbdir = table_definition_key_before_base001(tmp_path / "db", "Base009", erdgeist_table_definition())
+    problems: list[Diagnostic] = []
+
+    def stop_at_base009(diagnostic: Diagnostic) -> None:
+        problems.append(diagnostic)
+        if diagnostic.message.startswith("Base009: ") and len(problems) == 2:
+            raise StopReading
+
+    with Database(dbdir, False, KODcoding(INITIAL_KOD), report=stop_at_base009) as db, pytest.raises(StopReading):
+        db.dump_db_table_defs(argparse.Namespace(verbose=False, ascdump=False))
+
+    assert [problem.message for problem in problems] == [
+        "Base000: FieldDefinition Section 2 not marked with a 2",
+        "Base009: FieldDefinition Section 2 not marked with a 2",
+    ]
+
+
+def test_dump_db_table_defs_reports_a_truncated_table_definition_and_goes_on(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dbdir = table_definition_key_before_base001(tmp_path / "db", "Base009", b"\x01")
+    problems: list[Diagnostic] = []
+
+    with Database(dbdir, False, KODcoding(INITIAL_KOD), report=problems.append) as db:
+        db.dump_db_table_defs(argparse.Namespace(verbose=False, ascdump=False))
+
+    assert problems[1] == Diagnostic(
+        DiagnosticKind.UNDECODABLE_TABLE,
+        "Base009 cannot be decoded and is left out: EOFError",
+        file="CroStru.dat",
+    )
+    assert "== Base001 ==" in capsys.readouterr().out

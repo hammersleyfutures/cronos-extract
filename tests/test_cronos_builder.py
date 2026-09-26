@@ -34,6 +34,7 @@ from cronos_builder import (
     record_with_file_field,
     renamed_table_definition,
     stru_records_from_test_db,
+    table_definition_key_before_base001,
     table_definition_without_fields,
     tad_layout,
     write_database,
@@ -304,6 +305,16 @@ def test_field_definition_with_nul_name_puts_a_nul_in_the_first_fields_name(tmp_
     with cronos_extract.open(dbdir) as bank:
         table = next(table for table in bank.tables if table.id == 2)
         assert "\x00" in table.fields[0].name
+
+
+def test_a_key_before_base001_sits_between_base000_and_base001(tmp_path: Path) -> None:
+    dbdir = table_definition_key_before_base001(tmp_path / "db", "Extra", b"\x01\x02")
+
+    with Database(dbdir, False, KODcoding(INITIAL_KOD), report=ignore_problems) as db:
+        definition = db.read_db_definition()
+    keys = list(definition)
+    assert definition["Extra"] == b"\x01\x02"
+    assert keys.index("Base000") < keys.index("Extra") == keys.index("Base001") - 1
 
 
 def test_database_with_files_abbreviation_gives_the_files_table_that_abbreviation(tmp_path: Path) -> None:
