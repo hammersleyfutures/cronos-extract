@@ -301,14 +301,15 @@ def a_record() -> bytes:
     return bank_record(TEST_TABLE_ID, fields)
 
 
+@pytest.mark.parametrize("compact", [False, True], ids=["in-memory", "compact"])
 @pytest.mark.parametrize("given", [False, True], ids=["left-out", "given"])
-def test_an_own_kod_v4_bank_is_refused_with_the_default_kod(tmp_path: Path, given: bool) -> None:
+def test_an_own_kod_v4_bank_is_refused_with_the_default_kod(tmp_path: Path, given: bool, compact: bool) -> None:
     dbdir = database_with_own_kod_v4_bank(tmp_path / "db", [a_record(), a_record()])
     seen: list[cronos_extract.Diagnostic] = []
     kod = {"kod": cronos_extract.Kod.default()} if given else {}
 
     with pytest.raises(cronos_extract.OwnKodRequired) as refused:
-        cronos_extract.open(dbdir, on_diagnostic=seen.append, **kod)
+        cronos_extract.open(dbdir, compact=compact, on_diagnostic=seen.append, **kod)
 
     assert str(refused.value) == (
         f"CroBank.dat in {dbdir} is encrypted with the database's own KOD, which the default KOD would decode as "
@@ -327,7 +328,19 @@ def test_an_own_kod_v4_bank_opens_with_its_own_kod(tmp_path: Path) -> None:
         assert [record["Entry #1"].text for table in bank.tables for record in table.records()] == ["42", "42"]
 
 
-def test_an_own_kod_v4_bank_read_without_kod_decoding_is_not_refused(tmp_path: Path) -> None:
+def test_an_own_kod_v4_bank_opens_without_kod_decoding_with_a_warning(tmp_path: Path) -> None:
+    dbdir = database_with_own_kod_v4_bank(tmp_path / "db", [a_record(), a_record()], stru_encoded=False)
+    seen: list[cronos_extract.Diagnostic] = []
+
+    with cronos_extract.open(dbdir, kod=None, on_diagnostic=seen.append) as bank:
+        assert [table.name for table in bank.tables] == ["erdgeist"]
+
+    assert [(diagnostic.kind, diagnostic.file) for diagnostic in seen if diagnostic.kind in KOD_KINDS] == [
+        (cronos_extract.DiagnosticKind.MISMATCHED_KOD, "CroBank.dat")
+    ]
+
+
+def test_an_own_kod_v4_bank_with_an_encoded_stru_read_without_kod_decoding_is_not_refused(tmp_path: Path) -> None:
     dbdir = database_with_own_kod_v4_bank(tmp_path / "db", [a_record(), a_record()])
     seen: list[cronos_extract.Diagnostic] = []
 

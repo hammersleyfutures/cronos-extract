@@ -522,13 +522,16 @@ def database_with_wrong_kod_record_out_of_range(directory: Path) -> tuple[str, s
     return dbdir, wrong_kod_hex
 
 
-def database_with_own_kod_v4_bank(directory: Path, bank_records: Sequence[bytes | DeletedRecord | None]) -> str:
+def database_with_own_kod_v4_bank(
+    directory: Path, bank_records: Sequence[bytes | DeletedRecord | None], *, stru_encoded: bool = True
+) -> str:
     """Write a database whose CroStru is 01.02, encoded with the default KOD, and whose CroBank is 01.11, encoded
     with its own KOD, `random_kod(seed=1)`, holding `bank_records`; return its directory path.
 
     Real databases mix versions this way; read with the default KOD, its CroStru decodes and its CroBank does not.
+    With `stru_encoded` false, CroStru is not KOD-encoded, so it decodes without KOD decoding too.
     """
-    write_datafile(directory, "Stru", stru_records_from_test_db(), version=b"01.02", encoded=True)
+    write_datafile(directory, "Stru", stru_records_from_test_db(), version=b"01.02", encoded=stru_encoded)
     write_datafile(directory, "Bank", bank_records, kod=random_kod(seed=1), version=b"01.11")
     return str(directory)
 
