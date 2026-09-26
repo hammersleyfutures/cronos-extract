@@ -93,18 +93,22 @@ def read_extended(source: RecordSource, where: str, first: bytes, flags: int) ->
     if extlen > source.size:
         raise ValueError(f"{where} claims {extlen} bytes, more than the file holds")
 
-    data = first[headersize:]
+    data = bytearray(first[headersize:])
     chain = [extofs]
+    seen = {extofs}
     while len(data) < extlen:
-        if extofs in chain[:-1]:
-            raise ValueError(f"{where} has a loop in its extension blocks at offset {extofs:#x}")
         block = source.read(extofs, source.blocksize)
         if len(block) <= pointersize:
             raise ValueError(f"{where} has an extension block past the end of the file at offset {extofs:#x}")
         (extofs,) = struct.unpack(pointerformat, block[:pointersize])
+        if extofs in seen:
+            raise ValueError(f"{where} has a loop in its extension blocks at offset {extofs:#x}")
+        seen.add(extofs)
         chain.append(extofs)
         data += block[pointersize:]
-    return RecordParts(data[:extlen], flags, extended=True, chain=tuple(chain), length=extlen, tail=data[extlen:])
+    return RecordParts(
+        bytes(data[:extlen]), flags, extended=True, chain=tuple(chain), length=extlen, tail=bytes(data[extlen:])
+    )
 
 
 def is_compressed(data: bytes) -> bool:
