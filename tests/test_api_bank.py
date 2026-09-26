@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from cronos_builder import (
     DAT_PREFIX_SIZE,
+    TEST_TABLE_FIELD_COUNT,
     TEST_TABLE_FILE_FIELD_INDEX,
     TEST_TABLE_ID,
     V3_INLINE_BIT,
@@ -19,6 +20,7 @@ from cronos_builder import (
     file_reference_field,
     patched_table_definition,
     random_kod,
+    renamed_table_definition,
     write_database,
     write_raw_datafile,
 )
@@ -304,19 +306,34 @@ def test_read_file_follows_a_reference_and_names_the_file(tmp_path: Path, extens
 
 @pytest.mark.usefixtures("prints_nothing")
 @pytest.mark.parametrize(
-    ("reference", "reason"),
+    ("reference", "message"),
     [
-        (cronos_extract.FileReference("a", "b", None), "its record number is not a number"),
-        (cronos_extract.FileReference("a", "b", 0), "CroBank has no record 0"),
-        (cronos_extract.FileReference("a", "b", 99), "CroBank has no record 99"),
-        (cronos_extract.FileReference("a", "b", 3), "CroBank record 3 is deleted or corrupt"),
-        (cronos_extract.FileReference("a", "b", 4), "CroBank record 4 is deleted or corrupt"),
-        (cronos_extract.FileReference("a", "b", 1), "CroBank record 1 is not a record of the Files table"),
+        (cronos_extract.FileReference("a", "b", None), "the file cannot be read: its record number is not a number"),
+        (
+            cronos_extract.FileReference("a", "b", 0),
+            "the file in CroBank record 0 cannot be read: CroBank has no such record",
+        ),
+        (
+            cronos_extract.FileReference("a", "b", 99),
+            "the file in CroBank record 99 cannot be read: CroBank has no such record",
+        ),
+        (
+            cronos_extract.FileReference("a", "b", 3),
+            "the file in CroBank record 3 cannot be read: the record is deleted or corrupt",
+        ),
+        (
+            cronos_extract.FileReference("a", "b", 4),
+            "the file in CroBank record 4 cannot be read: the record is deleted or corrupt",
+        ),
+        (
+            cronos_extract.FileReference("a", "b", 1),
+            "the file in CroBank record 1 cannot be read: the record is not in the Files table",
+        ),
     ],
     ids=["no-number", "zero", "past-the-end", "deleted", "corrupt", "not-a-file"],
 )
 def test_a_reference_that_cannot_be_resolved_is_reported(
-    tmp_path: Path, reference: cronos_extract.FileReference, reason: str
+    tmp_path: Path, reference: cronos_extract.FileReference, message: str
 ) -> None:
     dbdir = write_database(tmp_path / "db", [person(), file_record(b"x"), None, corrupt_compressed_record()])
 
@@ -326,8 +343,8 @@ def test_a_reference_that_cannot_be_resolved_is_reported(
             d for d in bank.diagnostics if d.kind == cronos_extract.DiagnosticKind.UNRESOLVED_FILE_REFERENCE
         ]
 
-    assert (diagnostic.file, diagnostic.record) == ("CroBank.dat", reference.record)
-    assert diagnostic.message.endswith(reason)
+    assert (diagnostic.file, diagnostic.table, diagnostic.record, diagnostic.field) == ("CroBank.dat", None, None, None)
+    assert diagnostic.message == message
 
 
 @pytest.mark.usefixtures("prints_nothing")
@@ -341,7 +358,58 @@ def test_a_database_without_a_files_table_has_no_files(tmp_path: Path) -> None:
         (diagnostic,) = [
             d for d in bank.diagnostics if d.kind == cronos_extract.DiagnosticKind.UNRESOLVED_FILE_REFERENCE
         ]
-        assert diagnostic.message.endswith("the database has no Files table")
+        assert diagnostic.message == "the file in CroBank record 1 cannot be read: the database has no Files table"
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_a_decoded_reference_carries_where_it_was_read(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [person(file_field=file_reference_field("report", "pdf", 99))])
+
+    with cronos_extract.open(dbdir) as bank:
+        (record,) = bank.tables[0].records()
+        reference = record["Entry #6"].value
+        assert reference == cronos_extract.FileReference("report", "pdf", 99, "erdgeist", 1, "Entry #6")
+        assert isinstance(reference, cronos_extract.FileReference)
+        assert bank.read_file(reference) is None
+        unresolved = [d for d in bank.diagnostics if d.kind == DiagnosticKind.UNRESOLVED_FILE_REFERENCE]
+
+    assert unresolved == [
+        cronos_extract.Diagnostic(
+            DiagnosticKind.UNRESOLVED_FILE_REFERENCE,
+            "the file in CroBank record 99 cannot be read: CroBank has no such record",
+            file="CroBank.dat",
+            table="erdgeist",
+            record=1,
+            field="Entry #6",
+        )
+    ]
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_a_reference_read_by_the_second_table_read_carries_where_it_was_read(tmp_path: Path) -> None:
+    second = renamed_table_definition(patched_table_definition(tableid=2), name=b"other")
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[TEST_TABLE_FILE_FIELD_INDEX] = file_reference_field("scan", "jpg", 99)
+    dbdir = database_with_extra_definition_key(
+        tmp_path / "db", "Base002", second, [person(), bank_record(2, fields), person()]
+    )
+
+    with cronos_extract.open(dbdir) as bank:
+        first_table, second_table = bank.tables
+        assert [record.number for record in first_table.records()] == [1, 3]
+        (record,) = second_table.records()
+        reference = record["Entry #6"].value
+        assert reference == cronos_extract.FileReference("scan", "jpg", 99, "other", 2, "Entry #6")
+        assert isinstance(reference, cronos_extract.FileReference)
+        assert bank.read_file(reference) is None
+        (diagnostic,) = [d for d in bank.diagnostics if d.kind == DiagnosticKind.UNRESOLVED_FILE_REFERENCE]
+
+    assert (diagnostic.file, diagnostic.table, diagnostic.record, diagnostic.field) == (
+        "CroBank.dat",
+        "other",
+        2,
+        "Entry #6",
+    )
 
 
 GOLDEN_CASES = [

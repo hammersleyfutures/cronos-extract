@@ -86,7 +86,7 @@ def test_records_round_trip_through_the_reader(tmp_path: Path) -> None:
         "",
         "eleven",
     ]
-    assert file_field.value == cronos_extract.FileReference("отчёт", "pdf", 1)
+    assert file_field.value == cronos_extract.FileReference("отчёт", "pdf", 1, "erdgeist", 2, "Entry #6")
     assert stored_file == cronos_extract.EmbeddedFile(1, b"PDFDATA", "отчёт.pdf")
 
 
@@ -340,7 +340,7 @@ def test_record_with_file_field_puts_the_reference_in_the_file_field(tmp_path: P
 
     with cronos_extract.open(dbdir) as bank:
         (record,) = bank.tables[0].records()
-        assert record["Entry #6"].value == cronos_extract.FileReference("scan", "jpg", 7)
+        assert record["Entry #6"].value == cronos_extract.FileReference("scan", "jpg", 7, "erdgeist", 1, "Entry #6")
 
 
 def test_compressed_record_holds_the_crc_of_each_chunk() -> None:

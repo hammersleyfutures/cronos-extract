@@ -149,7 +149,9 @@ def test_a_file_reference_is_a_file_reference_whose_raw_bytes_omit_the_complex_f
 
     field = decode(with_field(FILE, stored))["Entry #6"]
 
-    assert field.value == FileReference(name="report", extension="pdf", record=12)
+    assert field.value == FileReference(
+        name="report", extension="pdf", record=12, table="erdgeist", referrer=7, field="Entry #6"
+    )
     assert field.text == "report pdf 12"
     assert field.raw == stored[5:]
 

@@ -162,31 +162,35 @@ class Bank:
         The file `reference` refers to, named after the reference.
 
         Returns None, recording unresolved_file_reference, when the reference's record is not a readable record of
-        the Files table. Raises ValueError when the bank is closed.
+        the Files table. The diagnostic is located at the reference's table, referrer and field. Raises ValueError
+        when the bank is closed.
         """
         self._check_open()
         record = reference.record
         if record is None:
-            return self._unresolved(reference, "its record number is not a number")
+            return self._unresolved(reference, "the file cannot be read: its record number is not a number")
+        cannot_be_read = f"the file in CroBank record {record} cannot be read"
         if self._files_table_id is None:
-            return self._unresolved(reference, "the database has no Files table")
+            return self._unresolved(reference, f"{cannot_be_read}: the database has no Files table")
         if not 1 <= record <= self._bank_file.nrofrecords:
-            return self._unresolved(reference, f"CroBank has no record {record}")
+            return self._unresolved(reference, f"{cannot_be_read}: CroBank has no such record")
         data = self._read(record)
         if data is None:
-            return self._unresolved(reference, f"CroBank record {record} is deleted or corrupt")
+            return self._unresolved(reference, f"{cannot_be_read}: the record is deleted or corrupt")
         if not data or data[0] != self._files_table_id:
-            return self._unresolved(reference, f"CroBank record {record} is not a record of the Files table")
+            return self._unresolved(reference, f"{cannot_be_read}: the record is not in the Files table")
         name = f"{reference.name}.{reference.extension}" if reference.extension else reference.name
         return EmbeddedFile(record, data[1:], name)
 
-    def _unresolved(self, reference: FileReference, reason: str) -> None:
+    def _unresolved(self, reference: FileReference, message: str) -> None:
         self._log.record(
             Diagnostic(
                 DiagnosticKind.UNRESOLVED_FILE_REFERENCE,
-                f"a file reference cannot be read: {reason}",
+                message,
                 file=BANK_FILE,
-                record=reference.record,
+                table=reference.table,
+                record=reference.referrer,
+                field=reference.field,
             )
         )
 
