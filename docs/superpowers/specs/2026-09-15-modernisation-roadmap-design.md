@@ -37,7 +37,7 @@ Every decision below was made with Ben on 2026-09-15.
 
 Each phase is a separate spec, plan and pull request, in this order. Phase 4 (v7) comes after 1.0 (decision 13).
 
-**Status (2026-09-26):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is complete: it is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below, and was merged as PR #9. Phase 2 is designed in `2026-09-17-phase2-command-line-design.md` and was merged as PR #11. Phase 3a is designed in `2026-09-25-phase3a-datafile-core-design.md` and was merged as PR #12. Phase 3b is designed in `2026-09-26-phase3b-definitions-diagnostics-design.md` and complete: implemented on branch `phase3b-definitions-diagnostics` (`2026-09-26-phase3b-definitions-diagnostics.md`), pull request pending.
+**Status (2026-09-26):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is complete: it is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below, and was merged as PR #9. Phase 2 is designed in `2026-09-17-phase2-command-line-design.md` and was merged as PR #11. Phase 3a is designed in `2026-09-25-phase3a-datafile-core-design.md` and was merged as PR #12. Phase 3b is designed in `2026-09-26-phase3b-definitions-diagnostics-design.md` and was merged as PR #13. Phase 3c is designed in `2026-09-26-phase3c-bank-reading-design.md` and implemented on branch `phase3c-bank-reading`, pull request pending.
 
 ### Phase 0 — version survey
 
@@ -65,7 +65,7 @@ Version 1.0, API documentation, PyPI publishing, making the repository public, d
 
 ### After 1.0
 
-KOD recovery that chooses the best whole permutation (an assignment problem, e.g. the Hungarian algorithm) instead of deciding each entry independently; link, dictionary, external-file and multi-valued fields; numeric value types; `inspect destruct` error handling; interactive crack exit statuses; the v7 reader of Phase 4.
+KOD recovery that chooses the best whole permutation (an assignment problem, e.g. the Hungarian algorithm) instead of deciding each entry independently; link, dictionary, external-file and multi-valued fields; numeric value types; `inspect destruct` error handling; interactive crack exit statuses; the v7 reader of Phase 4; CroSys record type 3, given a real CroSys file.
 
 ### Open items carried forward
 
@@ -82,7 +82,9 @@ Found during Phase 0 and its reviews and not fixed there, each with the phase th
   - **(done, Phase 3a)** `Datafile.decompress` does not limit the decompressed size, so a crafted record can exhaust memory; do it with CRC checking. `_format/record.py`'s `decompress` now checks each chunk's CRC-32 and refuses past `MAX_DECOMPRESSED_BYTES` (256 MiB).
   - **(now Phase 3d)** v4 deleted records: no real `01.11` `.tad` entry uses the `0xFFFFFFFF` length `readrec` treats as deleted, while many carry flag `02`, which `docs/cronos-research.md` calls deleted; today they are read as live records (flags `02` and `03` both). One real v4 database's `.tad` entries hold what look like 2024 Unix timestamps in their third field. `_format/tad.py`'s v4 layout keeps this behaviour and its comment names 3d as the phase that researches these flags and the third field against real databases.
   - KOD recovery fails on the real v4 databases whose CroBank and CroIndex headers are not KOD-encoded (both crack methods return `None`); how those databases encode records needs investigating. `tests/test_realdata.py` marks this as a strict xfail.
-  - KOD selection: an own-KOD file read with `Kod.default()` is decoded with the wrong table and no diagnostic; `kod=None` on a KOD-encoded file gives a `DatabaseDefinitionError` whose hint suggests cracking.
+  - **(done, Phase 3c)** KOD selection: `koddecoder.select_kod` chooses and reports the KOD for every reader, so an
+    own-KOD file read with `Kod.default()` and a KOD-encoded file read with `kod=None` are now each reported as
+    `mismatched_kod`.
   - **(done, Phase 3b)** `Database.enumerate_tables`, `enumerate_records`, `enumerate_files`, `incomplete_records`,
     `files_tableid`, `get_record`, `readbankrec` and `readbankrec_or_raise` are removed. `tests/golden/api/*.jsonl`
     and `local/realdata-fingerprints.json` replaced `enumerate_records` as the API's output oracle first; the tests
@@ -96,11 +98,10 @@ Found during Phase 0 and its reviews and not fixed there, each with the phase th
   record `--noninteractive` skips (D12). `export --csv` writes each referenced file while the records are read,
   instead of holding them in memory until the end (D8).
 - **Phase 3, from Phase 2:**
-  - `Table.records()` reads all of CroBank on every call, so an export's time is proportional to tables × records;
-    one pass that hands each record to its table by id would make it linear.
-  - an `unresolved_file_reference` diagnostic names the referenced record and the reason, but not the file name or
-    the record holding the reference, which `croconvert` named; the CSV export could add them, or the API could
-    carry the referring record.
+  - **(done, Phase 3c)** `Table.records()` no longer reads all of CroBank on every call; `Bank` indexes CroBank once,
+    as it is read, so a table read after another reads only its own records.
+  - **(done, Phase 3c)** an `unresolved_file_reference` diagnostic now names the table, record and field of the
+    reference itself, alongside the target record and the reason.
   - **(done, Phase 3b)** the `inspect` subcommands now pass a `_cli/report.py` `Report` to the readers they
     construct, so a reader problem is one escaped `warning: kind: location: message` line, in the same format
     `export` uses.

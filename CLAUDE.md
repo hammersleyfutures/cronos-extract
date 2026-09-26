@@ -39,7 +39,9 @@ The code is layered, from bytes up to commands (`src/cronos_extract/`):
   and a database it cannot read raises a `CronosError`. It drives `Datafile`, `Database.read_db_definition` and
   `TableDefinition` directly, passing each a `report` callback (`_diagnostic.py`'s `Reporter`) that turns every
   problem reading survives into a `Diagnostic` with its `DiagnosticKind`; no reader prints. Only names in `__all__`
-  are public. `_format/files.py`'s `open_regular_file` is the one way Cro files are opened.
+  are public. `_format/files.py`'s `open_regular_file` is the one way Cro files are opened. `Bank` (`_api/bank.py`)
+  indexes CroBank as it reads it: the first table's or the Files table's `records()` to reach a CroBank record
+  indexes it for every table, so a table read after another reads only its own records.
 - **`Datafile`**: one `.dat`/`.tad` pair. The `.tad` is an index of `(offset, length, flags)` entries, where a length of
   `0xFFFFFFFF` means deleted. Record numbers start at 1. Each `.tad` entry is parsed by `_format/tad.py`'s layout for
   its generation: v3 keeps the inline flag in bit 31 of the length, v4 in the top byte of the offset. Every record is
