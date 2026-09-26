@@ -4,7 +4,7 @@ import argparse
 import struct
 
 import pytest
-from cronos_builder import erdgeist_table_definition
+from cronos_builder import erdgeist_table_definition, table_definition_without_fields
 
 from cronos_extract._diagnostic import Diagnostic, DiagnosticKind, for_table_definition
 from cronos_extract.Datamodel import Field, FieldDefinition, TableDefinition, is_table_key
@@ -135,3 +135,26 @@ def test_a_table_definition_reporter_names_crostru_and_the_key(capfd: pytest.Cap
 )
 def test_only_base_followed_by_ascii_digits_names_a_table(key: str, is_table: bool) -> None:
     assert is_table_key(key) is is_table
+
+
+def test_a_table_definition_without_its_terminator_is_reported(capfd: pytest.CaptureFixture[str]) -> None:
+    problems: list[Diagnostic] = []
+
+    TableDefinition(table_definition_without_fields(tableid=2)[:-4], report=problems.append)
+
+    assert problems == [Diagnostic(DiagnosticKind.UNEXPECTED_STRUCTURE, "FieldDefinition section not terminated")]
+    assert capfd.readouterr().err == ""
+
+
+def test_a_table_definition_cut_short_in_its_second_field_section_is_reported(
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    problems: list[Diagnostic] = []
+
+    TableDefinition(table_definition_without_fields(tableid=2)[:-8], report=problems.append)
+
+    assert problems == [
+        Diagnostic(DiagnosticKind.UNEXPECTED_STRUCTURE, "Error '' parsing FieldDefinitions"),
+        Diagnostic(DiagnosticKind.UNEXPECTED_STRUCTURE, "FieldDefinition section not terminated"),
+    ]
+    assert capfd.readouterr().err == ""

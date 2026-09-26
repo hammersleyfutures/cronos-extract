@@ -190,3 +190,18 @@ def test_dump_db_table_defs_reports_a_truncated_table_definition_and_goes_on(
         file="CroStru.dat",
     )
     assert "== Base001 ==" in capsys.readouterr().out
+
+
+def test_an_ns1_that_decodes_shorter_than_its_header_is_reported(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    problems: list[Diagnostic] = []
+    ns1 = struct.pack("<BB", 0, 0) + KODcoding(INITIAL_KOD).encode(0, bytes(4))
+
+    with Database(write_database(tmp_path / "db", []), False, KODcoding(INITIAL_KOD), report=problems.append) as db:
+        db.dump_ns1(ns1)
+
+    assert problems == [
+        Diagnostic(DiagnosticKind.UNEXPECTED_STRUCTURE, "NS1 is unexpectedly short", file="CroStru.dat")
+    ]
+    assert capsys.readouterr().out == ""

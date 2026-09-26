@@ -480,3 +480,14 @@ def test_destruct_of_a_definition_it_cannot_decode_fails_with_one_error_line(
     assert result.returncode == 1
     assert result.stdout == ""
     assert result.stderr.splitlines() == [error]
+
+
+def test_crodump_prints_a_reader_diagnostic_as_a_warning_line(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [])
+    with (Path(dbdir) / "CroBank.tad").open("ab") as tad:
+        tad.write(b"\x00")
+
+    result = run_command("cli", ["inspect", "crodump", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert "warning: unexpected_structure: CroBank.dat: leftover data in .tad" in result.stderr.splitlines()
