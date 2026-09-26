@@ -3,7 +3,7 @@
 import random
 import struct
 import zlib
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from pathlib import Path
 from typing import cast
 
@@ -43,6 +43,8 @@ V4_VERSIONS = (b"01.11",)
 OWN_KOD_VERSIONS = (b"01.04", b"01.05", b"01.11")
 # A non-zero flag byte in the top of a v3 .tad length marks a record stored inline, not in extension blocks.
 INLINE_RECORD_FLAGS = 0x80
+# A v3 .tad entry keeps its inline flag in bit 31 of the length field; the length is bits 0-30.
+V3_INLINE_BIT = 1 << 31
 # A v4 .tad keeps the flag byte in the top of the offset; 0x04 marks a record stored inline.
 V4_INLINE_RECORD_FLAGS = 0x04
 DELETED_RECORD_LENGTH = 0xFFFFFFFF
@@ -106,19 +108,26 @@ def write_datafile(
     records: Sequence[bytes | None],
     kod: Sequence[int] | None = None,
     version: bytes = ENCRYPTED_V3_VERSION,
+    encoded: bool = False,
 ) -> None:
     """Write Cro<name>.dat and Cro<name>.tad of `version` holding `records` inline, where None marks a deleted record.
 
     With `kod`, each record is KOD-encoded using its record number as the shift and the encoding bit is set; only
-    versions encrypted with their own KOD table take one. Deleted records cannot be written for v4, because how v4
-    marks them is unsettled.
+    versions encrypted with their own KOD table take one. With `encoded` and no `kod`, the records are KOD-encoded
+    with the default table and the encoding bit is set, as CronosPro stores them in many files of every version.
+    Deleted records cannot be written for v4, because how v4 marks them is unsettled.
     """
     tad_layout(version)
     if kod is not None and version not in OWN_KOD_VERSIONS:
         raise ValueError(
             f"version {version!r} is always read with the default KOD, so it cannot be written with another"
         )
-    coder = KODcoding(list(kod)) if kod is not None else None
+    if kod is not None:
+        coder = KODcoding(list(kod))
+    elif encoded:
+        coder = KODcoding(INITIAL_KOD)
+    else:
+        coder = None
     body = bytearray()
     tad_entries = []
     for recno, plain in enumerate(records, start=1):
@@ -132,7 +141,7 @@ def write_datafile(
         if version in V4_VERSIONS:
             tad_entries.append((offset | V4_INLINE_RECORD_FLAGS << 56, len(stored)))
         else:
-            tad_entries.append((offset, len(stored) | INLINE_RECORD_FLAGS << 24))
+            tad_entries.append((offset, len(stored) | V3_INLINE_BIT))
         body += stored
     write_raw_datafile(directory, name, bytes(body), tad_entries, encoding=1 if coder else 0, version=version)
 
@@ -180,23 +189,31 @@ def record_with_file_field(file_field: bytes) -> bytes:
     return bank_record(TEST_TABLE_ID, fields)
 
 
-def compressed_chunk(compdata: bytes) -> bytes:
-    """Encode `compdata` as one chunk of Datafile's compressed record format: size, flag, crc, then the data.
+def compressed_chunk(compdata: bytes, checksum: int) -> bytes:
+    """Encode `compdata` as one chunk of Datafile's compressed record format: size, flag, CRC-32, then the data.
 
     A compressed record is one or more of these chunks followed by the final marker b"\\x00\\x00\\x02".
     """
-    return struct.pack(">HH", 6 + len(compdata), 0x800) + struct.pack("<L", 0) + compdata
+    return struct.pack(">HH", 6 + len(compdata), 0x800) + struct.pack("<L", checksum) + compdata
 
 
-def compressed_record(payload: bytes) -> bytes:
-    """Compress `payload` into Datafile's compressed record format, as a single chunk."""
-    coder = zlib.compressobj(9, zlib.DEFLATED, -15)
-    return compressed_chunk(coder.compress(payload) + coder.flush()) + b"\x00\x00\x02"
+def compressed_record(*payloads: bytes, wrong_checksums: Collection[int] = ()) -> bytes:
+    """Compress each of `payloads` into one chunk of Datafile's compressed record format, in order.
+
+    Each chunk holds the CRC-32 of its payload, except those whose index, counted from 0, is in `wrong_checksums`,
+    whose CRC-32 is inverted.
+    """
+    chunks = []
+    for index, payload in enumerate(payloads):
+        coder = zlib.compressobj(9, zlib.DEFLATED, -15)
+        checksum = zlib.crc32(payload) ^ (0xFFFFFFFF if index in wrong_checksums else 0)
+        chunks.append(compressed_chunk(coder.compress(payload) + coder.flush(), checksum))
+    return b"".join(chunks) + b"\x00\x00\x02"
 
 
 def corrupt_compressed_record() -> bytes:
-    """Return record bytes that pass Datafile.iscompressed() but whose data is not valid deflate output."""
-    return compressed_chunk(b"\xff\xff\xff\xff") + b"\x00\x00\x02"
+    """Return record bytes that pass Datafile's compression check but whose data is not valid deflate output."""
+    return compressed_chunk(b"\xff\xff\xff\xff", 0) + b"\x00\x00\x02"
 
 
 def key_referencing_a_deleted_record(directory: Path, keyname: str, bank_records: Sequence[bytes | None] = ()) -> str:
@@ -363,15 +380,16 @@ def write_database(
     extra_stru_records: Sequence[bytes] = (),
     index_records: Sequence[bytes | None] | None = None,
     version: bytes = ENCRYPTED_V3_VERSION,
+    encoded: bool = False,
 ) -> str:
     """Write a database of `version` with TEST_DB's table definitions and `bank_records`, returning its directory path.
 
     `extra_stru_records` are appended to the CroStru records; `index_records`, when given, are written to CroIndex.
     """
-    write_datafile(directory, "Stru", [*stru_records_from_test_db(), *extra_stru_records], kod, version)
-    write_datafile(directory, "Bank", bank_records, kod, version)
+    write_datafile(directory, "Stru", [*stru_records_from_test_db(), *extra_stru_records], kod, version, encoded)
+    write_datafile(directory, "Bank", bank_records, kod, version, encoded)
     if index_records is not None:
-        write_datafile(directory, "Index", index_records, kod, version)
+        write_datafile(directory, "Index", index_records, kod, version, encoded)
     return str(directory)
 
 
