@@ -5,7 +5,7 @@ from typing import override
 
 from ._diagnostic import Diagnostic, DiagnosticKind
 from .hexdump import ashex, tohex
-from .readers import ByteReader
+from .readers import ByteReader, decode_cp1251
 
 
 class FieldDefinition:
@@ -61,7 +61,7 @@ class TableImage:
 
         _ = rd.readbyte()
         namelen = rd.readdword()
-        self.filename = rd.readbytes(namelen).decode("cp1251", "ignore")
+        self.filename = decode_cp1251(rd.readbytes(namelen))
 
         imagelen = rd.readdword()
         self.data = rd.readbytes(imagelen)
@@ -205,7 +205,7 @@ class Field:
                 y, m, d = 1900 + int(data[:-4]), int(data[-4:-2]), int(data[-2:])
                 self.content = f"{y:04d}-{m:02d}-{d:02d}"
             except ValueError:
-                self.content = data.decode("cp1251", "ignore")
+                self.content = decode_cp1251(data)
 
         elif self.typ == 5:
             # typ 5 is TIME, formatted like: <hour:2digits><minute:2digits>
@@ -214,16 +214,16 @@ class Field:
                 h, m = int(data[-4:-2]), int(data[-2:])
                 self.content = f"{h:02d}:{m:02d}"
             except ValueError:
-                self.content = data.decode("cp1251", "ignore")
+                self.content = decode_cp1251(data)
 
         elif self.typ == 6:
             # decode internal file reference
             rd = ByteReader(data)
             self.flag = rd.readdword()
             self.remlen = rd.readdword()
-            self.filename = rd.readtoseperator(b"\x1e").decode("cp1251", "ignore")
-            self.extname = rd.readtoseperator(b"\x1e").decode("cp1251", "ignore")
-            self.filedatarecord = rd.readtoseperator(b"\x1e").decode("cp1251", "ignore")
+            self.filename = decode_cp1251(rd.readtoseperator(b"\x1e"))
+            self.extname = decode_cp1251(rd.readtoseperator(b"\x1e"))
+            self.filedatarecord = decode_cp1251(rd.readtoseperator(b"\x1e"))
             self.content = " ".join([self.filename, self.extname, self.filedatarecord])
 
         elif self.typ == 7 or self.typ == 8 or self.typ == 9:
@@ -232,7 +232,7 @@ class Field:
 
         else:
             # currently assuming everything else to be strings, which is wrong
-            self.content = data.rstrip(b"\x00").decode("cp1251", "ignore")
+            self.content = decode_cp1251(data.rstrip(b"\x00"))
 
 
 class Record:

@@ -67,6 +67,10 @@ def test_text_field_is_decoded_from_cp1251_without_trailing_nuls() -> None:
     assert Field(make_fielddef(2), "Привет".encode("cp1251") + b"\x00\x00").content == "Привет"
 
 
+def test_text_field_holding_an_undefined_cp1251_byte_keeps_it_as_the_replacement_character() -> None:
+    assert Field(make_fielddef(2), b"a\x98b").content == "a�b"
+
+
 def test_empty_field_has_empty_content() -> None:
     assert Field(make_fielddef(2), b"").content == ""
 

@@ -3,6 +3,13 @@
 import struct
 
 
+def decode_cp1251(data: bytes) -> str:
+    """
+    `data` decoded as CP-1251; the one byte CP-1251 leaves undefined (0x98) becomes U+FFFD, so decoding never fails.
+    """
+    return data.decode("cp1251", "replace")
+
+
 class ByteReader:
     """
     The ByteReader object is used when decoding various variable sized structures.
@@ -69,7 +76,7 @@ class ByteReader:
         Bytes undefined in CP-1251 become U+FFFD.
         """
         namelen = self.readdword()
-        return self.readbytes(namelen).decode("cp1251", "replace")
+        return decode_cp1251(self.readbytes(namelen))
 
     def readname(self):
         """
@@ -78,7 +85,7 @@ class ByteReader:
         Bytes undefined in CP-1251 become U+FFFD.
         """
         namelen = self.readbyte()
-        return self.readbytes(namelen).decode("cp1251", "replace")
+        return decode_cp1251(self.readbytes(namelen))
 
     def readtoseperator(self, sep):
         """

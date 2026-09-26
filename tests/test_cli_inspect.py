@@ -4,6 +4,7 @@ import io
 import os
 import re
 import shutil
+import struct
 from pathlib import Path
 from typing import cast
 
@@ -32,6 +33,7 @@ from cronos_extract._cli import inspect
 from cronos_extract._cli.report import Failure
 from cronos_extract.Database import KOD_HINT, Database
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
+from cronos_extract.koddecoder import new as new_kod
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 GOLDEN_DIR = Path(__file__).resolve().parent / "golden"
@@ -358,6 +360,26 @@ def test_a_short_ns1_is_reported_as_a_warning_line(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert "warning: unexpected_structure: CroStru.dat: NS1 is unexpectedly short" in result.stderr.splitlines()
+
+
+def test_an_ns1_password_holding_an_undefined_cp1251_byte_prints_with_the_replacement_character(
+    tmp_path: Path,
+) -> None:
+    stru = stru_records_from_test_db()
+    dbinfo = stru[0]
+    assert dbinfo is not None
+    password = b"a\x98b"
+    decoded_data = struct.pack("<LLL", 0, 0, len(password)) + password
+    ns1kod = new_kod()
+    ns1_value = struct.pack("<BB", 0, 0) + ns1kod.encode(0, decoded_data)
+    stru[0] = definition_with_extra_key(dbinfo.replace(b"\x03NS1", b"\x03XS1"), "NS1", ns1_value)
+    write_datafile(tmp_path, "Stru", stru)
+    write_datafile(tmp_path, "Bank", [])
+
+    result = run_command("cli", ["inspect", "strudump", str(tmp_path)])
+
+    assert result.returncode == 0, result.stderr
+    assert "a�b" in result.stdout
 
 
 def test_destruct_type_2_reports_problems_as_warning_lines() -> None:

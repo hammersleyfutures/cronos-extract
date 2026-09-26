@@ -15,7 +15,7 @@ from ._format.files import open_regular_file
 from .Datafile import Datafile
 from .Datamodel import Record, TableDefinition, describe_error
 from .hexdump import ashex, strescape, toout
-from .readers import ByteReader
+from .readers import ByteReader, decode_cp1251
 
 # Printed after a database definition error: a KOD that isn't the database's own decodes the definition as garbage.
 KOD_HINT = (
@@ -251,7 +251,7 @@ class Database:
             unk2,
             pwlen,
         ) = struct.unpack_from("<LLL", decoded_data, 0)
-        password = decoded_data[12 : 12 + pwlen].decode("cp1251")
+        password = decode_cp1251(decoded_data[12 : 12 + pwlen])
 
         print(f"== NS1: ({unk1:02x},{sh:02x}) -> {serial:6d}, {unk2:d}, {pwlen:d}:'{password}'")
 

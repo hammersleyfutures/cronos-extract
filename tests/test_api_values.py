@@ -2,12 +2,14 @@
 # ABOUTME: Decodes records laid out by tests/cronos_builder.py against the real "erdgeist" table definition.
 import dataclasses
 import datetime
+import struct
 
 import pytest
 from cronos_builder import (
     TEST_TABLE_FIELD_COUNT,
     TEST_TABLE_ID,
     bank_record,
+    complex_field,
     erdgeist_table_definition,
     file_reference_field,
     ignore_problems,
@@ -159,6 +161,16 @@ def test_a_file_reference_is_a_file_reference_whose_raw_bytes_omit_the_complex_f
 )
 def test_a_file_reference_whose_record_is_not_ascii_digits_has_no_record(record_text: str) -> None:
     field = decode(with_field(FILE, file_reference_field("report", "pdf", record_text)))["Entry #6"]
+
+    assert isinstance(field.value, FileReference)
+    assert field.value.record is None
+
+
+def test_a_file_reference_whose_record_holds_an_undefined_cp1251_byte_has_no_record() -> None:
+    strings = b"\x1e".join([b"report", b"pdf", b"1\x98"])
+    stored = complex_field(struct.pack("<LL", 1, len(strings)) + strings)
+
+    field = decode(with_field(FILE, stored))["Entry #6"]
 
     assert isinstance(field.value, FileReference)
     assert field.value.record is None

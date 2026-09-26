@@ -2,7 +2,11 @@
 # ABOUTME: Covers CP-1251 decoding of names and strings, including bytes undefined in that encoding.
 import pytest
 
-from cronos_extract.readers import ByteReader
+from cronos_extract.readers import ByteReader, decode_cp1251
+
+
+def test_decode_cp1251_replaces_a_byte_undefined_in_cp1251() -> None:
+    assert decode_cp1251(b"a\x98b") == "a�b"
 
 
 def test_readname_decodes_cp1251_bytes() -> None:

@@ -106,6 +106,9 @@ def toout(args, data):
 def strescape(txt):
     """
     Convert bytes or text to a c-style escaped string.
+
+    Only receives values Database.dump_db_definition's regex has let through, which cannot hold 0x98, so this
+    strict decode cannot fail.
     """
     if isinstance(txt, bytes):
         txt = txt.decode("cp1251")
