@@ -362,8 +362,9 @@ def open(
     Open the CronosPro database in the directory `path`.
 
     `kod` is the KOD table to decode records with, or None to read them without KOD decoding. `compact` reads the
-    CroStru and CroBank indexes from disk instead of memory; the table index of CroBank, up to 4 bytes per CroBank
-    record, is held in memory either way. `on_diagnostic` is called with each diagnostic as it is recorded.
+    CroStru and CroBank indexes from disk instead of memory; the table index of CroBank holds about 4 bytes per live
+    CroBank record (8 where 4 cannot hold its record numbers), whether or not `compact` is set. `on_diagnostic` is
+    called with each diagnostic as it is recorded.
 
     Raises OSError when `path` does not exist, is not a directory or cannot be listed; TypeError for a bytes path;
     NotACronosFile or UnsupportedVersion when CroStru or CroBank cannot be read; DatabaseDefinitionError when the
