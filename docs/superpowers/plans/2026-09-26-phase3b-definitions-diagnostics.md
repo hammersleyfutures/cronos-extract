@@ -379,3 +379,49 @@ def test_api_output_matches_its_fingerprint(dbdir: Path, request: pytest.Fixture
 - [ ] Add an Outcome section at the end of this plan: commits, test counts on `master` and the branch, the golden diff
   of Task 2, the realdata counts of Tasks 5 and 6 (counts only), every divergence from the plan and its ruling, and a
   "Final review" subsection holding "Recorded after the whole-branch review."; commit "Record the Phase 3b outcome".
+
+## Outcome
+
+Implemented on branch `phase3b-definitions-diagnostics` in 18 commits after the plan (`fcc83ef`..`da7dcaf`, plus this
+record), subagent-driven: an implementer and a task review per task, then a whole-branch review.
+
+- **Tests:** 841 passed on `main` (`ca0622c`), 874 on the branch (10 realdata tests deselected in both). ruff, ty and
+  format checks clean.
+- **Golden files:** `inspect-strudump.stderr` changed as Task 2 predicted, from two `Warning: FieldDefinition Section 2
+  not marked with a 2` lines to `warning: unexpected_structure: CroStru.dat: Base000: ...` and the same for `Base001`.
+  `export-postgres-nokod.stderr` changed too, which spec B1 said would not happen: its dbinfo warning now reads
+  `CroStru.dat record 1: expected dbinfo to start with 0x03`, because the plan's table puts `record=1` on that
+  diagnostic and on the duplicate key (ruled in Task 2: the location is more precise). `tests/golden/api/` holds 12 new
+  files.
+- **Realdata (counts only):** fingerprints written and checked in Task 5, 38 passed and 22 skipped in each run (12
+  skips for CroBank too large to walk per table, 10 for databases that do not open with the default KOD). After the
+  removal in Task 6, the fingerprint test alone: 19 passed, 11 skipped, 0 failed.
+
+### Divergences from the plan and their rulings
+
+- Task 2: `record=1` on the dbinfo and duplicate-key diagnostics, with the golden line above and two assertions
+  updated; `tests/test_api_datafiles.py`'s `warn_into` test replaced by a `for_table_definition` test; two unlisted
+  tests adjusted (`test_api_public.py` for the moved types, and the damaged-file `inspect` test, which now pins three
+  `warning:` lines). The raising-callback test passed before the change: the API already guarded callbacks.
+- Task 4: typing `Database.stru` and `.bank` as `Datafile | None` exposed a traceback on `main`: `inspect destruct -t 1`
+  without CroStru, given a key stored by reference. Fixed in `e765239` (an `Error:` line), with an explicit CroStru
+  check in `read_db_definition` and `Bank` taking the CroBank `Datafile` directly instead of a cast.
+- Task 5: one golden file per case, as the plan chose; the extended-layout files are byte-identical to the inline ones,
+  which the parity test compared with `enumerate_records`.
+- Task 6: the parity helpers were renamed after the golden cases, and the three copies of the `prints_nothing` fixture
+  became one in `tests/conftest.py`, applied to the golden test so the removed parity test's silence check survives.
+- Task 7: the roadmap's status line also recorded Phases 2 and 3a as merged (PRs #11 and #12).
+
+### Final review
+
+Recorded after the whole-branch review (Fable, `ca0622c..8799fc8`): ready to merge with fixes. One Important finding,
+from `main`: `inspect strudump` raised a traceback (`EOFError`) on a truncated table definition, where `export` reports
+`undecodable_table` and goes on. Fixed in `5fcd991` the same way as `export`, sharing its message. Minor findings fixed:
+the `Diagnostic` docstring now promises only that a message never holds CroBank record data (`79bff8f`); `crack
+strucrack` prints each diagnostic once (`606e8d7`); `inspect destruct` requires `-t 1|2|3` and ends bad input with one
+`Error:` line (`ed10bbe`); strudump and the API decide table keys with one `is_table_key` (`4cc6ec9`); tests for every
+reachable reader diagnostic and for `inspect crodump` printing one (`da7dcaf`). A scoped re-review approved the fixes.
+
+Left for Ben: `TableDefinition.decode`'s `Error '...' parsing Tabledefinition` branch cannot run (its try block raises
+only `EOFError`, handled first), so it has no test; and `inspect destruct -t 3` prints nothing for a CroSys record of
+type 3, because `destruct_sys3_def` is an empty stub on `main` too.
