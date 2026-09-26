@@ -10,7 +10,7 @@ from cli import run_command
 from cronos_builder import (
     BLOCKSIZE,
     DAT_PREFIX_SIZE,
-    INLINE_RECORD_FLAGS,
+    V3_INLINE_BIT,
     V4_INLINE_RECORD_FLAGS,
     corrupt_compressed_record,
     write_datafile,
@@ -96,7 +96,7 @@ def inline_tad_entry(version: bytes, offset: int, length: int) -> tuple[int, int
     """The (offset field, length field) of an inline record's .tad entry, with the flags where `version` keeps them."""
     if version == b"01.11":
         return (offset | V4_INLINE_RECORD_FLAGS << 56, length)
-    return (offset, length | INLINE_RECORD_FLAGS << 24)
+    return (offset, length | V3_INLINE_BIT)
 
 
 @pytest.mark.parametrize("version", [b"01.04", b"01.11"], ids=["v3", "v4"])
@@ -123,7 +123,7 @@ def test_record_of_length_zero_is_empty(tmp_path: Path) -> None:
 
 def test_corrupt_compressed_record_is_reported_as_a_value_error(tmp_path: Path) -> None:
     data = corrupt_compressed_record()
-    write_raw_datafile(tmp_path, "Bank", data, [(FIRST_BLOCK, len(data) | INLINE_RECORD_FLAGS << 24)])
+    write_raw_datafile(tmp_path, "Bank", data, [(FIRST_BLOCK, len(data) | V3_INLINE_BIT)])
 
     with open_bank(tmp_path) as bank, pytest.raises(ValueError, match="corrupt compressed data"):
         bank.readrec(1)
@@ -135,7 +135,7 @@ def test_inspect_crodump_reports_a_corrupt_record_and_dumps_the_next(tmp_path: P
         tmp_path,
         "Bank",
         corrupt + inline,
-        [(FIRST_BLOCK, len(corrupt)), (FIRST_BLOCK + len(corrupt), len(inline) | INLINE_RECORD_FLAGS << 24)],
+        [(FIRST_BLOCK, len(corrupt)), (FIRST_BLOCK + len(corrupt), len(inline) | V3_INLINE_BIT)],
     )
 
     result = run_command("cli", ["inspect", "crodump", str(tmp_path)])

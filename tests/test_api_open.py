@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from cronos_builder import (
     DAT_PREFIX_SIZE,
-    INLINE_RECORD_FLAGS,
+    V3_INLINE_BIT,
     database_with_extra_definition_key,
     database_with_missing_definition,
     database_with_wrong_kod_record_out_of_range,
@@ -157,9 +157,7 @@ def test_a_deleted_definition_record_is_a_definition_error(tmp_path: Path) -> No
 
 def test_a_stru_file_cut_to_its_header_is_a_definition_error(tmp_path: Path) -> None:
     dbdir = Path(write_database(tmp_path / "db", []))
-    entries = [
-        (DAT_PREFIX_SIZE, len(record or b"") | INLINE_RECORD_FLAGS << 24) for record in stru_records_from_test_db()
-    ]
+    entries = [(DAT_PREFIX_SIZE, len(record or b"") | V3_INLINE_BIT) for record in stru_records_from_test_db()]
     write_raw_datafile(dbdir, "Stru", b"", entries)
 
     with pytest.raises(cronos_extract.DatabaseDefinitionError, match=r"record 1 in CroStru\.dat .* past the end"):

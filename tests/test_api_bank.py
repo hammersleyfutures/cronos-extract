@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 from cronos_builder import (
     DAT_PREFIX_SIZE,
-    INLINE_RECORD_FLAGS,
     TEST_TABLE_FILE_FIELD_INDEX,
     TEST_TABLE_ID,
+    V3_INLINE_BIT,
     bank_record,
     corrupt_compressed_record,
     database_with_extra_definition_key,
@@ -77,7 +77,7 @@ def test_records_are_read_one_crobank_record_per_step(tmp_path: Path) -> None:
 def test_records_the_dat_file_does_not_hold_are_corrupt(tmp_path: Path) -> None:
     dbdir = Path(write_database(tmp_path / "db", []))
     data = person()
-    inline = INLINE_RECORD_FLAGS << 24
+    inline = V3_INLINE_BIT
     write_raw_datafile(
         dbdir,
         "Bank",

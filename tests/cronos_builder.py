@@ -41,8 +41,6 @@ VERSIONS_64BIT = (b"01.03", b"01.05", b"01.11")
 V4_VERSIONS = (b"01.11",)
 # Datafile decodes every other version with the default KOD table, whatever table it is given.
 OWN_KOD_VERSIONS = (b"01.04", b"01.05", b"01.11")
-# A non-zero flag byte in the top of a v3 .tad length marks a record stored inline, not in extension blocks.
-INLINE_RECORD_FLAGS = 0x80
 # A v3 .tad entry keeps its inline flag in bit 31 of the length field; the length is bits 0-30.
 V3_INLINE_BIT = 1 << 31
 # A v4 .tad keeps the flag byte in the top of the offset; 0x04 marks a record stored inline.
