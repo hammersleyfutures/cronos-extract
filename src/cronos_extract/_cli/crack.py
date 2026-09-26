@@ -15,7 +15,7 @@ from .._api.crack import (
     stru_xref,
 )
 from .._api.datafiles import database_directory, list_directory, open_datafile
-from .._api.diagnostics import DiagnosticLog
+from .._api.diagnostics import Diagnostic, DiagnosticLog
 from ..Datafile import Datafile
 from ..hexdump import as1251, asambigoushex, asasc, tohex, unhex
 from ..koddecoder import match_with_mismatches
@@ -150,10 +150,19 @@ def raw_datafile(dbdir: str, base: str) -> Iterator[Datafile]:
     """
     Cro<base> in `dbdir`, opened without KOD decoding and reading its index from disk, with its warnings on stderr.
 
+    The crack reads some records more than once, so each diagnostic is printed only the first time it is reported.
     Raises NotACronosFile or UnsupportedVersion when it cannot be read, and OSError when `dbdir` cannot be listed.
     """
     directory = database_directory(dbdir)
-    log = DiagnosticLog(Report().diagnostic)
+    report = Report()
+    reported: set[Diagnostic] = set()
+
+    def report_once(diagnostic: Diagnostic) -> None:
+        if diagnostic not in reported:
+            reported.add(diagnostic)
+            report.diagnostic(diagnostic)
+
+    log = DiagnosticLog(report_once)
     datafile, _ = open_datafile(directory, list_directory(directory), base, compact=True, kod=None, log=log)
     try:
         yield datafile

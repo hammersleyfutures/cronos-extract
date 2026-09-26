@@ -534,5 +534,6 @@ def test_strucrack_reports_a_crostru_checksum_mismatch_by_kind(tmp_path: Path) -
 
     assert result.returncode == 0, result.stderr
     lines = result.stderr.splitlines()
-    assert any(line.startswith("warning: checksum_mismatch: CroStru.dat record ") for line in lines), result.stderr
+    mismatches = [line for line in lines if line.startswith("warning: checksum_mismatch: CroStru.dat record ")]
+    assert len(mismatches) == 1, result.stderr
     assert not any("unexpected_structure" in line for line in lines), result.stderr
