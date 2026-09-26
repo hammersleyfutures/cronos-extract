@@ -3,7 +3,8 @@
 # -*- coding: utf-8 -*-
 from typing import override
 
-from .hexdump import ashex, tohex, warn_on_stderr
+from ._diagnostic import Diagnostic, DiagnosticKind
+from .hexdump import ashex, tohex
 from .readers import ByteReader
 
 
@@ -67,13 +68,20 @@ class TableImage:
 
 
 class TableDefinition:
-    def __init__(self, data, image="", warn=warn_on_stderr):
+    def __init__(self, data, image=b"", *, report):
         """
         Decode a table definition from `data` and its image from `image`.
-        `warn` receives a message for each part of the definition that is not laid out as expected.
+        `report` receives an unexpected_structure Diagnostic for each part of the definition that is not laid out as
+        expected; it names no file or table, which for_table_definition adds.
         """
-        self.warn = warn
+        self.report = report
         self.decode(data, image)
+
+    def report_structure(self, message):
+        """
+        Report `message` as an unexpected_structure Diagnostic.
+        """
+        self.report(Diagnostic(DiagnosticKind.UNEXPECTED_STRUCTURE, message))
 
     def decode(self, data, image):
         """
@@ -122,7 +130,7 @@ class TableDefinition:
             # Then there's another unknow dword and then (probably section indicator) 02 byte
             self.unk8_ = rd.readdword()
             if rd.readbyte() != 2:
-                self.warn("Warning: FieldDefinition Section 2 not marked with a 2")
+                self.report_structure("FieldDefinition Section 2 not marked with a 2")
             self.unk9 = rd.readdword()
 
             # Then there's the amount of extra fields in the second section
@@ -133,14 +141,14 @@ class TableDefinition:
                 fielddef = rd.readbytes(deflen)
                 self.fields.append(FieldDefinition(fielddef))
         except Exception as e:
-            self.warn(f"Warning: Error '{e}' parsing FieldDefinitions")
+            self.report_structure(f"Error '{e}' parsing FieldDefinitions")
 
         try:
             self.terminator = rd.readdword()
         except EOFError:
-            self.warn("Warning: FieldDefinition section not terminated")
+            self.report_structure("FieldDefinition section not terminated")
         except Exception as e:
-            self.warn(f"Warning: Error '{e}' parsing Tabledefinition")
+            self.report_structure(f"Error '{e}' parsing Tabledefinition")
 
         self.fields.sort(key=lambda field: field.idx2)
 

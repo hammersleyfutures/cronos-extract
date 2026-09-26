@@ -1,8 +1,6 @@
 # ABOUTME: Finds a database's Cro*.dat and Cro*.tad pairs by case-insensitive name and opens them as Datafiles.
 # ABOUTME: A missing, unopenable, non-Cronos or unsupported CroStru or CroBank raises; CroIndex and CroSys are reported.
 import os
-import re
-from collections.abc import Callable
 from contextlib import ExitStack
 from pathlib import Path
 
@@ -14,9 +12,6 @@ from .diagnostics import Diagnostic, DiagnosticKind, DiagnosticLog
 from .errors import NotACronosFile, UnsupportedVersion
 from .info import FileInfo, info_from_header, info_from_problem, read_file_info
 from .kod import Kod, kod_coder
-
-# The prefixes the internal readers put before a warning they print.
-WARNING_PREFIX = re.compile(r"^(?:WARN|Warning): ")
 
 
 def database_directory(path: str | os.PathLike[str]) -> Path:
@@ -30,19 +25,6 @@ def database_directory(path: str | os.PathLike[str]) -> Path:
 def list_directory(directory: Path) -> list[str]:
     """The names in `directory`, sorted. OSError propagates, including NotADirectoryError for a file."""
     return sorted(os.listdir(directory))
-
-
-def warn_into(log: DiagnosticLog, filename: str, prefix: str = "") -> Callable[[str], None]:
-    """A warn hook for the internal readers that records each warning about `filename` as unexpected_structure."""
-
-    def warn(message: str) -> None:
-        log.record(
-            Diagnostic(
-                DiagnosticKind.UNEXPECTED_STRUCTURE, prefix + WARNING_PREFIX.sub("", message, count=1), file=filename
-            )
-        )
-
-    return warn
 
 
 def find_file(directory: Path, names: list[str], filename: str, log: DiagnosticLog) -> Path | None:
@@ -84,7 +66,7 @@ def open_datafile(
 
     Raises NotACronosFile when the pair is incomplete, a file is not a regular file or cannot be opened, the .dat
     header is short or has an unknown magic, or the .tad is shorter than its header; UnsupportedVersion when the
-    version is neither v3 nor v4. Warnings from the Datafile are recorded in `log`.
+    version is neither v3 nor v4. Problems the Datafile reports are recorded in `log`.
     """
     datname, tadname = f"Cro{base}.dat", f"Cro{base}.tad"
     datpath = find_file(directory, names, datname, log)
@@ -109,7 +91,7 @@ def open_datafile(
             )
         if os.fstat(tad.fileno()).st_size < layout.header.size:
             raise NotACronosFile(f"{tadname} in {directory} is shorter than its {layout.header.size}-byte header")
-        datafile = Datafile(base, dat, tad, compact, kod_coder(kod), warn_into(log, datname))
+        datafile = Datafile(base, dat, tad, compact, kod_coder(kod), log.record)
         stack.pop_all()
     return datafile, info_from_header(datpath.name[3:-4], datpath, header)
 

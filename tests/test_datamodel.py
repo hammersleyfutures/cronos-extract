@@ -6,6 +6,7 @@ import struct
 import pytest
 from cronos_builder import erdgeist_table_definition
 
+from cronos_extract._diagnostic import Diagnostic, DiagnosticKind, for_table_definition
 from cronos_extract.Datamodel import Field, FieldDefinition, TableDefinition
 from cronos_extract.hexdump import aschr, hexdump
 
@@ -90,10 +91,27 @@ def test_hexdump_ascdump_prints_text_only(capsys: pytest.CaptureFixture[str]) ->
     assert capsys.readouterr().out == "00000000: Прив\n00000004: ет!\n"
 
 
-def test_table_definition_warnings_go_through_the_warn_hook(capfd: pytest.CaptureFixture[str]) -> None:
-    messages: list[str] = []
+def test_table_definition_problems_go_through_report(capfd: pytest.CaptureFixture[str]) -> None:
+    problems: list[Diagnostic] = []
 
-    TableDefinition(erdgeist_table_definition(), warn=messages.append)
+    TableDefinition(erdgeist_table_definition(), report=problems.append)
 
-    assert messages == ["Warning: FieldDefinition Section 2 not marked with a 2"]
+    assert problems == [
+        Diagnostic(DiagnosticKind.UNEXPECTED_STRUCTURE, "FieldDefinition Section 2 not marked with a 2")
+    ]
+    assert capfd.readouterr().err == ""
+
+
+def test_a_table_definition_reporter_names_crostru_and_the_key(capfd: pytest.CaptureFixture[str]) -> None:
+    problems: list[Diagnostic] = []
+
+    TableDefinition(erdgeist_table_definition(), report=for_table_definition(problems.append, "Base001"))
+
+    assert problems == [
+        Diagnostic(
+            DiagnosticKind.UNEXPECTED_STRUCTURE,
+            "Base001: FieldDefinition Section 2 not marked with a 2",
+            file="CroStru.dat",
+        )
+    ]
     assert capfd.readouterr().err == ""

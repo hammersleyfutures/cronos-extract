@@ -13,9 +13,9 @@ from cronos_extract._api.datafiles import (
     list_directory,
     open_datafile,
     optional_file_info,
-    warn_into,
 )
 from cronos_extract._api.diagnostics import DiagnosticLog
+from cronos_extract._diagnostic import for_table_definition
 from cronos_extract._format.files import NotARegularFile
 
 
@@ -175,15 +175,18 @@ def test_leftover_tad_bytes_are_an_unexpected_structure_diagnostic(tmp_path: Pat
     ]
 
 
-def test_warn_into_strips_the_printed_prefix_and_adds_its_own() -> None:
-    log = DiagnosticLog(None)
+def test_for_table_definition_names_crostru_and_prefixes_the_key() -> None:
+    problems: list[Diagnostic] = []
+    report = for_table_definition(problems.append, "Base001")
 
-    warn_into(log, "CroStru.dat", prefix="Base001: ")("Warning: FieldDefinition section not terminated")
-    warn_into(log, "CroStru.dat")("WARN: expected dbinfo to start with 0x03")
+    report(Diagnostic(DiagnosticKind.UNEXPECTED_STRUCTURE, "FieldDefinition section not terminated"))
+    report(Diagnostic(DiagnosticKind.CHECKSUM_MISMATCH, "kept", file="CroBank.dat", record=3, field="Name"))
 
-    assert [diagnostic.message for diagnostic in log.kept] == [
-        "Base001: FieldDefinition section not terminated",
-        "expected dbinfo to start with 0x03",
+    assert problems == [
+        Diagnostic(
+            DiagnosticKind.UNEXPECTED_STRUCTURE, "Base001: FieldDefinition section not terminated", file="CroStru.dat"
+        ),
+        Diagnostic(DiagnosticKind.CHECKSUM_MISMATCH, "Base001: kept", file="CroStru.dat", record=3, field="Name"),
     ]
 
 

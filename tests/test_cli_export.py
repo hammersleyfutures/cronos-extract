@@ -759,7 +759,7 @@ def test_db_definition_errors_go_to_stderr_not_into_the_sql() -> None:
 
     assert result.returncode == 1
     assert result.stdout == ""
-    assert "warning: unexpected_structure: CroStru.dat: expected dbinfo to start with 0x03" in result.stderr
+    assert "warning: unexpected_structure: CroStru.dat record 1: expected dbinfo to start with 0x03" in result.stderr
     assert last_line(result.stderr).startswith("Error: the database definition in CroStru.dat of ")
 
 

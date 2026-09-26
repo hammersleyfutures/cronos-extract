@@ -7,6 +7,7 @@ from collections.abc import Collection, Sequence
 from pathlib import Path
 from typing import cast
 
+from cronos_extract._diagnostic import Diagnostic
 from cronos_extract.Database import Database
 from cronos_extract.Datamodel import TableDefinition
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
@@ -53,6 +54,10 @@ INLINE_DEFINITION_VALUE = 0x80000000
 # Offsets in TEST_DB's Base001 definition: the table id, and the number of field definitions after the names.
 TABLE_ID_OFFSET = 14
 FIELD_COUNT_OFFSET = 34
+
+
+def ignore_problems(diagnostic: Diagnostic) -> None:
+    """A report callback for readers whose problems a test does not look at."""
 
 
 def random_kod(seed: int) -> list[int]:
@@ -194,7 +199,7 @@ def write_datafile(
 
 def stru_records_from_test_db() -> list[bytes | None]:
     """Return the decoded CroStru records of TEST_DB, which define the tables of every built database."""
-    with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD)) as db:
+    with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD), report=ignore_problems) as db:
         assert db.stru is not None, f"no CroStru file in {TEST_DB}"
         return [db.stru.readrec(recno) for recno in range(1, db.stru.nrofrecords + 1)]
 
@@ -282,7 +287,7 @@ def key_referencing_a_deleted_record(directory: Path, keyname: str, bank_records
 
 def erdgeist_table_definition() -> bytes:
     """Return the definition bytes of TEST_DB's table "erdgeist", the value of its Base001 key."""
-    with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD)) as db:
+    with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD), report=ignore_problems) as db:
         return cast(bytes, db.read_db_definition()["Base001"])
 
 
@@ -296,7 +301,7 @@ def patched_table_definition(*, tableid: int) -> bytes:
 
 def files_table_definition() -> bytes:
     """Return the definition bytes of TEST_DB's Files table, the value of its Base000 key."""
-    with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD)) as db:
+    with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD), report=ignore_problems) as db:
         return cast(bytes, db.read_db_definition()["Base000"])
 
 
@@ -326,7 +331,7 @@ def field_definition_with_nul_name(definition: bytes, *, field_number: int = 0) 
     one defined, which is usually the system number). A field's name is a length-prefixed CP-1251 string right
     after its type (word) and idx1 (dword); the length is unchanged, so nothing else in `definition` moves.
     """
-    header_length = len(TableDefinition(definition, warn=lambda message: None).headerdata)
+    header_length = len(TableDefinition(definition, report=ignore_problems).headerdata)
     reader = ByteReader(definition[header_length:])
     for _ in range(field_number):
         deflen = reader.readword()
@@ -459,8 +464,8 @@ def database_with_wrong_kod_record_out_of_range(directory: Path) -> tuple[str, s
 
     The wrong KOD, `random_kod(seed=2622)`, decodes CroStru record 1 into a database definition whose one key
     has a garbage record number that CroStru doesn't hold; 2622 is the smallest seed found whose garbage record
-    1 starts with 0x03 (so dump_db_table_defs/enumerate_tables print no "WARN: expected dbinfo" line) and whose
-    garbage key name holds no line-break characters (so the error is a single stderr line).
+    1 starts with 0x03 (so dump_db_table_defs/enumerate_tables report no "expected dbinfo to start with 0x03"
+    problem) and whose garbage key name holds no line-break characters (so the error is a single stderr line).
     """
     dbdir = write_database(directory, [], kod=random_kod(seed=1))
     wrong_kod_hex = bytes(random_kod(seed=2622)).hex()

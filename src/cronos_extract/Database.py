@@ -10,10 +10,11 @@ from contextlib import ExitStack
 from functools import cached_property
 
 from . import koddecoder
+from ._diagnostic import STRU_FILE, Diagnostic, DiagnosticKind, for_table_definition
 from ._format.files import open_regular_file
 from .Datafile import Datafile
 from .Datamodel import Record, TableDefinition, describe_error
-from .hexdump import ashex, strescape, toout, warn_on_stderr
+from .hexdump import ashex, strescape, toout
 from .readers import ByteReader
 
 # Printed after a database definition error: a KOD that isn't the database's own decodes the definition as garbage.
@@ -32,19 +33,20 @@ class Database:
     # The number of records enumerate_records yielded with fields that could not be decoded.
     incomplete_records = 0
 
-    def __init__(self, dbdir, compact, kod, files=ALL_FILES, warn=warn_on_stderr):
+    def __init__(self, dbdir, compact, kod, report, files=ALL_FILES):
         """
         `dbdir` is the directory containing the Cro*.dat and Cro*.tad files.
         `compact` if set, the .tad file is not cached in memory, making dumps 15 % slower
         `kod` is a KOD coder object, or None to read the records without KOD decoding.
+        `report` receives a Diagnostic for each problem that reading survives, such as a part of the database
+        definition that is not laid out as expected.
         `files` names the components to open, from ALL_FILES; the others are None.
-        `warn` receives a message for each part of the database definition that is not laid out as expected.
         """
         self.dbdir = dbdir
         self.compact = compact
         self.kod = kod
         self.files = files
-        self.warn = warn
+        self.report = report
 
         # Stru+Index+Bank for the components for most databases
         self.stru = self.getfile("Stru")
@@ -56,12 +58,12 @@ class Database:
         self.sys = self.getfile("Sys")
 
     @classmethod
-    def from_datafiles(cls, dbdir, compact, kod, stru, bank, warn):
+    def from_datafiles(cls, dbdir, compact, kod, stru, bank, report):
         """
         Make a Database of the CroStru and CroBank Datafiles `stru` and `bank`, which the caller has opened.
         Closing the Database closes them.
         """
-        db = cls(dbdir, compact, kod, files=(), warn=warn)
+        db = cls(dbdir, compact, kod, report, files=())
         db.stru = stru
         db.bank = bank
         return db
@@ -108,7 +110,7 @@ class Database:
         with ExitStack() as stack:
             dat = stack.enter_context(open_regular_file(datname))
             tad = stack.enter_context(open_regular_file(tadname))
-            datafile = Datafile(name, dat, tad, self.compact, self.kod, self.warn)
+            datafile = Datafile(name, dat, tad, self.compact, self.kod, self.report)
             stack.pop_all()
         return datafile
 
@@ -142,6 +144,12 @@ class Database:
         """
         return f"no CroStru.dat and CroStru.tad found in {self.dbdir}, which hold the table definitions"
 
+    def report_structure(self, message, record=None):
+        """
+        Report `message` as an unexpected_structure Diagnostic about CroStru, at `record` when it is given.
+        """
+        self.report(Diagnostic(DiagnosticKind.UNEXPECTED_STRUCTURE, message, file=STRU_FILE, record=record))
+
     def decode_db_definition(self, data):
         """
         decode the 'bank' / database definition
@@ -153,7 +161,7 @@ class Database:
             while not rd.eof():
                 keyname = rd.readname()
                 if keyname in d:
-                    self.warn(f"WARN: duplicate key: {keyname}")
+                    self.report_structure(f"duplicate key: {keyname}", record=1)
 
                 index_or_length = rd.readdword()
                 if index_or_length >> 31:
@@ -170,7 +178,7 @@ class Database:
                             f'key "{keyname}" refers to CroStru record {index_or_length}, which is deleted'
                         )
                     if refdata[:1] != b"\x04":
-                        self.warn("WARN: expected refdata to start with 0x04")
+                        self.report_structure("expected refdata to start with 0x04", record=index_or_length)
                     d[keyname] = refdata[1:]
         except EOFError as e:
             raise ValueError(f"the database definition is cut off after {len(d)} keys") from e
@@ -197,7 +205,7 @@ class Database:
         if dbinfo is None:
             raise ValueError("CroStru record 1, which holds the database definition, is deleted")
         if dbinfo[:1] != b"\x03":
-            self.warn("WARN: expected dbinfo to start with 0x03")
+            self.report_structure("expected dbinfo to start with 0x03", record=1)
         return self.decode_db_definition(dbinfo[1:])
 
     def dump_db_table_defs(self, args):
@@ -214,14 +222,16 @@ class Database:
         for k, v in dbdef.items():
             if k.startswith("Base") and k[4:].isnumeric():
                 print(f"== {k} ==")
-                tbdef = TableDefinition(v, dbdef.get("BaseImage" + k[4:], b""))
+                tbdef = TableDefinition(
+                    v, dbdef.get("BaseImage" + k[4:], b""), report=for_table_definition(self.report, k)
+                )
                 tbdef.dump(args)
             elif k == "NS1":
                 self.dump_ns1(v)
 
     def dump_ns1(self, data):
         if len(data) < 2:
-            print("NS1 is unexpectedly short", file=sys.stderr)
+            self.report_structure("NS1 is unexpectedly short")
             return
         (
             unk1,
@@ -234,7 +244,7 @@ class Database:
         decoded_data = ns1kod.decode(sh, data[2:])
 
         if len(decoded_data) < 12:
-            print("NS1 is unexpectedly short", file=sys.stderr)
+            self.report_structure("NS1 is unexpectedly short")
             return
         (
             serial,
@@ -260,10 +270,11 @@ class Database:
 
         for k, v in dbdef.items():
             if k.startswith("Base") and k[4:].isnumeric():
+                report = for_table_definition(self.report, k)
                 if files and k[4:] == "000":
-                    yield TableDefinition(v)
+                    yield TableDefinition(v, report=report)
                 if not files and k[4:] != "000":
-                    yield TableDefinition(v, dbdef.get("BaseImage" + k[4:], b""))
+                    yield TableDefinition(v, dbdef.get("BaseImage" + k[4:], b""), report=report)
 
     def enumerate_records(self, table):
         """
@@ -355,19 +366,21 @@ class Database:
         Function for outputing record contents of the various .dat files.
 
         This function is mostly useful for reverse-engineering the database format.
+        Raises ValueError naming the file when the chosen file is not open.
         """
         if args.index:
-            dbfile = self.index
+            name = "Index"
         elif args.sys:
-            dbfile = self.sys
+            name = "Sys"
         elif args.stru:
-            dbfile = self.stru
+            name = "Stru"
         else:
-            dbfile = self.bank
+            name = "Bank"
+        # Each component is kept in the attribute named after it: index, sys, stru and bank.
+        dbfile = getattr(self, name.lower())
 
         if not dbfile:
-            print(".dat not found", file=sys.stderr)
-            return
+            raise ValueError(f"no Cro{name}.dat and Cro{name}.tad in {self.dbdir}")
         nerr = 0
         nr_recnone = 0
         nr_recempty = 0

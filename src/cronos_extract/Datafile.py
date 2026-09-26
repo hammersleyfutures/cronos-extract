@@ -2,19 +2,24 @@
 # ABOUTME: Decodes each record through _format/record.py and dumps them, byte range by byte range, for inspect.
 import argparse
 import io
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from typing import BinaryIO
 
 from . import koddecoder
+from ._diagnostic import Diagnostic, DiagnosticKind, Reporter
 from ._format.header import read_dat_header
 from ._format.record import RecordParts, RecordSource, decode_record, decompress, is_compressed, read_stored
 from ._format.tad import TadEntry, tad_layout
-from .hexdump import tohex, toout, warn_on_stderr
+from .hexdump import tohex, toout
 from .koddecoder import KODcoding
 
 
 class Datafile:
-    """Represent a single .dat with it's .tad index file"""
+    """
+    Represent a single .dat with it's .tad index file.
+
+    `report` receives each problem that reading survives, as a Diagnostic.
+    """
 
     def __init__(
         self,
@@ -23,9 +28,9 @@ class Datafile:
         tad: BinaryIO,
         compact: bool,
         kod: KODcoding | None,
-        warn: Callable[[str], None] = warn_on_stderr,
+        report: Reporter,
     ) -> None:
-        self.warn = warn
+        self.report = report
         self.name = name
         self.dat = dat
         self.tad = tad
@@ -106,7 +111,9 @@ class Datafile:
         self.tadsize = self.tad.tell() - self.tadhdrlen
         self.nrofrecords = self.tadsize // self.tadentrysize
         if self.tadsize % self.tadentrysize:
-            self.warn("WARN: leftover data in .tad")
+            self.report(
+                Diagnostic(DiagnosticKind.UNEXPECTED_STRUCTURE, "leftover data in .tad", file=f"Cro{self.name}.dat")
+            )
 
     def entry(self, index: int) -> TadEntry:
         """
@@ -156,16 +163,20 @@ class Datafile:
     def readrec(self, recno: int) -> bytes | None:
         """
         Extract and decode a single record, or None when it is deleted.
-        Compressed data whose CRC-32 does not match is kept and reported through `warn`.
+        Compressed data whose CRC-32 does not match is kept and reported through `report` as checksum_mismatch.
         Raises ValueError when the record is not in the file or cannot be decoded.
         """
         parts = self.read_record(recno)
         if parts is None:
             return None
         if parts.mismatched_chunks:
-            self.warn(
-                f"WARN: record {recno} in Cro{self.name}.dat has compressed data whose checksum does not match; "
-                "it is kept"
+            self.report(
+                Diagnostic(
+                    DiagnosticKind.CHECKSUM_MISMATCH,
+                    "compressed data whose checksum does not match; it is kept",
+                    file=f"Cro{self.name}.dat",
+                    record=recno,
+                )
             )
         return parts.data
 

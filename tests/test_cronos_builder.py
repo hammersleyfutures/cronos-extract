@@ -27,6 +27,7 @@ from cronos_builder import (
     field_definition_with_nul_name,
     file_record,
     file_reference_field,
+    ignore_problems,
     key_referencing_a_deleted_record,
     patched_table_definition,
     random_kod,
@@ -41,6 +42,8 @@ from cronos_builder import (
 )
 
 import cronos_extract
+from cronos_extract._cli.report import Report
+from cronos_extract._diagnostic import Diagnostic
 from cronos_extract._format.header import DatHeader, read_dat_header
 from cronos_extract.Database import KOD_HINT, Database
 from cronos_extract.Datamodel import TableDefinition
@@ -61,7 +64,7 @@ def test_records_round_trip_through_the_reader(tmp_path: Path) -> None:
         [file_record(b"PDFDATA"), person_record(file_reference_field("отчёт", "pdf", 1)), None],
     )
 
-    with Database(dbdir, False, KODcoding(INITIAL_KOD)) as db:
+    with Database(dbdir, False, KODcoding(INITIAL_KOD), report=ignore_problems) as db:
         (table,) = db.enumerate_tables()
         (record,) = db.enumerate_records(table)
         file_field = record.fields[TEST_TABLE_FILE_FIELD_INDEX + 1]
@@ -90,7 +93,7 @@ def test_compressed_record_round_trips_through_the_reader(tmp_path: Path) -> Non
     plain = person_record(b"")
     dbdir = write_database(tmp_path, [compressed_record(plain)])
 
-    with Database(dbdir, False, KODcoding(INITIAL_KOD)) as db:
+    with Database(dbdir, False, KODcoding(INITIAL_KOD), report=ignore_problems) as db:
         (table,) = db.enumerate_tables()
         (record,) = db.enumerate_records(table)
 
@@ -98,14 +101,14 @@ def test_compressed_record_round_trips_through_the_reader(tmp_path: Path) -> Non
 
 
 def test_key_referencing_a_deleted_record_appends_a_dangling_key(tmp_path: Path) -> None:
-    with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD)) as original:
+    with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD), report=ignore_problems) as original:
         assert original.stru is not None
         original_dbinfo = original.stru.readrec(1)
     assert original_dbinfo is not None
 
     dbdir = key_referencing_a_deleted_record(tmp_path, "DanglingKey")
 
-    with Database(dbdir, False, KODcoding(INITIAL_KOD)) as db:
+    with Database(dbdir, False, KODcoding(INITIAL_KOD), report=ignore_problems) as db:
         assert db.stru is not None
         assert db.stru.readrec(1) == original_dbinfo + bytes([11]) + b"DanglingKey" + struct.pack("<L", 5)
         assert db.stru.readrec(5) is None
@@ -115,7 +118,7 @@ def test_database_with_missing_definition_deletes_record_1(tmp_path: Path) -> No
     stru_records = [None, *stru_records_from_test_db()[1:]]
     dbdir = database_with_missing_definition(tmp_path / "db", stru_records)
 
-    with Database(dbdir, False, KODcoding(INITIAL_KOD)) as db:
+    with Database(dbdir, False, KODcoding(INITIAL_KOD), report=ignore_problems) as db:
         assert db.stru is not None
         assert db.stru.readrec(1) is None
         assert db.stru.nrofrecords == len(stru_records)
@@ -124,7 +127,7 @@ def test_database_with_missing_definition_deletes_record_1(tmp_path: Path) -> No
 def test_database_with_missing_definition_holds_no_records(tmp_path: Path) -> None:
     dbdir = database_with_missing_definition(tmp_path / "db", [])
 
-    with Database(dbdir, False, KODcoding(INITIAL_KOD)) as db:
+    with Database(dbdir, False, KODcoding(INITIAL_KOD), report=ignore_problems) as db:
         assert db.stru is not None
         assert db.stru.nrofrecords == 0
 
@@ -133,15 +136,15 @@ def test_encrypted_database_decodes_only_with_its_kod(tmp_path: Path, capsys: py
     kod = random_kod(seed=1)
     dbdir = write_database(tmp_path, [person_record(b"")], kod=kod)
 
-    with Database(dbdir, False, KODcoding(kod)) as db:
+    with Database(dbdir, False, KODcoding(kod), report=ignore_problems) as db:
         (table,) = db.enumerate_tables()
     assert table.tablename == "erdgeist"
     capsys.readouterr()
 
-    with Database(dbdir, False, KODcoding(INITIAL_KOD)) as db:
+    with Database(dbdir, False, KODcoding(INITIAL_KOD), report=Report().diagnostic) as db:
         assert list(db.enumerate_tables()) == []
     assert capsys.readouterr().err.splitlines() == [
-        "WARN: expected dbinfo to start with 0x03",
+        "warning: unexpected_structure: CroStru.dat record 1: expected dbinfo to start with 0x03",
         "ERROR decoding db definition: the database definition is cut off after 0 keys",
         KOD_HINT,
     ]
@@ -178,7 +181,7 @@ def test_a_database_of_each_version_reads_back_through_database(
     record = person_record(b"")
     dbdir = write_database(tmp_path / "db", [record, record], kod, version=version)
 
-    with Database(dbdir, False, KODcoding(kod if kod else INITIAL_KOD)) as db:
+    with Database(dbdir, False, KODcoding(kod if kod else INITIAL_KOD), report=ignore_problems) as db:
         assert db.bank is not None
         assert db.bank.version == version
         assert [db.bank.readrec(recno) for recno in (1, 2)] == [record, record]
@@ -240,7 +243,7 @@ def test_the_builder_versions_are_the_ones_the_spec_names() -> None:
 def test_a_patched_table_definition_changes_the_table_id(tmp_path: Path) -> None:
     dbdir = database_with_extra_definition_key(tmp_path / "db", "Base002", patched_table_definition(tableid=300))
 
-    with Database(dbdir, False, KODcoding(INITIAL_KOD)) as db:
+    with Database(dbdir, False, KODcoding(INITIAL_KOD), report=ignore_problems) as db:
         assert [(table.tableid, table.tablename) for table in db.enumerate_tables()] == [
             (1, "erdgeist"),
             (300, "erdgeist"),
@@ -256,24 +259,24 @@ def test_a_patched_table_definition_changes_only_the_table_id_bytes() -> None:
 
 
 def test_a_table_definition_without_fields_decodes_to_a_table_with_no_fields() -> None:
-    messages: list[str] = []
+    problems: list[Diagnostic] = []
 
-    table = TableDefinition(table_definition_without_fields(tableid=2), warn=messages.append)
+    table = TableDefinition(table_definition_without_fields(tableid=2), report=problems.append)
 
-    assert (table.tableid, table.tablename, table.abbrev, table.fields, messages) == (2, "erdgeist", "ER", [], [])
+    assert (table.tableid, table.tablename, table.abbrev, table.fields, problems) == (2, "erdgeist", "ER", [], [])
 
 
 def test_an_extra_definition_key_holds_its_value_inline(tmp_path: Path) -> None:
     dbdir = database_with_extra_definition_key(tmp_path / "db", "Extra", b"\x01\x02")
 
-    with Database(dbdir, False, KODcoding(INITIAL_KOD)) as db:
+    with Database(dbdir, False, KODcoding(INITIAL_KOD), report=ignore_problems) as db:
         assert db.read_db_definition()["Extra"] == b"\x01\x02"
 
 
 def test_a_database_without_a_files_table_has_no_base000_key(tmp_path: Path) -> None:
     dbdir = database_without_files_table(tmp_path / "db")
 
-    with Database(dbdir, False, KODcoding(INITIAL_KOD)) as db:
+    with Database(dbdir, False, KODcoding(INITIAL_KOD), report=ignore_problems) as db:
         keys = db.read_db_definition().keys()
         assert "Base000" not in keys
         assert "Base001" in keys

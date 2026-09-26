@@ -125,12 +125,12 @@ def add_parser(subcommands: Subcommands) -> None:
     p.set_defaults(handler=run_kodump, command_parser=p)
 
 
-def open_component(db: Database, base: str, *, required: bool) -> Datafile | None:
+def open_component(db: Database, base: str, report: Report, *, required: bool) -> Datafile | None:
     """
     Cro<base> of `db` as a Datafile, or None when its .dat or its .tad is absent.
 
     A file that cannot be read raises NotACronosFile naming it when `required`, and otherwise is reported as an
-    unreadable_file warning and left out. OSError from listing the directory propagates.
+    unreadable_file warning through `report` and left out. OSError from listing the directory propagates.
     """
     datname = db.getname(base, "dat")
     tadname = db.getname(base, "tad")
@@ -142,7 +142,7 @@ def open_component(db: Database, base: str, *, required: bool) -> Datafile | Non
         # Opening a file raises OSError; Datafile's construction raises ValueError for a file it cannot read.
         if required:
             raise NotACronosFile(f"Cro{base}.dat in {db.dbdir} cannot be read: {describe_error(e)}") from e
-        Report().problem(
+        report.problem(
             Problem(
                 "unreadable_file",
                 f"the file cannot be read and is left out: {describe_error(e)}",
@@ -156,13 +156,15 @@ def open_database(args: argparse.Namespace, required: Collection[str]) -> Databa
     """
     The database in args.dbdir with the KOD the options select, its Cro files opened through open_component.
 
-    The files named in `required` stop the command when they cannot be read.
+    The files named in `required` stop the command when they cannot be read. Every problem the readers report is
+    printed as a warning line on stderr.
     """
-    db = Database(args.dbdir, args.compact, kod_coder(selected_kod(args)), files=())
+    report = Report()
+    db = Database(args.dbdir, args.compact, kod_coder(selected_kod(args)), report.diagnostic, files=())
     try:
         for base in ALL_FILES:
             # Database keeps each file in the attribute named after it: stru, index, bank and sys.
-            setattr(db, base.lower(), open_component(db, base, required=base in required))
+            setattr(db, base.lower(), open_component(db, base, report, required=base in required))
     except BaseException:
         db.close()
         raise
@@ -200,7 +202,11 @@ def recdump_file(args: argparse.Namespace) -> str:
 def run_recdump(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     """Hexdump the records of one Cro file."""
     args.maxrecs = max_records(args.maxrecs)
-    with open_database(args, required=(recdump_file(args),)) as db:
+    base = recdump_file(args)
+    with open_database(args, required=(base,)) as db:
+        # Database keeps each file in the attribute named after it: stru, index, bank and sys.
+        if getattr(db, base.lower()) is None:
+            raise NotACronosFile(f"{args.dbdir} has no Cro{base}.dat and Cro{base}.tad")
         db.recdump(args)
     return 0
 
@@ -220,7 +226,7 @@ def run_destruct(args: argparse.Namespace, parser: argparse.ArgumentParser) -> i
         with open_database(args, required=()) as db:
             db.dump_db_definition(args, db.decode_db_definition(data))
     elif args.type == 2:
-        TableDefinition(data).dump(args)
+        TableDefinition(data, report=Report().diagnostic).dump(args)
     elif args.type == 3:
         destruct_sys_definition(args, data)
     return 0

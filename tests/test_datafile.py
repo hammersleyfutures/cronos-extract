@@ -19,6 +19,7 @@ from cronos_builder import (
     write_raw_datafile,
 )
 
+from cronos_extract import Diagnostic, DiagnosticKind
 from cronos_extract.Datafile import Datafile
 
 FIRST_BLOCK = DAT_PREFIX_SIZE
@@ -47,7 +48,7 @@ def write_bank_with_extended_record(
 @contextmanager
 def open_bank(directory: Path) -> Iterator[Datafile]:
     with open(directory / "CroBank.dat", "rb") as dat, open(directory / "CroBank.tad", "rb") as tad:
-        yield Datafile("Bank", dat, tad, False, None)
+        yield Datafile("Bank", dat, tad, False, None, report=lambda diagnostic: None)
 
 
 def test_record_spread_over_extension_blocks_is_reassembled(tmp_path: Path) -> None:
@@ -148,45 +149,40 @@ def test_inspect_crodump_reports_a_corrupt_record_and_dumps_the_next(tmp_path: P
     assert inline.hex() in second
 
 
-def test_leftover_tad_bytes_are_reported_through_the_warn_hook(
-    tmp_path: Path, capfd: pytest.CaptureFixture[str]
-) -> None:
+def test_leftover_tad_bytes_are_reported_as_a_diagnostic(tmp_path: Path, capfd: pytest.CaptureFixture[str]) -> None:
     write_datafile(tmp_path, "Bank", [b"\x01abc"])
     with (tmp_path / "CroBank.tad").open("ab") as tad:
         tad.write(b"\x00")
-    messages: list[str] = []
+    problems: list[Diagnostic] = []
 
     with (tmp_path / "CroBank.dat").open("rb") as dat, (tmp_path / "CroBank.tad").open("rb") as tad:
-        Datafile("Bank", dat, tad, False, None, warn=messages.append)
+        Datafile("Bank", dat, tad, False, None, report=problems.append)
 
-    assert messages == ["WARN: leftover data in .tad"]
+    assert problems == [Diagnostic(DiagnosticKind.UNEXPECTED_STRUCTURE, "leftover data in .tad", file="CroBank.dat")]
     assert capfd.readouterr().err == ""
-
-
-def test_leftover_tad_bytes_are_printed_without_a_warn_hook(tmp_path: Path, capfd: pytest.CaptureFixture[str]) -> None:
-    write_datafile(tmp_path, "Bank", [b"\x01abc"])
-    with (tmp_path / "CroBank.tad").open("ab") as tad:
-        tad.write(b"\x00")
-
-    with (tmp_path / "CroBank.dat").open("rb") as dat, (tmp_path / "CroBank.tad").open("rb") as tad:
-        Datafile("Bank", dat, tad, False, None)
-
-    assert capfd.readouterr().err == "WARN: leftover data in .tad\n"
 
 
 def dump_args(**options: object) -> argparse.Namespace:
     return argparse.Namespace(maxrecs=0xFFFFFFFF, verbose=False, ascdump=False, decompress=True, **options)
 
 
-def test_readrec_reports_a_checksum_mismatch_through_warn(tmp_path: Path) -> None:
+def test_readrec_reports_a_checksum_mismatch_through_report(tmp_path: Path, capfd: pytest.CaptureFixture[str]) -> None:
     write_datafile(tmp_path, "Stru", [compressed_record(b"definition", wrong_checksums={0})])
-    messages: list[str] = []
+    problems: list[Diagnostic] = []
 
     with (tmp_path / "CroStru.dat").open("rb") as dat, (tmp_path / "CroStru.tad").open("rb") as tad:
-        datafile = Datafile("Stru", dat, tad, False, None, warn=messages.append)
+        datafile = Datafile("Stru", dat, tad, False, None, report=problems.append)
         assert datafile.readrec(1) == b"definition"
 
-    assert messages == ["WARN: record 1 in CroStru.dat has compressed data whose checksum does not match; it is kept"]
+    assert problems == [
+        Diagnostic(
+            DiagnosticKind.CHECKSUM_MISMATCH,
+            "compressed data whose checksum does not match; it is kept",
+            file="CroStru.dat",
+            record=1,
+        )
+    ]
+    assert capfd.readouterr().err == ""
 
 
 def test_read_record_gives_the_mismatched_chunks(tmp_path: Path) -> None:

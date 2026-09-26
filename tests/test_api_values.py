@@ -10,6 +10,7 @@ from cronos_builder import (
     bank_record,
     erdgeist_table_definition,
     file_reference_field,
+    ignore_problems,
 )
 
 from cronos_extract import Diagnostic, DiagnosticKind, FieldDefinition, FileReference, Record
@@ -21,7 +22,7 @@ DATE, TIME, FILE, TEXT, LINK = 3, 4, 5, 0, 7
 
 def decode(fields: list[bytes], number: int = 7) -> Record:
     """Decode a record of the erdgeist table holding `fields`, one per field after the system number."""
-    table = TableDefinition(erdgeist_table_definition(), warn=lambda message: None)
+    table = TableDefinition(erdgeist_table_definition(), report=ignore_problems)
     definitions = tuple(FieldDefinition(field.name, field.typ) for field in table.fields)
     return decode_record(number, "erdgeist", definitions, table.fields, bank_record(TEST_TABLE_ID, fields)[1:])
 

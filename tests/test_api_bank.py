@@ -16,6 +16,7 @@ from cronos_builder import (
     database_without_files_table,
     file_record,
     file_reference_field,
+    ignore_problems,
     patched_table_definition,
     random_kod,
     write_database,
@@ -382,7 +383,7 @@ def test_field_text_matches_database_enumerate_records(
         records.insert(3, None)
     dbdir = write_database(tmp_path / "db", records, kod, version=version)
 
-    with Database(dbdir, False, KODcoding(kod if kod else INITIAL_KOD)) as db:
+    with Database(dbdir, False, KODcoding(kod if kod else INITIAL_KOD), report=ignore_problems) as db:
         expected_tables = {(table.tableid, table.tablename) for table in db.enumerate_tables()}
         expected = [
             (record.recno, [field.content for field in record.fields])

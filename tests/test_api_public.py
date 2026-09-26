@@ -31,7 +31,12 @@ PUBLIC_NAMES = [
 def test_the_public_names_are_exactly_those_in_all() -> None:
     assert cronos_extract.__all__ == PUBLIC_NAMES
     for name in PUBLIC_NAMES:
-        assert getattr(cronos_extract, name).__module__.startswith("cronos_extract._api.")
+        module = getattr(cronos_extract, name).__module__
+        # Diagnostic and DiagnosticKind are shared with the internal readers, which report them.
+        if name in ("Diagnostic", "DiagnosticKind"):
+            assert module == "cronos_extract._diagnostic"
+        else:
+            assert module.startswith("cronos_extract._api.")
 
 
 def test_the_roadmap_example_reads_a_record(tmp_path: Path) -> None:

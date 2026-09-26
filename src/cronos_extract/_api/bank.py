@@ -7,10 +7,11 @@ from pathlib import Path
 from types import TracebackType
 from typing import Self, cast, override
 
+from .._diagnostic import for_table_definition
 from .._format.record import RecordParts
 from ..Database import Database
 from ..Datamodel import TableDefinition, describe_error
-from .datafiles import database_directory, list_directory, open_datafile, optional_file_info, warn_into
+from .datafiles import database_directory, list_directory, open_datafile, optional_file_info
 from .diagnostics import Diagnostic, DiagnosticKind, DiagnosticLog, RecordNumbers
 from .errors import DatabaseDefinitionError
 from .info import FileInfo
@@ -277,7 +278,9 @@ class Bank:
             with self._log.guard_callback_errors():
                 try:
                     table_definition = TableDefinition(
-                        value, definition.get("BaseImage" + key[4:], b""), warn_into(self._log, STRU_FILE, f"{key}: ")
+                        value,
+                        definition.get("BaseImage" + key[4:], b""),
+                        report=for_table_definition(self._log.record, key),
                     )
                 except Exception as e:
                     self._log.record(
@@ -343,9 +346,7 @@ def open(
                     "the KOD given is not used: neither CroStru.dat nor CroBank.dat is encrypted with its own KOD",
                 )
             )
-        database = Database.from_datafiles(
-            str(directory), compact, kod_coder(kod), stru, bank_file, warn_into(log, STRU_FILE)
-        )
+        database = Database.from_datafiles(str(directory), compact, kod_coder(kod), stru, bank_file, log.record)
         bank = Bank(directory, database, (stru_info, bank_info, *(info for info in optional if info is not None)), log)
         bank._load_tables()
         stack.pop_all()

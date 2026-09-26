@@ -229,7 +229,7 @@ def test_a_duplicate_definition_key_is_an_unexpected_structure(tmp_path: Path) -
 
     with cronos_extract.open(dbdir) as bank:
         assert cronos_extract.Diagnostic(
-            cronos_extract.DiagnosticKind.UNEXPECTED_STRUCTURE, "duplicate key: BankName", file="CroStru.dat"
+            cronos_extract.DiagnosticKind.UNEXPECTED_STRUCTURE, "duplicate key: BankName", file="CroStru.dat", record=1
         ) in list(bank.diagnostics)
 
 
