@@ -1,5 +1,5 @@
 # ABOUTME: Tests for reading records and files through the cronos_extract API: laziness, diagnostics and closing.
-# ABOUTME: Also builds the parity records and golden-file JSONL tests/test_api_golden.py checks per builder version.
+# ABOUTME: Also builds the golden records and golden-file JSONL tests/test_api_golden.py checks per builder version.
 import datetime
 import json
 from pathlib import Path
@@ -40,13 +40,6 @@ def person(*, date: bytes = b"1240315", file_field: bytes = b"") -> bytes:
 
 def counts(bank: cronos_extract.Bank, kind: cronos_extract.DiagnosticKind) -> int:
     return bank.diagnostic_counts.get(kind, 0)
-
-
-@pytest.fixture
-def prints_nothing(capfd: pytest.CaptureFixture[str]):
-    yield
-    captured = capfd.readouterr()
-    assert (captured.out, captured.err) == ("", "")
 
 
 @pytest.mark.usefixtures("prints_nothing")
@@ -351,7 +344,7 @@ def test_a_database_without_a_files_table_has_no_files(tmp_path: Path) -> None:
         assert diagnostic.message.endswith("the database has no Files table")
 
 
-PARITY_CASES = [
+GOLDEN_CASES = [
     (b"01.02", None),
     (b"01.03", None),
     (b"01.04", None),
@@ -361,8 +354,8 @@ PARITY_CASES = [
 ]
 
 
-def parity_records(version: bytes) -> list[bytes | None]:
-    """The records the parity and golden tests compare, including the deleted record for versions other than 01.11."""
+def golden_records(version: bytes) -> list[bytes | None]:
+    """The records the golden tests write, including the deleted record for versions other than 01.11."""
     records = [
         person(),
         person(date=b"850000", file_field=file_reference_field("report", "pdf", 3)),
@@ -399,7 +392,7 @@ def golden_api_name(version: bytes, kod: list[int] | None, *, extended: bool) ->
     return f"api/{version.decode()}-{'kod' if kod else 'default'}-{'extended' if extended else 'inline'}.jsonl"
 
 
-def parity_case_id(value: bytes | list[int] | None) -> str:
+def golden_case_id(value: bytes | list[int] | None) -> str:
     return value.decode() if isinstance(value, bytes) else ("kod" if value else "default")
 
 

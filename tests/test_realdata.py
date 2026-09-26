@@ -141,7 +141,7 @@ def test_no_real_database_reports_a_checksum_mismatch(dbdir: Path) -> None:
 
 
 def api_fingerprint(dbdir: Path) -> dict[str, object]:
-    """The record count and a SHA-256 of the API's field texts for the records the parity test compares."""
+    """The record count and a SHA-256 of the API's field texts for the first RECORDS_COMPARED records of each table."""
     with open_or_skip(dbdir) as bank:
         tables = []
         count = 0
