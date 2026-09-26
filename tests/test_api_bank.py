@@ -1,6 +1,8 @@
 # ABOUTME: Tests for reading records and files through the cronos_extract API: laziness, diagnostics and closing.
 # ABOUTME: Compares the API with Database.enumerate_records on every version tests/cronos_builder.py writes.
 import datetime
+import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -363,14 +365,8 @@ PARITY_CASES = [
 ]
 
 
-@pytest.mark.parametrize(
-    ("version", "kod"),
-    PARITY_CASES,
-    ids=lambda value: value.decode() if isinstance(value, bytes) else ("kod" if value else "default"),
-)
-def test_field_text_matches_database_enumerate_records(
-    tmp_path: Path, capfd: pytest.CaptureFixture[str], version: bytes, kod: list[int] | None
-) -> None:
+def parity_records(version: bytes) -> list[bytes | None]:
+    """The records the parity and golden tests compare, including the deleted record for versions other than 01.11."""
     records = [
         person(),
         person(date=b"850000", file_field=file_reference_field("report", "pdf", 3)),
@@ -381,6 +377,49 @@ def test_field_text_matches_database_enumerate_records(
     ]
     if version != b"01.11":
         records.insert(3, None)
+    return records
+
+
+def render_api_jsonl(bank: cronos_extract.Bank) -> str:
+    """One JSON line per record read through the API, in the order `bank.tables` and `Table.records()` yield them."""
+    lines = [
+        json.dumps(
+            {
+                "table_id": table.id,
+                "table": table.name,
+                "record": record.number,
+                "fields": [field.text for field in record.fields],
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        for table in bank.tables
+        for record in table.records()
+    ]
+    return "".join(f"{line}\n" for line in lines)
+
+
+def golden_api_name(version: bytes, kod: list[int] | None, *, extended: bool) -> str:
+    return f"api/{version.decode()}-{'kod' if kod else 'default'}-{'extended' if extended else 'inline'}.jsonl"
+
+
+def parity_case_id(value: bytes | list[int] | None) -> str:
+    return value.decode() if isinstance(value, bytes) else ("kod" if value else "default")
+
+
+@pytest.mark.parametrize(
+    ("version", "kod"),
+    PARITY_CASES,
+    ids=parity_case_id,
+)
+def test_field_text_matches_database_enumerate_records(
+    tmp_path: Path,
+    capfd: pytest.CaptureFixture[str],
+    golden: Callable[[str, str], None],
+    version: bytes,
+    kod: list[int] | None,
+) -> None:
+    records = parity_records(version)
     dbdir = write_database(tmp_path / "db", records, kod, version=version)
 
     with Database(dbdir, False, KODcoding(kod if kod else INITIAL_KOD), report=ignore_problems) as db:
@@ -401,9 +440,11 @@ def test_field_text_matches_database_enumerate_records(
             for table in bank.tables
             for record in table.records()
         ]
+        rendered = render_api_jsonl(bank)
 
     assert actual == expected
     assert len(actual) == 4
+    golden(golden_api_name(version, kod, extended=False), rendered)
     captured = capfd.readouterr()
     assert (captured.out, captured.err) == ("", "")
 
