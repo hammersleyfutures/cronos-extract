@@ -1484,3 +1484,99 @@ def test_no_real_database_reports_a_checksum_mismatch(dbdir: Path) -> None:
   checksum mismatch reaches the API as `unexpected_structure` through `warn` until 3b turns warnings into diagnostics).
 - [ ] **Step 3:** `uv run ruff format --check` and `uv run pytest -q`; commit with subject "Record the Phase 3a outcome
   and carry its open items forward" and the two trailer lines.
+
+---
+
+## Outcome
+
+### Commits
+
+```
+0a6f364 Design Phase 3a: the Datafile core
+a989bbb Plan Phase 3a: the Datafile core
+74ceb0a Build compressed records with real CRCs and KOD-encoded v3 files
+0cf7dde Migrate INLINE_RECORD_FLAGS use sites to V3_INLINE_BIT
+e59d6ee Add the .tad layout of each CronosPro generation
+3e19d02 Decode records through one pipeline with CRC checks and a size limit
+ec78a18 Skip read_stored's length check for every kind of cut-short record
+fa66b36 Read Datafile records through the tad and record modules
+e177618 Fix Task 5 review findings in Datafile and record decoding
+3c7ff13 Report compressed records whose checksum does not match
+35a7449 Mark a checksum mismatch in inspect crodump
+969a2bf Add a seeded random-damage test of the reading path
+905c046 Give the builder an extended-record option
+a068b6e Damage extended and KOD-encoded records too
+5b87644 Check that no real database reports a checksum mismatch
+df01bf8 Document CRC checking and the Datafile modules
+```
+
+### Test counts
+
+`uv run pytest -q` on `master` (worktree at `58aec82`): 575 passed, 9 deselected. On this branch, after Task 10:
+834 passed, 10 deselected.
+
+### The damage test and Task 8's mutation check
+
+`tests/test_damage.py` runs 200 seeded cases, each building a database, flipping/truncating/overwriting random
+bytes of one `.dat` or `.tad` file, and opening it: 200 passed, no reader bug found (no hang, no unhandled
+exception, no stdout/stderr output).
+
+The plan's mutation check (`decompress` raising `struct.error` for a cut-off chunk header) turned out to be
+vacuous: `Bank._read` catches any `Exception` as `corrupt_record`, so a `struct.error` there is swallowed exactly
+like the `ValueError` it replaces, and no damage case could ever fail from it. The controller's substitute check
+removed `read_extended`'s extension-block loop guard and its `extlen > source.size` guard instead: still 0/200
+failed, both rounds. The first removal alone proved nothing, since a looping chain without the guard still
+terminates within `source.size` iterations rather than hanging; instrumenting the guard's `raise` showed it was
+never reached by the original (inline-only, unencoded) corpus at all. The corpus was then extended (extended
+records and KOD encoding, default and own tables) and the check repeated: `read_extended` ran in every one of the
+200 cases (863 calls total), and still 0/200 failed — not because the removed guards are unreachable, but because
+an already-in-place third guard (a read running past the end of the file) catches the paths this style of random
+damage produces before either removed guard would.
+
+### Realdata
+
+`uv run pytest -q -m realdata tests/test_realdata.py -k "checksum or open_reads or field_text" -rs`: 62 passed, 28
+skipped, 0 failed. No real database reported a checksum mismatch or a change in field text.
+
+### Where the code turned out different from this plan
+
+- **Task 2:** the brief said to replace `INLINE_RECORD_FLAGS` with `V3_INLINE_BIT` and delete the former, but three
+  test files outside the task's file list also constructed the bit from `INLINE_RECORD_FLAGS`. The task kept both
+  constants and flagged the duplication; the controller then ruled to migrate those three files and delete
+  `INLINE_RECORD_FLAGS`, done as a follow-up commit in the same task.
+- **Task 4:** the brief's `read_stored(require_whole=False)` skipped its length check only for inline records; a
+  truncated extended record would then raise instead of being reassembled as far as it goes, changing `inspect`
+  output the plan requires to stay byte for byte the same. The controller ruled to skip the length check for every
+  record when `require_whole` is false, matching what `Datafile.dump` already did.
+- **Task 5:** the plan's Review Focus 3 and Task 4's `test_a_chunk_whose_header_is_cut_off_is_a_value_error`
+  expected a cut-off compressed-chunk header to raise `ValueError`. The controller ruled instead to keep the
+  record's data as far as it was decoded and count the chunk as a `checksum_mismatch`, since today's code decodes
+  such a record as far as its data goes and turning that into a raised error would be new data loss the plan's own
+  principle (A3, keep data on a mismatch) argues against.
+- **Task 5:** outside the brief's file list, three more changes were made because other rules required them:
+  `_format/header.py` gained two comment lines above `V4_VERSIONS`/`V7_VERSIONS` carrying over notes from the
+  deleted `Datafile.isv4`/`isv7` (the "never delete a comment unless false" rule); `_api/crack.py`'s
+  `readable_records` dropped a `cast(bytes | None, ...)` around `datafile.readrec(...)` that `ty check` now flags
+  as `redundant-cast`, since `readrec` is fully annotated; and one `pytest.raises(match=...)` pattern in
+  `tests/test_datafile.py` had its literal `.` escaped to `\.` for ruff's `RUF043`.
+- **Task 6:** `tests/test_api_diagnostics.py` pins the full ordered list of `DiagnosticKind` values; adding
+  `CHECKSUM_MISMATCH` to the enum, as the brief specified, failed that test until `"checksum_mismatch"` was added
+  to the pinned list too. Not in the brief's file list; required by the rule against leaving a test failing.
+- **Task 8:** the plan's damage corpus wrote only inline, unencoded records, which never reached extended-record
+  reassembly or KOD decoding. The controller ruled to give the builder an `extended=` option and vary KOD encoding
+  (none, default table, own table) per case, so the corpus reaches the code the damage test exists to protect.
+
+### Deferred minors (not carried into the roadmap as open items)
+
+- `decompress` does not check a chunk's compression flag itself; callers rely on `is_compressed` first, as today.
+- `tests/test_cli_export.py`'s docstring still names `iscompressed()`, now `record.is_compressed`.
+- The cut-off-chunk behaviour change and the A2 flag reading, as they appear in `inspect crodump` output, are not
+  covered by any golden input (for the pull request description).
+- The damage corpus has no CroIndex file and no directly written deleted records.
+- The damage corpus reaches `read_extended` in every case, but its loop and length guards stay unreachable by
+  random byte damage, since the EOF guard already in place catches first; `tests/test_record.py` covers both
+  guards directly instead.
+
+### Final review
+
+Recorded after the whole-branch review.
