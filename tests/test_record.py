@@ -13,6 +13,7 @@ from cronos_extract._format.record import (
     RecordSource,
     decode_record,
     decompress,
+    is_compressed,
     read_stored,
 )
 from cronos_extract._format.tad import TadEntry
@@ -97,9 +98,14 @@ def test_a_record_that_cannot_be_decoded_is_a_value_error(data: bytes, entry: Ta
         decode_record(source_of(data), 1, entry or inline(0, len(data)))
 
 
-def test_a_chunk_whose_header_is_cut_off_is_a_value_error() -> None:
-    with pytest.raises(ValueError, match="cut off"):
-        decompress(struct.pack(">HH", 10, 0x800) + b"\x00\x00\x02", "record 1 in CroBank.dat")
+def test_a_chunk_whose_header_is_cut_off_is_kept_as_a_mismatch() -> None:
+    hello = compressed_record(b"hello")[: -len(b"\x00\x00\x02")]
+    data = hello + b"\x00\x04\x08\x00\x00\x02"
+    assert is_compressed(data)
+
+    result, mismatched = decompress(data, "record 1 in CroBank.dat")
+
+    assert (result, mismatched) == (b"hello", (1,))
 
 
 def test_a_record_that_decompresses_past_the_limit_is_refused_without_holding_it() -> None:

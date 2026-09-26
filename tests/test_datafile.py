@@ -207,6 +207,14 @@ def test_a_record_number_outside_the_file_is_a_value_error(tmp_path: Path, recno
         bank.readrec(recno)
 
 
+@pytest.mark.parametrize("index", [-1, 1])
+def test_an_entry_index_outside_the_file_is_a_value_error(tmp_path: Path, index: int) -> None:
+    write_datafile(tmp_path, "Bank", [b"only"])
+
+    with open_bank(tmp_path) as bank, pytest.raises(ValueError, match=f"CroBank.tad has no entry {index}"):
+        bank.entry(index)
+
+
 def test_a_tad_shorter_than_its_header_is_a_value_error(tmp_path: Path) -> None:
     write_datafile(tmp_path, "Bank", [b"x"])
     (tmp_path / "CroBank.tad").write_bytes(b"\x00\x00\x00")

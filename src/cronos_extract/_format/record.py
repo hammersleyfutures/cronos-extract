@@ -69,6 +69,7 @@ def read_stored(source: RecordSource, recno: int, entry: TadEntry, *, require_wh
         raise ValueError(
             f"{where} has {entry.length} bytes at offset {entry.offset:#x}, which runs past the end of the file"
         )
+    # An empty record is returned as it is: there is nothing to reassemble from extension blocks.
     parts = RecordParts(data, entry.flags)
     if data and not entry.inline:
         parts = read_extended(source, where, data, entry.flags)
@@ -139,8 +140,9 @@ def decompress(data: bytes, where: str) -> tuple[bytes, tuple[int, ...]]:
     the crc algorithm is the one labeled 'crc-32' on this page:
         http://crcmod.sourceforge.net/crcmod.predefined.html
 
-    Raises ValueError naming `where` when a chunk header is cut off, the data is not valid deflate output, or the
-    record would decompress to more than MAX_DECOMPRESSED_BYTES; decompression stops at that limit.
+    Raises ValueError naming `where` when the data is not valid deflate output, or the record would decompress to
+    more than MAX_DECOMPRESSED_BYTES; decompression stops at that limit. A chunk whose 8-byte header (size, flag
+    and CRC) runs past the end of the data is not decompressed and is counted as a mismatched chunk.
     """
     result = bytearray()
     mismatched = []
@@ -148,7 +150,13 @@ def decompress(data: bytes, where: str) -> tuple[bytes, tuple[int, ...]]:
     chunk = 0
     while offset < len(data) - len(COMPRESSED_END):
         if offset + CHUNK_PREFIX_SIZE > len(data):
-            raise ValueError(f"{where} has a compressed chunk cut off in its header at byte {offset}")
+            mismatched.append(chunk)
+            if offset + CHUNK_HEADER.size > len(data):
+                break
+            size, _ = CHUNK_HEADER.unpack_from(data, offset)
+            chunk += 1
+            offset += size + 2
+            continue
         # note the mix of bigendian and little endian numbers here.
         size, _ = CHUNK_HEADER.unpack_from(data, offset)
         (crc,) = CHUNK_CRC.unpack_from(data, offset + CHUNK_HEADER.size)

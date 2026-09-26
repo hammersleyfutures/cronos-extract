@@ -112,7 +112,13 @@ class Datafile:
         """
         The .tad entry of the record at `index`, counted from 0. With `compact`, it is read from the .tad file
         instead of the cached copy.
+
+        Raises ValueError naming the file and the index when it is not 0 to nrofrecords - 1.
         """
+        if not 0 <= index < self.nrofrecords:
+            raise ValueError(
+                f"Cro{self.name}.tad has no entry {index}; its entries are numbered 0 to {self.nrofrecords - 1}"
+            )
         if self.compact:
             self.tad.seek(self.tadhdrlen + index * self.tadentrysize)
             raw = self.tad.read(self.tadentrysize)

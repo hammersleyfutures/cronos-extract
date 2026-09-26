@@ -1175,7 +1175,7 @@ def test_csv_export_skips_a_corrupt_bank_record(tmp_path: Path) -> None:
 
 
 def corrupt_compressed_bank_record_database(directory: Path) -> str:
-    """Write a database whose CroBank record 2 passes iscompressed() but is not valid deflate data."""
+    """Write a database whose CroBank record 2 passes is_compressed() but is not valid deflate data."""
     fields = [b""] * TEST_TABLE_FIELD_COUNT
     fields[0] = b"good"
     return write_database(
