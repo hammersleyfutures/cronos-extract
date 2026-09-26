@@ -1,6 +1,11 @@
 # ABOUTME: Tests for the KOD coder helpers in cronos_extract.koddecoder.
-# ABOUTME: Covers the fuzzy known-string matching that strucrack uses to suggest KOD fixes.
-from cronos_extract.koddecoder import KODcoding, match_with_mismatches
+# ABOUTME: Covers the fuzzy known-string matching that strucrack uses to suggest KOD fixes, and choosing a file's KOD.
+import pytest
+from cronos_builder import random_kod
+
+from cronos_extract._diagnostic import Diagnostic, DiagnosticKind
+from cronos_extract._format.header import DatHeader
+from cronos_extract.koddecoder import INITIAL_KOD, KODcoding, match_with_mismatches, select_kod
 
 UNRESOLVED = -1
 
@@ -52,3 +57,77 @@ def test_kodcoding_instances_do_not_share_their_default_confidence() -> None:
     first.confidence[0] = 0
 
     assert KODcoding().confidence[0] == 255
+
+
+OTHER_KOD = random_kod(seed=1)
+
+
+@pytest.mark.parametrize(
+    ("given", "version", "encoding", "decoded_with", "expected"),
+    [
+        (
+            None,
+            b"01.02",
+            1,
+            None,
+            (DiagnosticKind.MISMATCHED_KOD, "the file is KOD-encoded, but is read without KOD decoding"),
+        ),
+        (None, b"01.02", 0, None, None),
+        (INITIAL_KOD, b"01.02", 0, None, None),
+        (
+            OTHER_KOD,
+            b"01.02",
+            0,
+            None,
+            (DiagnosticKind.UNUSED_KOD, "the file is not KOD-encoded, so the KOD given is not used for it"),
+        ),
+        (INITIAL_KOD, b"01.02", 1, INITIAL_KOD, None),
+        (
+            OTHER_KOD,
+            b"01.02",
+            1,
+            INITIAL_KOD,
+            (
+                DiagnosticKind.UNUSED_KOD,
+                "the file is encrypted with the default KOD, so the KOD given is not used for it",
+            ),
+        ),
+        (
+            INITIAL_KOD,
+            b"01.04",
+            1,
+            INITIAL_KOD,
+            (
+                DiagnosticKind.MISMATCHED_KOD,
+                "the file is encrypted with its own KOD, but is read with the default one; if its records do not "
+                "decode, recover its KOD by cracking it",
+            ),
+        ),
+        (OTHER_KOD, b"01.04", 1, OTHER_KOD, None),
+        (INITIAL_KOD, b"01.11", 0, None, None),
+    ],
+    ids=[
+        "none-encoded",
+        "none-not-encoded",
+        "default-not-encoded",
+        "other-not-encoded",
+        "default-encoded-default",
+        "other-encoded-default",
+        "default-encoded-own",
+        "other-encoded-own",
+        "default-v4-not-encoded",
+    ],
+)
+def test_select_kod_chooses_and_reports(
+    given: list[int] | None,
+    version: bytes,
+    encoding: int,
+    decoded_with: list[int] | None,
+    expected: tuple[DiagnosticKind, str] | None,
+) -> None:
+    header = DatHeader(version, 0, encoding, 0x40)
+
+    coder, diagnostic = select_kod(header, None if given is None else KODcoding(given), "CroStru.dat")
+
+    assert (None if coder is None else coder.kod) == decoded_with
+    assert diagnostic == (None if expected is None else Diagnostic(*expected, file="CroStru.dat"))

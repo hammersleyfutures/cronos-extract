@@ -77,6 +77,13 @@ def test_strucrack_prints_the_dump_and_kod_on_stdout_and_the_key_message_on_stde
     )
 
 
+def test_strucrack_prints_no_mismatched_kod(encrypted_db: str) -> None:
+    result = run_command("cli", ["crack", "strucrack", "--noninteractive", encrypted_db])
+
+    assert result.returncode == 0
+    assert "mismatched_kod" not in result.stderr
+
+
 @pytest.mark.parametrize("method", ["strucrack", "dbcrack"])
 def test_silent_prints_only_the_kod(encrypted_db: str, method: str, capsys: pytest.CaptureFixture[str]) -> None:
     assert run_crack(method, "--silent", encrypted_db) == 0

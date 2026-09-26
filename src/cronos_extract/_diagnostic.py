@@ -18,6 +18,7 @@ class DiagnosticKind(StrEnum):
     UNRESOLVED_FILE_REFERENCE = "unresolved_file_reference"
     UNREADABLE_FILE = "unreadable_file"
     UNUSED_KOD = "unused_kod"
+    MISMATCHED_KOD = "mismatched_kod"
 
 
 @dataclass(frozen=True)

@@ -23,6 +23,7 @@ from cronos_builder import (
     erdgeist_table_definition,
     ignore_problems,
     key_referencing_a_deleted_record,
+    random_kod,
     stru_records_from_test_db,
     table_definition_key_before_base001,
     write_database,
@@ -279,10 +280,23 @@ def test_strudump_without_the_database_kod_stops_with_a_message() -> None:
 
     assert result.returncode == 1
     assert result.stderr.splitlines() == [
+        "warning: mismatched_kod: CroStru.dat: the file is KOD-encoded, but is read without KOD decoding",
         "warning: unexpected_structure: CroStru.dat record 1: expected dbinfo to start with 0x03",
         "Error: the database definition is cut off after 0 keys",
         KOD_HINT,
     ]
+
+
+def test_strudump_with_a_kod_the_database_does_not_use_warns(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [], version=b"01.02", encoded=True)
+
+    result = run_command("cli", ["inspect", "strudump", "--kod", bytes(random_kod(seed=1)).hex(), dbdir])
+
+    assert result.returncode == 0
+    assert (
+        "warning: unused_kod: CroStru.dat: the file is encrypted with the default KOD, so the KOD given is not used "
+        "for it"
+    ) in result.stderr.splitlines()
 
 
 def test_strudump_with_a_wrong_kod_reports_a_record_out_of_range(tmp_path: Path) -> None:

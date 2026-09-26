@@ -331,17 +331,6 @@ def open(
         bank_file, bank_info = open_datafile(directory, names, "Bank", compact=compact, kod=kod, log=log)
         stack.callback(bank_file.close)
         optional = [optional_file_info(directory, names, base, log) for base in ("Index", "Sys")]
-        if (
-            kod is not None
-            and kod != DEFAULT_KOD
-            and not any(info.own_kod and info.kod_encoded for info in (stru_info, bank_info))
-        ):
-            log.record(
-                Diagnostic(
-                    DiagnosticKind.UNUSED_KOD,
-                    "the KOD given is not used: neither CroStru.dat nor CroBank.dat is encrypted with its own KOD",
-                )
-            )
         database = Database.from_datafiles(str(directory), compact, kod_coder(kod), stru, bank_file, log.record)
         bank = Bank(
             directory,

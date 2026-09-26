@@ -5,13 +5,12 @@ import io
 from collections.abc import Iterator
 from typing import BinaryIO
 
-from . import koddecoder
 from ._diagnostic import Diagnostic, DiagnosticKind, Reporter
 from ._format.header import read_dat_header
 from ._format.record import RecordParts, RecordSource, decode_record, decompress, is_compressed, read_stored
 from ._format.tad import TadEntry, tad_layout
 from .hexdump import tohex, toout
-from .koddecoder import KODcoding
+from .koddecoder import KODcoding, select_kod
 
 
 class Datafile:
@@ -42,16 +41,10 @@ class Datafile:
         self.dat.seek(0, io.SEEK_END)
         self.datsize = self.dat.tell()
 
-        # A file that is not encrypted with its own KOD table is decoded with the default one, whatever KOD is given.
-        self.kod = kod if kod is None or self.header.own_kod else koddecoder.new()
-        self.source = RecordSource(
-            self.name,
-            self.readdata,
-            self.datsize,
-            self.blocksize,
-            self.use64bit,
-            self.kod if self.encoding & 1 else None,
-        )
+        self.kod, problem = select_kod(self.header, kod, f"Cro{self.name}.dat")
+        if problem is not None:
+            self.report(problem)
+        self.source = RecordSource(self.name, self.readdata, self.datsize, self.blocksize, self.use64bit, self.kod)
 
     def close(self) -> None:
         """

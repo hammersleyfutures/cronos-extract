@@ -146,8 +146,12 @@ def test_encrypted_database_decodes_only_with_its_kod(tmp_path: Path, capsys: py
     ):
         cronos_extract.open(dbdir, on_diagnostic=seen.append)
 
-    assert [d.kind for d in seen] == [cronos_extract.DiagnosticKind.UNEXPECTED_STRUCTURE]
-    assert seen[0].message == "expected dbinfo to start with 0x03"
+    assert [(d.kind, d.file) for d in seen] == [
+        (cronos_extract.DiagnosticKind.MISMATCHED_KOD, "CroStru.dat"),
+        (cronos_extract.DiagnosticKind.MISMATCHED_KOD, "CroBank.dat"),
+        (cronos_extract.DiagnosticKind.UNEXPECTED_STRUCTURE, "CroStru.dat"),
+    ]
+    assert seen[2].message == "expected dbinfo to start with 0x03"
     captured = capsys.readouterr()
     assert (captured.out, captured.err) == ("", "")
 

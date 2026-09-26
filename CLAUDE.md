@@ -79,10 +79,14 @@ The code is layered, from bytes up to commands (`src/cronos_extract/`):
 Records are obfuscated with a byte substitution table (KOD): `plain[i] = (KOD[enc[i]] - i - recno) % 256`
 (`koddecoder.KODcoding.decode`). A valid KOD is a permutation of 0–255.
 
-`Datafile` uses a KOD table given with `--kod` only when the file is encrypted with its own table: versions `01.04`,
-`01.05` and v4. For other files it quietly substitutes the default `INITIAL_KOD`. `--nokod` passes no KOD, which turns
-decoding off for every file. So `export --kod` has no effect on `test_data/all_field_types`, whose records are
-encoded with `INITIAL_KOD`, but `--nokod` does. To test a wrong or custom KOD, build an encrypted database, e.g.
+`Datafile` chooses each file's KOD through `koddecoder.select_kod`. A file whose header is not KOD-encoded (bit 0 of
+its encoding field) is read without KOD decoding. An encoded file uses a KOD table given with `--kod` only when it is
+encrypted with its own table: versions `01.04`, `01.05` and v4; other encoded files are decoded with the default
+`INITIAL_KOD`. `--nokod` passes no KOD, which turns decoding off for every file. `select_kod` reports, per file,
+`unused_kod` when a KOD other than the default is given but not used, and `mismatched_kod` when an encoded file is read
+without KOD decoding or an own-KOD file is read with the default table; `crack` drops `mismatched_kod`, because it
+reads the encoded bytes on purpose. So `export --kod` does not change how `test_data/all_field_types` decodes (it
+reports `unused_kod`), but `--nokod` does. To test a wrong or custom KOD, build an encrypted database, e.g.
 `write_database(dir, records, kod=random_kod(seed=1))`.
 
 `crack strucrack` and `crack dbcrack` derive a KOD statistically and print it; `cronos_extract.crack_kod(path, method)`

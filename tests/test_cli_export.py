@@ -157,7 +157,7 @@ def test_csv_export_creates_nothing_when_the_database_cannot_be_read(
         export_csv(TEST_DB, tmp_path / "out", "--nokod")
 
     assert not (tmp_path / "out").exists()
-    assert capsys.readouterr().err.splitlines()[-1] == "1 diagnostic: 1 unexpected_structure"
+    assert capsys.readouterr().err.splitlines()[-1] == "2 diagnostics: 1 unexpected_structure, 1 mismatched_kod"
 
 
 def test_csv_export_leaves_the_working_directory_unchanged(tmp_path: Path) -> None:
@@ -643,7 +643,7 @@ def test_export_of_an_undecodable_definition_exits_1_naming_the_crack_command() 
     assert result.returncode == 1
     assert result.stdout == ""
     lines = result.stderr.splitlines()
-    assert lines[-2] == "1 diagnostic: 1 unexpected_structure"
+    assert lines[-2] == "2 diagnostics: 1 unexpected_structure, 1 mismatched_kod"
     assert lines[-1].startswith("Error: the database definition in CroStru.dat of ")
     assert lines[-1].endswith(KOD_HINT)
     assert "cronos_extract.crack_kod" not in result.stderr

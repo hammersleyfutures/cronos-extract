@@ -1,10 +1,13 @@
 # ABOUTME: KOD substitution cipher that CronosPro uses to obfuscate records.
-# ABOUTME: Provides the default KOD table, shifted decode/encode, and fuzzy known-string matching.
+# ABOUTME: Provides the default KOD table, shifted decode/encode, choosing a file's KOD, and fuzzy string matching.
 """
 Decode CroStru KOD encoding.
 """
 
 from collections.abc import Sequence
+
+from ._diagnostic import Diagnostic, DiagnosticKind
+from ._format.header import DatHeader
 
 INITIAL_KOD = [
     0x08,
@@ -312,6 +315,43 @@ def new(*args: list[int]) -> KODcoding:
     create a KODcoding object with the specified arguments.
     """
     return KODcoding(*args)
+
+
+def select_kod(header: DatHeader, kod: KODcoding | None, filename: str) -> tuple[KODcoding | None, Diagnostic | None]:
+    """
+    The coder to decode the records of the file whose header is `header` with, when `kod` is given (None: no KOD
+    decoding), and at most one diagnostic, naming `filename`, when `kod` does not fit the file.
+
+    A file that is not KOD-encoded is read without KOD decoding, and one encrypted with the default KOD is read with
+    it, whatever KOD is given; only a file encrypted with its own KOD is read with the KOD given.
+    """
+
+    def problem(kind: DiagnosticKind, message: str) -> Diagnostic:
+        return Diagnostic(kind, message, file=filename)
+
+    is_default = kod is not None and kod.kod == INITIAL_KOD
+    if not header.kod_encoded:
+        if kod is None or is_default:
+            return None, None
+        return None, problem(
+            DiagnosticKind.UNUSED_KOD, "the file is not KOD-encoded, so the KOD given is not used for it"
+        )
+    if kod is None:
+        return None, problem(DiagnosticKind.MISMATCHED_KOD, "the file is KOD-encoded, but is read without KOD decoding")
+    if not header.own_kod:
+        if is_default:
+            return new(), None
+        return new(), problem(
+            DiagnosticKind.UNUSED_KOD,
+            "the file is encrypted with the default KOD, so the KOD given is not used for it",
+        )
+    if is_default:
+        return kod, problem(
+            DiagnosticKind.MISMATCHED_KOD,
+            "the file is encrypted with its own KOD, but is read with the default one; if its records do not decode, "
+            "recover its KOD by cracking it",
+        )
+    return kod, None
 
 
 def match_with_mismatches(
