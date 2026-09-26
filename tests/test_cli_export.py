@@ -18,6 +18,7 @@ from cronos_builder import (
     TEST_TABLE_ID,
     bank_record,
     complex_field,
+    compressed_record,
     corrupt_compressed_record,
     database_with_extra_definition_key,
     database_with_files_abbreviation,
@@ -1347,3 +1348,15 @@ def test_jsonl_export_kod_option_decodes_an_encrypted_database(tmp_path: Path) -
     assert result.returncode == 0, result.stderr
     (record,) = [line for line in jsonl_lines(result.stdout) if line["type"] == "record"]
     assert record == record_line(1, {"Entry #2": "Hammersley"})
+
+
+def test_a_checksum_mismatch_is_on_stderr_in_the_stream_and_fails_strict(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [compressed_record(table_record({0: b"x"}), wrong_checksums={0})])
+
+    result = run_command("cli", ["export", "--jsonl", "--strict", dbdir])
+
+    assert result.returncode == 1
+    assert "warning: checksum_mismatch: CroBank.dat record 1: " in result.stderr
+    assert "1 checksum_mismatch" in result.stderr.splitlines()[-1]
+    assert '"kind": "checksum_mismatch"' in result.stdout
+    assert '"record": 1' in result.stdout
