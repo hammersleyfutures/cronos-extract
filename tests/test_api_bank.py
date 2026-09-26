@@ -12,6 +12,7 @@ from cronos_builder import (
     TEST_TABLE_FILE_FIELD_INDEX,
     TEST_TABLE_ID,
     V3_INLINE_BIT,
+    DeletedRecord,
     bank_record,
     compressed_record,
     corrupt_compressed_record,
@@ -56,6 +57,19 @@ def test_records_are_read_in_crobank_order_skipping_other_tables_and_deleted_rec
     assert records[0]["Entry #4"].value == datetime.date(2024, 3, 15)
     assert records[1]["Entry #4"].value == "1985-00-00"
     assert records[0]["Entry #2"].text == "Hammersley"
+
+
+@pytest.mark.usefixtures("prints_nothing")
+@pytest.mark.parametrize("extended", [False, True], ids=["inline", "extended"])
+def test_a_deleted_v4_record_is_not_read(tmp_path: Path, extended: bool) -> None:
+    dbdir = write_database(
+        tmp_path / "db", [person(), DeletedRecord(person()), person()], version=b"01.11", extended=extended
+    )
+
+    with cronos_extract.open(dbdir) as bank:
+        records = list(bank.tables[0].records())
+
+    assert [record.number for record in records] == [1, 3]
 
 
 @pytest.mark.usefixtures("prints_nothing")
@@ -606,9 +620,9 @@ GOLDEN_CASES = [
 ]
 
 
-def golden_records(version: bytes) -> list[bytes | None]:
-    """The records the golden tests write, including the deleted record for versions other than 01.11."""
-    records = [
+def golden_records(version: bytes) -> list[bytes | DeletedRecord | None]:
+    """The records the golden tests write, including a deleted record: v4 keeps a deleted record's data."""
+    records: list[bytes | DeletedRecord | None] = [
         person(),
         person(date=b"850000", file_field=file_reference_field("report", "pdf", 3)),
         file_record(b"%PDF"),
@@ -616,8 +630,7 @@ def golden_records(version: bytes) -> list[bytes | None]:
         person(date="до 1990".encode("cp1251")),
         bank_record(TEST_TABLE_ID, [b"\x1b\xff\xff\xff\x7f"]),
     ]
-    if version != b"01.11":
-        records.insert(3, None)
+    records.insert(3, DeletedRecord(person()) if version == b"01.11" else None)
     return records
 
 

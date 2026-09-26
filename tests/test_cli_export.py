@@ -16,6 +16,7 @@ from cronos_builder import (
     TEST_TABLE_FIELD_COUNT,
     TEST_TABLE_FILE_FIELD_INDEX,
     TEST_TABLE_ID,
+    DeletedRecord,
     bank_record,
     complex_field,
     compressed_record,
@@ -546,6 +547,26 @@ def test_jsonl_writes_each_value_as_d4_describes(tmp_path: Path, capsys: pytest.
             },
         ),
         record_line(2, {"Entry #4": "1985-00-00", "Entry #6": {"name": "scan", "extension": "jpg", "record": None}}),
+    ]
+
+
+@pytest.mark.parametrize("extended", [False, True], ids=["inline", "extended"])
+def test_jsonl_leaves_out_a_deleted_v4_record(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], extended: bool
+) -> None:
+    dbdir = write_database(
+        tmp_path / "db",
+        [table_record({0: b"one"}), DeletedRecord(table_record({0: b"gone"})), table_record({0: b"three"})],
+        version=b"01.11",
+        extended=extended,
+    )
+
+    assert export_to_stdout(dbdir, "--jsonl") == 0
+
+    lines = jsonl_lines(capsys.readouterr().out)
+    assert [line for line in lines if line["type"] == "record"] == [
+        record_line(1, {"Entry #1": "one"}),
+        record_line(3, {"Entry #1": "three"}),
     ]
 
 

@@ -12,9 +12,12 @@ DELETED_LENGTH = 0xFFFFFFFF
 V3_INLINE_BIT = 1 << 31
 # The flag byte of an inline v3 entry: the top byte of its length field, which holds only bit 31.
 V3_INLINE_FLAGS = 0x80
-# A v4 entry keeps its flags in the top byte of the offset field. The research notes say 04 marks data (compressed
-# v3-style), 02 and 03 a deleted record and 00 an extended record; 3d checks 02 and 03 against real databases.
+# A v4 entry keeps its flags in the top byte of the offset field. 00 marks an extended record and 04 (most live
+# entries) an inline one. Bit 02 marks a deleted record whose data stays in the .dat file: in every real v4 .tad
+# holding such entries, the header's deleted count equals the entries with bit 02 set (flags 02 and 06). What 04,
+# 08, 0c and 07 mean is unexplained (Phase 3e); any flag other than the deleted bit is read as inline.
 V4_FLAG_SHIFT = 56
+V4_DELETED_FLAG = 0x02
 V3_HEADER = struct.Struct("<2L")
 V4_HEADER = struct.Struct("<4L")
 # 01.03, 01.05 and 01.11 have 64-bit file offsets; 01.02 and 01.04 have 32-bit ones.
@@ -66,7 +69,14 @@ class TadLayout:
             return TadEntry(offset, length & ~V3_INLINE_BIT, flags, checksum, inline=inline, deleted=False)
         flags = offset >> V4_FLAG_SHIFT
         offset &= (1 << V4_FLAG_SHIFT) - 1
-        return TadEntry(offset, length, flags, checksum, inline=flags != 0, deleted=False)
+        return TadEntry(
+            offset,
+            length,
+            flags,
+            checksum,
+            inline=bool(flags & ~V4_DELETED_FLAG),
+            deleted=bool(flags & V4_DELETED_FLAG),
+        )
 
 
 def tad_layout(version: bytes) -> TadLayout | None:

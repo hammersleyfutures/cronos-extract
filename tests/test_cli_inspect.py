@@ -14,6 +14,7 @@ from cronos_builder import (
     TEST_DB,
     TEST_TABLE_FIELD_COUNT,
     TEST_TABLE_ID,
+    DeletedRecord,
     bank_record,
     compressed_record,
     corrupt_compressed_record,
@@ -373,6 +374,39 @@ def test_inspect_crodump_marks_a_record_whose_checksum_does_not_match(tmp_path: 
     first, second = [line for line in lines[bank_start + 1 :] if line.startswith(("    1:", "    2:"))]
     assert not first.endswith("<checksum mismatch>")
     assert second.endswith(" <checksum mismatch>")
+
+
+@pytest.mark.parametrize("extended", [False, True], ids=["inline", "extended"])
+def test_crodump_shows_a_deleted_v4_record_with_its_marker(tmp_path: Path, extended: bool) -> None:
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[0] = b"good"
+    record = bank_record(TEST_TABLE_ID, fields)
+    dbdir = write_database(
+        tmp_path / "db", [record, DeletedRecord(record), record], version=b"01.11", extended=extended
+    )
+
+    result = run_command("cli", ["inspect", "crodump", "--ascdump", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    lines = result.stdout.splitlines()
+    bank_start = next(i for i, line in enumerate(lines) if line.startswith("hdr: Bank"))
+    first, second, third = [line for line in lines[bank_start + 1 :] if line.startswith(("    1:", "    2:", "    3:"))]
+    assert "good" in first and "good" in second and "good" in third
+    assert "<deleted>" not in first and "<deleted>" not in third
+    assert second.endswith(" <deleted>")
+
+
+def test_crodump_marks_a_deleted_v4_record_it_cannot_decode(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [DeletedRecord(corrupt_compressed_record())], version=b"01.11")
+
+    result = run_command("cli", ["inspect", "crodump", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    lines = result.stdout.splitlines()
+    bank_start = next(i for i, line in enumerate(lines) if line.startswith("hdr: Bank"))
+    [line] = [line for line in lines[bank_start + 1 :] if line.startswith("    1:")]
+    assert " <corrupt compressed data: " in line
+    assert line.endswith("> <deleted>")
 
 
 def test_a_short_ns1_is_reported_as_a_warning_line(tmp_path: Path) -> None:
