@@ -24,6 +24,7 @@ from cronos_builder import (
     database_with_extra_definition_key,
     database_with_files_abbreviation,
     database_with_missing_definition,
+    database_with_own_kod_v4_bank,
     database_with_wrong_kod_record_out_of_range,
     duplicate_table_name_database,
     erdgeist_table_definition,
@@ -664,6 +665,23 @@ def test_export_of_an_undecodable_definition_exits_1_naming_the_crack_command() 
     assert lines[-1].startswith("Error: the database definition in CroStru.dat of ")
     assert lines[-1].endswith(KOD_HINT)
     assert "cronos_extract.crack_kod" not in result.stderr
+
+
+def test_export_of_an_own_kod_v4_bank_with_the_default_kod_exits_1_naming_dbcrack(tmp_path: Path) -> None:
+    dbdir = database_with_own_kod_v4_bank(tmp_path / "db", [table_record({0: b"42"})])
+
+    result = run_command("cli", ["export", "--jsonl", dbdir])
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.splitlines() == [
+        "warning: mismatched_kod: CroBank.dat: the file is encrypted with its own KOD, but is read with the default "
+        "one; if its records do not decode, recover its KOD by cracking it",
+        "",
+        "1 diagnostic: 1 mismatched_kod",
+        f"Error: CroBank.dat in {dbdir} is encrypted with the database's own KOD, which the default KOD would decode "
+        "as garbage. export --crack dbcrack uses the KOD that cronos-extract crack dbcrack derives.",
+    ]
 
 
 @pytest.mark.parametrize(

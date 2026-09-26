@@ -17,12 +17,14 @@ from cronos_builder import (
     TEST_TABLE_FILE_FIELD_INDEX,
     TEST_TABLE_ID,
     V3_INLINE_BIT,
+    V4_VERSIONS,
     DeletedRecord,
     bank_record,
     compressed_record,
     database_with_extra_definition_key,
     database_with_files_abbreviation,
     database_with_missing_definition,
+    database_with_own_kod_v4_bank,
     database_without_files_table,
     duplicate_table_name_database,
     erdgeist_table_definition,
@@ -157,6 +159,17 @@ def test_encrypted_database_decodes_only_with_its_kod(tmp_path: Path, capsys: py
     assert seen[2].message == "expected dbinfo to start with 0x03"
     captured = capsys.readouterr()
     assert (captured.out, captured.err) == ("", "")
+
+
+def test_an_own_kod_v4_bank_database_has_a_default_kod_v3_stru(tmp_path: Path) -> None:
+    dbdir = database_with_own_kod_v4_bank(tmp_path / "db", [person_record(b"")])
+
+    with cronos_extract.open(dbdir, kod=cronos_extract.Kod.from_table(random_kod(seed=1))) as bank:
+        assert [(info.name, info.version, info.kod_encoded, info.own_kod) for info in bank.info] == [
+            ("Stru", "01.02", True, False),
+            ("Bank", "01.11", True, True),
+        ]
+        assert [record["Entry #1"].text for table in bank.tables for record in table.records()] == ["42"]
 
 
 def test_write_header_only_datafile_writes_just_the_header(tmp_path: Path) -> None:
@@ -476,7 +489,9 @@ def test_a_database_of_extended_records_reads_back_the_same_as_inline(tmp_path: 
     assert extended_texts == inline_texts
 
 
-@pytest.mark.parametrize("version", BUILDER_VERSIONS)
+# open() refuses a v4 CroBank that is KOD-encoded when read with the default KOD, so v4 is left out here; the test
+# below reads v4 extended records encoded with the database's own KOD.
+@pytest.mark.parametrize("version", [version for version in BUILDER_VERSIONS if version not in V4_VERSIONS])
 def test_a_database_of_extended_kod_encoded_records_reads_back_the_same_as_inline(
     tmp_path: Path, version: bytes
 ) -> None:

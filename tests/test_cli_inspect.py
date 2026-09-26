@@ -19,6 +19,7 @@ from cronos_builder import (
     compressed_record,
     corrupt_compressed_record,
     database_with_missing_definition,
+    database_with_own_kod_v4_bank,
     database_with_wrong_kod_record_out_of_range,
     definition_with_extra_key,
     erdgeist_table_definition,
@@ -286,6 +287,19 @@ def test_strudump_without_the_database_kod_stops_with_a_message() -> None:
         "Error: the database definition is cut off after 0 keys",
         KOD_HINT,
     ]
+
+
+def test_strudump_of_an_own_kod_v4_bank_with_the_default_kod_warns_and_is_not_refused(tmp_path: Path) -> None:
+    dbdir = database_with_own_kod_v4_bank(tmp_path / "db", [])
+
+    result = run_command("cli", ["inspect", "strudump", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert "Error:" not in result.stderr
+    assert (
+        "warning: mismatched_kod: CroBank.dat: the file is encrypted with its own KOD, but is read with the default "
+        "one; if its records do not decode, recover its KOD by cracking it"
+    ) in result.stderr.splitlines()
 
 
 def test_strudump_with_a_kod_the_database_does_not_use_warns(tmp_path: Path) -> None:

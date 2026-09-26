@@ -14,7 +14,7 @@ from ..Datafile import Datafile
 from ..Datamodel import TableDefinition, describe_error, is_table_key, undecodable_table
 from .datafiles import database_directory, list_directory, open_datafile, optional_file_info
 from .diagnostics import Diagnostic, DiagnosticKind, DiagnosticLog, RecordNumbers
-from .errors import DatabaseDefinitionError
+from .errors import DatabaseDefinitionError, OwnKodRequired
 from .info import FileInfo
 from .kod import Kod, kod_coder
 from .values import EmbeddedFile, FieldDefinition, FileReference, Record, decode_record
@@ -28,6 +28,7 @@ DEFINITION_HINT = (
     "If the KOD used to read this database is not its own, the definition decodes as garbage; "
     "cronos_extract.crack_kod can recover the database's KOD."
 )
+OWN_KOD_HINT = 'cronos_extract.crack_kod(path, "dbcrack") can recover the database\'s KOD.'
 
 
 class Table:
@@ -375,8 +376,9 @@ def open(
     called with each diagnostic as it is recorded.
 
     Raises OSError when `path` does not exist, is not a directory or cannot be listed; TypeError for a bytes path;
-    NotACronosFile or UnsupportedVersion when CroStru or CroBank cannot be read; DatabaseDefinitionError when the
-    database definition cannot be decoded.
+    NotACronosFile or UnsupportedVersion when CroStru or CroBank cannot be read; OwnKodRequired when CroBank is a v4
+    file encrypted with the database's own KOD and `kod` is the default one, which would decode its records as
+    garbage; DatabaseDefinitionError when the database definition cannot be decoded.
     """
     directory = database_directory(path)
     names = list_directory(directory)
@@ -386,6 +388,11 @@ def open(
         stack.callback(stru.close)
         bank_file, bank_info = open_datafile(directory, names, "Bank", compact=compact, kod=kod, log=log)
         stack.callback(bank_file.close)
+        if bank_info.generation == "v4" and bank_info.kod_encoded and kod == DEFAULT_KOD:
+            raise OwnKodRequired(
+                f"{BANK_FILE} in {directory} is encrypted with the database's own KOD, which the default KOD would "
+                f"decode as garbage. {OWN_KOD_HINT}"
+            )
         optional = [optional_file_info(directory, names, base, log) for base in ("Index", "Sys")]
         database = Database.from_datafiles(str(directory), compact, kod_coder(kod), stru, bank_file, log.record)
         bank = Bank(
