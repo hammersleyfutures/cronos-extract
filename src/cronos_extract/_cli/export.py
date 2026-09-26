@@ -256,9 +256,12 @@ def write(bank: Bank, writer: Writer, problems: Problems) -> None:
 
 def deleted_records_note(count: int) -> str:
     """The note export prints on stderr when CroBank lists `count` deleted records; it is not a diagnostic."""
-    records = "record" if count == 1 else "records"
+    if count == 1:
+        return (
+            "note: CroBank.tad lists 1 deleted record, which is not exported; inspect crodump shows what remains of it"
+        )
     return (
-        f"note: CroBank.tad lists {count} deleted {records}, which are not exported; "
+        f"note: CroBank.tad lists {count} deleted records, which are not exported; "
         "inspect crodump shows what remains of them"
     )
 

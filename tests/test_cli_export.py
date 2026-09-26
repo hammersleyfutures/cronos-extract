@@ -777,7 +777,7 @@ def test_strict_exits_1_after_writing_the_output(tmp_path: Path) -> None:
 
 
 DELETED_NOTE = (
-    "note: CroBank.tad lists 1 deleted record, which are not exported; inspect crodump shows what remains of them"
+    "note: CroBank.tad lists 1 deleted record, which is not exported; inspect crodump shows what remains of it"
 )
 SECTION_2_WARNINGS = [
     f"warning: unexpected_structure: CroStru.dat: {key}: FieldDefinition Section 2 not marked with a 2"
