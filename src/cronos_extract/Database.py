@@ -13,7 +13,7 @@ from . import koddecoder
 from ._diagnostic import STRU_FILE, Diagnostic, DiagnosticKind, Reporter, for_table_definition
 from ._format.files import open_regular_file
 from .Datafile import Datafile
-from .Datamodel import TableDefinition, undecodable_table
+from .Datamodel import TableDefinition, is_table_key, undecodable_table
 from .hexdump import strescape, toout
 from .koddecoder import KODcoding
 from .readers import ByteReader, decode_cp1251
@@ -266,7 +266,7 @@ class Database:
 
         report = StoppingReporter(self.report)
         for k, v in dbdef.items():
-            if k.startswith("Base") and k[4:].isnumeric():
+            if is_table_key(k):
                 print(f"== {k} ==")
                 try:
                     tbdef = TableDefinition(

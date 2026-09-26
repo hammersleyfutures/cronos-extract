@@ -10,7 +10,7 @@ from typing import Self, override
 from .._diagnostic import STRU_FILE, for_table_definition
 from ..Database import Database
 from ..Datafile import Datafile
-from ..Datamodel import TableDefinition, describe_error, undecodable_table
+from ..Datamodel import TableDefinition, describe_error, is_table_key, undecodable_table
 from .datafiles import database_directory, list_directory, open_datafile, optional_file_info
 from .diagnostics import Diagnostic, DiagnosticKind, DiagnosticLog, RecordNumbers
 from .errors import DatabaseDefinitionError
@@ -27,11 +27,6 @@ DEFINITION_HINT = (
     "If the KOD used to read this database is not its own, the definition decodes as garbage; "
     "cronos_extract.crack_kod can recover the database's KOD."
 )
-
-
-def is_table_key(key: str) -> bool:
-    """Whether a database definition key names a table definition: "Base" followed by digits."""
-    return key.startswith("Base") and key[4:].isascii() and key[4:].isdigit()
 
 
 class Table:

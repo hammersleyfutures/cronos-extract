@@ -7,7 +7,7 @@ import pytest
 from cronos_builder import erdgeist_table_definition
 
 from cronos_extract._diagnostic import Diagnostic, DiagnosticKind, for_table_definition
-from cronos_extract.Datamodel import Field, FieldDefinition, TableDefinition
+from cronos_extract.Datamodel import Field, FieldDefinition, TableDefinition, is_table_key
 from cronos_extract.hexdump import aschr, hexdump
 
 
@@ -119,3 +119,19 @@ def test_a_table_definition_reporter_names_crostru_and_the_key(capfd: pytest.Cap
         )
     ]
     assert capfd.readouterr().err == ""
+
+
+@pytest.mark.parametrize(
+    ("key", "is_table"),
+    [
+        ("Base000", True),
+        ("Base002", True),
+        ("BaseImage001", False),
+        ("Base", False),
+        ("Base\u0662", False),
+        ("Base\u00b2", False),
+        ("Base\u0660\u0660\u0662", False),
+    ],
+)
+def test_only_base_followed_by_ascii_digits_names_a_table(key: str, is_table: bool) -> None:
+    assert is_table_key(key) is is_table

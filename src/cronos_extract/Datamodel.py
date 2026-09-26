@@ -68,6 +68,11 @@ class TableImage:
         self.data = rd.readbytes(imagelen)
 
 
+def is_table_key(key: str) -> bool:
+    """Whether a database definition key names a table definition: "Base" followed by digits."""
+    return key.startswith("Base") and key[4:].isascii() and key[4:].isdigit()
+
+
 class TableDefinition:
     def __init__(self, data: bytes, image: bytes = b"", *, report: Reporter) -> None:
         """

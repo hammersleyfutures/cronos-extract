@@ -22,7 +22,6 @@ from cronos_builder import (
 )
 
 import cronos_extract
-from cronos_extract._api.bank import is_table_key
 from cronos_extract.koddecoder import INITIAL_KOD
 
 SECTION_2_WARNINGS = [
@@ -293,22 +292,6 @@ def test_an_exception_from_a_database_definition_warning_reaches_the_caller(tmp_
 
     with pytest.raises(StopReading):
         cronos_extract.open(dbdir, on_diagnostic=on_diagnostic)
-
-
-@pytest.mark.parametrize(
-    ("key", "is_table"),
-    [
-        ("Base000", True),
-        ("Base002", True),
-        ("BaseImage001", False),
-        ("Base", False),
-        ("Base\u0662", False),
-        ("Base\u00b2", False),
-        ("Base\u0660\u0660\u0662", False),
-    ],
-)
-def test_only_base_followed_by_ascii_digits_names_a_table(key: str, is_table: bool) -> None:
-    assert is_table_key(key) is is_table
 
 
 def test_on_diagnostic_receives_the_diagnostics_of_open(tmp_path: Path) -> None:
