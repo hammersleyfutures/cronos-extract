@@ -124,6 +124,8 @@ def test_a_damaged_database_is_read_without_crashing_hanging_or_printing(
                 for _ in bank.files():
                     pass
         except cronos_extract.CronosError:
+            # A database the damage leaves unreadable is an accepted outcome; this test checks that nothing else
+            # escapes.
             pass
 
     assert capfd.readouterr() == ("", ""), what
