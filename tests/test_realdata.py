@@ -1,9 +1,7 @@
 # ABOUTME: Checks the cronos_extract API against Ben's real CronosPro databases, found under roots listed in local/.
 # ABOUTME: Deselected by default; run with `uv run pytest -m realdata`. Test ids are indexes, never paths.
-import contextlib
 import functools
 import hashlib
-import io
 import itertools
 import json
 import struct
@@ -12,13 +10,11 @@ from pathlib import Path
 
 import pytest
 from cli import run_command
-from cronos_builder import ignore_problems, tad_layout
+from cronos_builder import tad_layout
 
 import cronos_extract
-import cronos_extract.koddecoder
 from cronos_extract._api.info import read_file_info
 from cronos_extract._cli.sql_out import unique_sql_table_name
-from cronos_extract.Database import Database
 from cronos_extract.survey import SurveyedDatabase, read_path_list, survey_databases
 
 pytestmark = pytest.mark.realdata
@@ -142,28 +138,6 @@ def test_no_real_database_reports_a_checksum_mismatch(dbdir: Path) -> None:
                 pass
         list(itertools.islice(bank.files(), RECORDS_COMPARED))
         assert bank.diagnostic_counts[cronos_extract.DiagnosticKind.CHECKSUM_MISMATCH] == 0
-
-
-def test_field_text_matches_database_enumerate_records(dbdir: Path) -> None:
-    if not bank_is_small(dbdir):
-        pytest.skip("CroBank is too large to walk once per table")
-    with (
-        open_or_skip(dbdir) as bank,
-        contextlib.redirect_stderr(io.StringIO()),
-        Database(str(dbdir), False, cronos_extract.koddecoder.new(), report=ignore_problems) as db,
-    ):
-        internal = {(table.tableid, table.tablename): table for table in db.enumerate_tables()}
-        assert {(table.id, table.name) for table in bank.tables} == set(internal)
-        for table in bank.tables:
-            expected = [
-                (record.recno, [field.content for field in record.fields])
-                for record in itertools.islice(db.enumerate_records(internal[(table.id, table.name)]), RECORDS_COMPARED)
-            ]
-            actual = [
-                (record.number, [field.text for field in record.fields])
-                for record in itertools.islice(table.records(), RECORDS_COMPARED)
-            ]
-            assert actual == expected, f"table id {table.id} differs"
 
 
 def api_fingerprint(dbdir: Path) -> dict[str, object]:

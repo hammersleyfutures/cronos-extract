@@ -1,23 +1,20 @@
 # ABOUTME: Database: opens the Cro*.dat/.tad file pairs found in a CronosPro database directory.
-# ABOUTME: Decodes the database and table definitions from CroStru and enumerates tables, records and files.
+# ABOUTME: Decodes the database and table definitions from CroStru.
 import argparse
-import base64
 import os
 import re
 import struct
-import sys
 from binascii import b2a_hex
 from collections.abc import Collection
 from contextlib import ExitStack
-from functools import cached_property
-from typing import Self, cast
+from typing import Self
 
 from . import koddecoder
 from ._diagnostic import STRU_FILE, Diagnostic, DiagnosticKind, Reporter, for_table_definition
 from ._format.files import open_regular_file
 from .Datafile import Datafile
-from .Datamodel import Record, TableDefinition, describe_error
-from .hexdump import ashex, strescape, toout
+from .Datamodel import TableDefinition
+from .hexdump import strescape, toout
 from .koddecoder import KODcoding
 from .readers import ByteReader, decode_cp1251
 
@@ -33,9 +30,6 @@ ALL_FILES = ("Stru", "Index", "Bank", "Sys")
 
 class Database:
     """represent the entire database, consisting of Stru, Index and Bank files"""
-
-    # The number of records enumerate_records yielded with fields that could not be decoded.
-    incomplete_records = 0
 
     def __init__(
         self,
@@ -278,112 +272,6 @@ class Database:
         password = decode_cp1251(decoded_data[12 : 12 + pwlen])
 
         print(f"== NS1: ({unk1:02x},{sh:02x}) -> {serial:6d}, {unk2:d}, {pwlen:d}:'{password}'")
-
-    def enumerate_tables(self, files=False):
-        """
-        yields a TableDefinition object for all `BaseNNN` entries found in CroStru
-        """
-        if not self.stru:
-            raise FileNotFoundError(self.missing_stru_message())
-        try:
-            dbdef = self.read_db_definition()
-        except Exception as e:
-            print(f"ERROR decoding db definition: {e}", file=sys.stderr)
-            print(KOD_HINT, file=sys.stderr)
-            return
-
-        for k, v in dbdef.items():
-            if k.startswith("Base") and k[4:].isnumeric():
-                report = for_table_definition(self.report, k)
-                if files and k[4:] == "000":
-                    yield TableDefinition(v, report=report)
-                if not files and k[4:] != "000":
-                    yield TableDefinition(v, dbdef.get("BaseImage" + k[4:], b""), report=report)
-
-    def enumerate_records(self, table):
-        """
-        Yields a Record object for all records in CroBank matching
-        the tableid from `table`
-
-        usage:
-        for tab in db.enumerate_tables():
-            for rec in db.enumerate_records(tab):
-                print(sqlformatter(tab, rec))
-        """
-        for i in range(cast(Datafile, self.bank).nrofrecords):
-            data = self.readbankrec(i + 1)
-            if data and data[0] == table.tableid:
-                record = Record(i + 1, table.fields, data[1:])
-                if record.errors:
-                    self.incomplete_records += 1
-                for fieldname, error in record.errors:
-                    print(
-                        f'Warning: record {i + 1:d} in table "{table.tablename}": field "{fieldname}" could not be '
-                        f"decoded ({error}) and is left empty -- {ashex(data)}",
-                        file=sys.stderr,
-                    )
-                yield record
-            del data
-
-    def enumerate_files(self, table):
-        """
-        Yield all file contents found in CroBank for `table`.
-        This is most likely the table with id 0.
-        """
-        for i in range(cast(Datafile, self.bank).nrofrecords):
-            data = self.readbankrec(i + 1)
-            if data and data[0] == table.tableid:
-                yield i + 1, data[1:]
-
-    def readbankrec_or_raise(self, recno):
-        """
-        Read record `recno` from CroBank, returning None when the record is deleted.
-        Raises LookupError, naming the record, when the record is corrupt.
-        """
-        try:
-            return cast(Datafile, self.bank).readrec(recno)
-        except (ValueError, struct.error) as e:
-            raise LookupError(f"CroBank record {recno:d} is corrupt: {describe_error(e)}") from e
-
-    def readbankrec(self, recno):
-        """
-        Read record `recno` from CroBank.
-        Returns None when the record is deleted, or when it is corrupt, after printing a warning.
-        """
-        try:
-            return self.readbankrec_or_raise(recno)
-        except LookupError as e:
-            print(f"Warning: {e}; skipping it", file=sys.stderr)
-            return None
-
-    @cached_property
-    def files_tableid(self):
-        """
-        The table id of the Files table, which holds the stored files, or None when the database has no Files table.
-        """
-        table = next(self.enumerate_tables(files=True), None)
-        return table.tableid if table else None
-
-    def get_record(self, index, asbase64=False):
-        """
-        Retrieve a stored file's record from CroBank with record number `index`.
-        Raises LookupError, naming the reason, when `index` is not the number of a readable record of the Files table.
-        """
-        try:
-            recno = int(index)
-        except ValueError:
-            raise LookupError(f"{index!r} is not a record number") from None
-        if not 1 <= recno <= cast(Datafile, self.bank).nrofrecords:
-            raise LookupError(f"CroBank has no record {recno:d}")
-        data = self.readbankrec_or_raise(recno)
-        if data is None:
-            raise LookupError(f"CroBank record {recno:d} is deleted")
-        if not data or data[0] != self.files_tableid:
-            raise LookupError(f"CroBank record {recno:d} is not a record of the Files table")
-        if asbase64:
-            return base64.b64encode(data[1:]).decode("utf-8")
-        else:
-            return data[1:]
 
     def recdump(self, args: argparse.Namespace) -> None:
         """

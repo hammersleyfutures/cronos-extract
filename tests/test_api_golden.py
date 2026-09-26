@@ -1,5 +1,5 @@
 # ABOUTME: Pins the API's field text against a committed golden file per builder version, KOD and record layout.
-# ABOUTME: Generated with --update-golden; test_api_bank.py checks each file against Database.enumerate_records too.
+# ABOUTME: Generated with --update-golden; shares its records and rendering with tests/test_api_bank.py.
 from collections.abc import Callable
 from pathlib import Path
 

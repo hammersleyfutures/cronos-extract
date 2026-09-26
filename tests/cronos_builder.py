@@ -463,8 +463,8 @@ def database_with_wrong_kod_record_out_of_range(directory: Path) -> tuple[str, s
 
     The wrong KOD, `random_kod(seed=2622)`, decodes CroStru record 1 into a database definition whose one key
     has a garbage record number that CroStru doesn't hold; 2622 is the smallest seed found whose garbage record
-    1 starts with 0x03 (so dump_db_table_defs/enumerate_tables report no "expected dbinfo to start with 0x03"
-    problem) and whose garbage key name holds no line-break characters (so the error is a single stderr line).
+    1 starts with 0x03 (so reading the definition reports no "expected dbinfo to start with 0x03" problem) and
+    whose garbage key name holds no line-break characters (so the error is a single stderr line).
     """
     dbdir = write_database(directory, [], kod=random_kod(seed=1))
     wrong_kod_hex = bytes(random_kod(seed=2622)).hex()

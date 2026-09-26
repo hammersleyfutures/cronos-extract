@@ -147,6 +147,15 @@ def test_a_bytes_path_raises_type_error(tmp_path: Path) -> None:
         cronos_extract.open(bytes(tmp_path))  # ty: ignore[invalid-argument-type]
 
 
+def test_a_directory_without_a_stru_is_not_a_cronos_file(tmp_path: Path) -> None:
+    (tmp_path / "CroBank.dat").write_bytes(b"")
+
+    with pytest.raises(cronos_extract.NotACronosFile, match=r"no CroStru\.dat and CroStru\.tad") as error:
+        cronos_extract.open(tmp_path)
+
+    assert str(tmp_path) in str(error.value)
+
+
 def test_a_directory_without_a_bank_is_not_a_cronos_file(tmp_path: Path) -> None:
     dbdir = Path(write_database(tmp_path / "db", []))
     (dbdir / "CroBank.dat").unlink()

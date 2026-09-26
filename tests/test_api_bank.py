@@ -1,8 +1,7 @@
 # ABOUTME: Tests for reading records and files through the cronos_extract API: laziness, diagnostics and closing.
-# ABOUTME: Compares the API with Database.enumerate_records on every version tests/cronos_builder.py writes.
+# ABOUTME: Also builds the parity records and golden-file JSONL tests/test_api_golden.py checks per builder version.
 import datetime
 import json
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -18,7 +17,6 @@ from cronos_builder import (
     database_without_files_table,
     file_record,
     file_reference_field,
-    ignore_problems,
     patched_table_definition,
     random_kod,
     write_database,
@@ -28,8 +26,6 @@ from cronos_builder import (
 import cronos_extract
 from cronos_extract import DiagnosticKind
 from cronos_extract._api.diagnostics import DIAGNOSTICS_KEPT
-from cronos_extract.Database import Database
-from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
 
 KOD = random_kod(seed=11)
 FIELDS = [b"42", b"Hammersley", "Привет".encode("cp1251"), b"1240315", b"0930", b"", b"seven", b"", b"", b"", b"x"]
@@ -405,48 +401,6 @@ def golden_api_name(version: bytes, kod: list[int] | None, *, extended: bool) ->
 
 def parity_case_id(value: bytes | list[int] | None) -> str:
     return value.decode() if isinstance(value, bytes) else ("kod" if value else "default")
-
-
-@pytest.mark.parametrize(
-    ("version", "kod"),
-    PARITY_CASES,
-    ids=parity_case_id,
-)
-def test_field_text_matches_database_enumerate_records(
-    tmp_path: Path,
-    capfd: pytest.CaptureFixture[str],
-    golden: Callable[[str, str], None],
-    version: bytes,
-    kod: list[int] | None,
-) -> None:
-    records = parity_records(version)
-    dbdir = write_database(tmp_path / "db", records, kod, version=version)
-
-    with Database(dbdir, False, KODcoding(kod if kod else INITIAL_KOD), report=ignore_problems) as db:
-        expected_tables = {(table.tableid, table.tablename) for table in db.enumerate_tables()}
-        expected = [
-            (record.recno, [field.content for field in record.fields])
-            for table in db.enumerate_tables()
-            for record in db.enumerate_records(table)
-        ]
-    capfd.readouterr()
-
-    with cronos_extract.open(
-        dbdir, kod=cronos_extract.Kod.from_table(kod) if kod else cronos_extract.Kod.default()
-    ) as bank:
-        assert {(table.id, table.name) for table in bank.tables} == expected_tables
-        actual = [
-            (record.number, [field.text for field in record.fields])
-            for table in bank.tables
-            for record in table.records()
-        ]
-        rendered = render_api_jsonl(bank)
-
-    assert actual == expected
-    assert len(actual) == 4
-    golden(golden_api_name(version, kod, extended=False), rendered)
-    captured = capfd.readouterr()
-    assert (captured.out, captured.err) == ("", "")
 
 
 def test_a_checksum_mismatch_keeps_the_record_and_is_reported_once(tmp_path: Path) -> None:
