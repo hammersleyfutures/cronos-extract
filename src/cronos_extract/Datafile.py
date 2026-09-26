@@ -224,18 +224,21 @@ class Datafile:
                 decflags[0] = " "
 
             data = parts.data
+            mismatch = ""
             if args.decompress and is_compressed(data):
                 try:
-                    data, _ = decompress(data, f"record {idx} in Cro{self.name}.dat")
+                    data, mismatched = decompress(data, f"record {idx} in Cro{self.name}.dat")
                 except ValueError as e:
                     print(f"{idx:5d}: {ofs:08x}-{ofs + ln:08x}: ({flags:02x}:{chk:08x}) <{e}>")
                     continue
                 decflags[1] = "@"
+                if mismatched:
+                    mismatch = " <checksum mismatch>"
 
             # TODO: separate handling for v4
             print(
                 f"{i + 1:5d}: {ofs:08x}-{ofs + ln:08x}: ({flags:02x}:{chk:08x}) "
-                f"{infostr} {''.join(decflags)}{toout(args, data)} {tohex(parts.tail)}"
+                f"{infostr} {''.join(decflags)}{toout(args, data)} {tohex(parts.tail)}{mismatch}"
             )
 
         if args.verbose:
