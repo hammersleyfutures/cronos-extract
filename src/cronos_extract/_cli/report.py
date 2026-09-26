@@ -8,11 +8,10 @@ from typing import Self, TextIO, override
 
 from .._api.bank import DEFINITION_HINT
 from .._api.diagnostics import Diagnostic, DiagnosticKind
-from .._diagnostic import STRU_FILE as STRU_FILE
 from ..Database import KOD_HINT
 
-# The canonical names of the two files a Problem can name, as the API names them: STRU_FILE, imported above for the
-# output writers, and BANK_FILE.
+# The canonical name of CroBank, one of the two files a Problem can name, as the API names it; the other is
+# _diagnostic.STRU_FILE.
 BANK_FILE = "CroBank.dat"
 # Kinds the command reports itself, for problems of writing the output rather than of reading the database.
 DUPLICATE_TABLE = "duplicate_table"

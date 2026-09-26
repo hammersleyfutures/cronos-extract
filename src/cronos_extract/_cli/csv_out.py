@@ -9,8 +9,9 @@ from typing import TextIO
 
 from .._api.bank import Bank, Table
 from .._api.values import FieldValue, FileReference, Record
+from .._diagnostic import STRU_FILE
 from .names import unique_file_name
-from .report import DUPLICATE_TABLE, STRU_FILE, Problem
+from .report import DUPLICATE_TABLE, Problem
 
 FIELD_TYPE_FILE = 6
 REFERENCED_DIRECTORY = "Files-Referenced"
