@@ -3,7 +3,6 @@
 import argparse
 import sys
 from collections.abc import Collection
-from typing import cast
 
 from .._api.errors import NotACronosFile
 from .._api.kod import kod_coder
@@ -137,7 +136,7 @@ def open_component(db: Database, base: str, report: Report, *, required: bool) -
     if not datname or not tadname:
         return None
     try:
-        return cast(Datafile, db.opendatafile(base, datname, tadname))
+        return db.opendatafile(base, datname, tadname)
     except Exception as e:
         # Opening a file raises OSError; Datafile's construction raises ValueError for a file it cannot read.
         if required:

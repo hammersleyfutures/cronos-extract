@@ -1,20 +1,24 @@
 # ABOUTME: Database: opens the Cro*.dat/.tad file pairs found in a CronosPro database directory.
 # ABOUTME: Decodes the database and table definitions from CroStru and enumerates tables, records and files.
+import argparse
 import base64
 import os
 import re
 import struct
 import sys
 from binascii import b2a_hex
+from collections.abc import Collection
 from contextlib import ExitStack
 from functools import cached_property
+from typing import Self, cast
 
 from . import koddecoder
-from ._diagnostic import STRU_FILE, Diagnostic, DiagnosticKind, for_table_definition
+from ._diagnostic import STRU_FILE, Diagnostic, DiagnosticKind, Reporter, for_table_definition
 from ._format.files import open_regular_file
 from .Datafile import Datafile
 from .Datamodel import Record, TableDefinition, describe_error
 from .hexdump import ashex, strescape, toout
+from .koddecoder import KODcoding
 from .readers import ByteReader, decode_cp1251
 
 # Printed after a database definition error: a KOD that isn't the database's own decodes the definition as garbage.
@@ -33,7 +37,14 @@ class Database:
     # The number of records enumerate_records yielded with fields that could not be decoded.
     incomplete_records = 0
 
-    def __init__(self, dbdir, compact, kod, report, files=ALL_FILES):
+    def __init__(
+        self,
+        dbdir: str,
+        compact: bool,
+        kod: KODcoding | None,
+        report: Reporter,
+        files: Collection[str] = ALL_FILES,
+    ) -> None:
         """
         `dbdir` is the directory containing the Cro*.dat and Cro*.tad files.
         `compact` if set, the .tad file is not cached in memory, making dumps 15 % slower
@@ -58,7 +69,9 @@ class Database:
         self.sys = self.getfile("Sys")
 
     @classmethod
-    def from_datafiles(cls, dbdir, compact, kod, stru, bank, report):
+    def from_datafiles(
+        cls, dbdir: str, compact: bool, kod: KODcoding | None, stru: Datafile, bank: Datafile, report: Reporter
+    ) -> Self:
         """
         Make a Database of the CroStru and CroBank Datafiles `stru` and `bank`, which the caller has opened.
         Closing the Database closes them.
@@ -68,7 +81,7 @@ class Database:
         db.bank = bank
         return db
 
-    def close(self):
+    def close(self) -> None:
         """
         Close the files of every component of the database.
         """
@@ -76,13 +89,13 @@ class Database:
             if datafile:
                 datafile.close()
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, *exc_info):
+    def __exit__(self, *exc_info: object) -> None:
         self.close()
 
-    def getfile(self, name):
+    def getfile(self, name: str) -> Datafile | None:
         """
         Returns a Datafile object for `name`.
         this function expects a `Cro<name>.dat` and a `Cro<name>.tad` file.
@@ -102,8 +115,9 @@ class Database:
                 return self.opendatafile(name, datname, tadname)
         except OSError:
             return None
+        return None
 
-    def opendatafile(self, name, datname, tadname):
+    def opendatafile(self, name: str, datname: str, tadname: str) -> Datafile:
         """
         Open a .dat/.tad pair as a Datafile, closing both files again if it can't be read.
         """
@@ -114,7 +128,7 @@ class Database:
             stack.pop_all()
         return datafile
 
-    def getname(self, name, ext):
+    def getname(self, name: str, ext: str) -> str | None:
         """
         Get a case-insensitive filename match for 'name.ext'.
         Returns None when no matching file was not found.
@@ -125,7 +139,7 @@ class Database:
                 return os.path.join(self.dbdir, fn)
         return None
 
-    def dump(self, args):
+    def dump(self, args: argparse.Namespace) -> None:
         """
         Calls the `dump` method on all database components.
         """
@@ -138,25 +152,29 @@ class Database:
         if self.sys:
             self.sys.dump(args)
 
-    def missing_stru_message(self):
+    def missing_stru_message(self) -> str:
         """
         Returns the message that explains that the database directory has no CroStru files.
         """
         return f"no CroStru.dat and CroStru.tad found in {self.dbdir}, which hold the table definitions"
 
-    def report_structure(self, message, record=None):
+    def report_structure(self, message: str, record: int | None = None) -> None:
         """
         Report `message` as an unexpected_structure Diagnostic about CroStru, at `record` when it is given.
         """
         self.report(Diagnostic(DiagnosticKind.UNEXPECTED_STRUCTURE, message, file=STRU_FILE, record=record))
 
-    def decode_db_definition(self, data):
+    def decode_db_definition(self, data: bytes) -> dict[str, bytes]:
         """
         decode the 'bank' / database definition
         """
         rd = ByteReader(data)
 
-        d = dict()
+        # self.stru is None only for `inspect destruct -t 1` in a directory without CroStru, where a key stored
+        # by reference then fails with AttributeError, as it always has.
+        stru = cast(Datafile, self.stru)
+
+        d: dict[str, bytes] = dict()
         try:
             while not rd.eof():
                 keyname = rd.readname()
@@ -167,12 +185,12 @@ class Database:
                 if index_or_length >> 31:
                     d[keyname] = rd.readbytes(index_or_length & 0x7FFFFFFF)
                 else:
-                    if not 1 <= index_or_length <= self.stru.nrofrecords:
+                    if not 1 <= index_or_length <= stru.nrofrecords:
                         raise ValueError(
                             f'key "{keyname}" refers to CroStru record {index_or_length}, '
-                            f"which CroStru does not hold ({self.stru.nrofrecords} records)"
+                            f"which CroStru does not hold ({stru.nrofrecords} records)"
                         )
-                    refdata = self.stru.readrec(index_or_length)
+                    refdata = stru.readrec(index_or_length)
                     if refdata is None:
                         raise ValueError(
                             f'key "{keyname}" refers to CroStru record {index_or_length}, which is deleted'
@@ -184,7 +202,7 @@ class Database:
             raise ValueError(f"the database definition is cut off after {len(d)} keys") from e
         return d
 
-    def dump_db_definition(self, args, dbdict):
+    def dump_db_definition(self, args: argparse.Namespace, dbdict: dict[str, bytes]) -> None:
         """
         decode the 'bank' / database definition
         """
@@ -194,21 +212,23 @@ class Database:
             else:
                 print(f'{k:<20} - "{strescape(v)}"')
 
-    def read_db_definition(self):
+    def read_db_definition(self) -> dict[str, bytes]:
         """
         Read and decode the database definition from CroStru record 1.
         Raises ValueError when CroStru has no record 1, when it is deleted, or when it can't be decoded.
         """
-        if self.stru.nrofrecords < 1:
+        # A caller reads the database definition only once self.stru is open.
+        stru = cast(Datafile, self.stru)
+        if stru.nrofrecords < 1:
             raise ValueError("CroStru holds no records, so it has no database definition")
-        dbinfo = self.stru.readrec(1)
+        dbinfo = stru.readrec(1)
         if dbinfo is None:
             raise ValueError("CroStru record 1, which holds the database definition, is deleted")
         if dbinfo[:1] != b"\x03":
             self.report_structure("expected dbinfo to start with 0x03", record=1)
         return self.decode_db_definition(dbinfo[1:])
 
-    def dump_db_table_defs(self, args):
+    def dump_db_table_defs(self, args: argparse.Namespace) -> None:
         """
         decode the table defs from recid #1, which always has table-id #3
         Note that I don't know if it is better to refer to this by recid, or by table-id.
@@ -229,7 +249,7 @@ class Database:
             elif k == "NS1":
                 self.dump_ns1(v)
 
-    def dump_ns1(self, data):
+    def dump_ns1(self, data: bytes) -> None:
         if len(data) < 2:
             self.report_structure("NS1 is unexpectedly short")
             return
@@ -286,7 +306,7 @@ class Database:
             for rec in db.enumerate_records(tab):
                 print(sqlformatter(tab, rec))
         """
-        for i in range(self.bank.nrofrecords):
+        for i in range(cast(Datafile, self.bank).nrofrecords):
             data = self.readbankrec(i + 1)
             if data and data[0] == table.tableid:
                 record = Record(i + 1, table.fields, data[1:])
@@ -306,7 +326,7 @@ class Database:
         Yield all file contents found in CroBank for `table`.
         This is most likely the table with id 0.
         """
-        for i in range(self.bank.nrofrecords):
+        for i in range(cast(Datafile, self.bank).nrofrecords):
             data = self.readbankrec(i + 1)
             if data and data[0] == table.tableid:
                 yield i + 1, data[1:]
@@ -317,7 +337,7 @@ class Database:
         Raises LookupError, naming the record, when the record is corrupt.
         """
         try:
-            return self.bank.readrec(recno)
+            return cast(Datafile, self.bank).readrec(recno)
         except (ValueError, struct.error) as e:
             raise LookupError(f"CroBank record {recno:d} is corrupt: {describe_error(e)}") from e
 
@@ -349,7 +369,7 @@ class Database:
             recno = int(index)
         except ValueError:
             raise LookupError(f"{index!r} is not a record number") from None
-        if not 1 <= recno <= self.bank.nrofrecords:
+        if not 1 <= recno <= cast(Datafile, self.bank).nrofrecords:
             raise LookupError(f"CroBank has no record {recno:d}")
         data = self.readbankrec_or_raise(recno)
         if data is None:
@@ -361,7 +381,7 @@ class Database:
         else:
             return data[1:]
 
-    def recdump(self, args):
+    def recdump(self, args: argparse.Namespace) -> None:
         """
         Function for outputing record contents of the various .dat files.
 

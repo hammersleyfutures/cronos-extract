@@ -127,7 +127,7 @@ def record_number(text: str) -> int | None:
 def convert_field(definition: FieldDefinition, decoded: DecodedField) -> tuple[Field, str | None]:
     """The public Field for the field `decoded` described by `definition`, and the problem with its value, if any."""
     raw = cast(bytes, decoded.data)
-    text = cast(str, decoded.content)
+    text = decoded.content
     if not raw:
         return Field(definition, None, "", b""), None
     if definition.type == FIELD_TYPE_DATE:

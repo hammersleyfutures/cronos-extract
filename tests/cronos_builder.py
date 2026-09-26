@@ -5,7 +5,6 @@ import struct
 import zlib
 from collections.abc import Collection, Sequence
 from pathlib import Path
-from typing import cast
 
 from cronos_extract._diagnostic import Diagnostic
 from cronos_extract.Database import Database
@@ -288,7 +287,7 @@ def key_referencing_a_deleted_record(directory: Path, keyname: str, bank_records
 def erdgeist_table_definition() -> bytes:
     """Return the definition bytes of TEST_DB's table "erdgeist", the value of its Base001 key."""
     with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD), report=ignore_problems) as db:
-        return cast(bytes, db.read_db_definition()["Base001"])
+        return db.read_db_definition()["Base001"]
 
 
 def patched_table_definition(*, tableid: int) -> bytes:
@@ -302,7 +301,7 @@ def patched_table_definition(*, tableid: int) -> bytes:
 def files_table_definition() -> bytes:
     """Return the definition bytes of TEST_DB's Files table, the value of its Base000 key."""
     with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD), report=ignore_problems) as db:
-        return cast(bytes, db.read_db_definition()["Base000"])
+        return db.read_db_definition()["Base000"]
 
 
 def renamed_table_definition(

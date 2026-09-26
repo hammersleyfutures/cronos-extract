@@ -32,6 +32,7 @@ from cronos_extract import NotACronosFile
 from cronos_extract._cli import inspect
 from cronos_extract._cli.report import Failure
 from cronos_extract.Database import KOD_HINT, Database
+from cronos_extract.Datafile import Datafile
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
 from cronos_extract.koddecoder import new as new_kod
 
@@ -131,7 +132,8 @@ def test_strudump_of_an_undecodable_definition_fails_with_the_kod_hint(capsys: p
 
 def definition_hex() -> str:
     with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD), report=ignore_problems) as db:
-        record = cast(bytes, db.stru.readrec(1))
+        stru = cast(Datafile, db.stru)
+        record = cast(bytes, stru.readrec(1))
     return record[1:].hex()
 
 

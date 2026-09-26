@@ -8,8 +8,8 @@ from types import TracebackType
 from typing import Self, cast, override
 
 from .._diagnostic import STRU_FILE, for_table_definition
-from .._format.record import RecordParts
 from ..Database import Database
+from ..Datafile import Datafile
 from ..Datamodel import TableDefinition, describe_error
 from .datafiles import database_directory, list_directory, open_datafile, optional_file_info
 from .diagnostics import Diagnostic, DiagnosticKind, DiagnosticLog, RecordNumbers
@@ -45,15 +45,15 @@ class Table:
     @property
     def id(self) -> int:
         """The table id, which the first byte of each of its CroBank records holds."""
-        return int(self._definition.tableid)
+        return self._definition.tableid
 
     @property
     def name(self) -> str:
-        return str(self._definition.tablename)
+        return self._definition.tablename
 
     @property
     def abbreviation(self) -> str:
-        return str(self._definition.abbrev)
+        return self._definition.abbrev
 
     @property
     def fields(self) -> tuple[FieldDefinition, ...]:
@@ -90,8 +90,8 @@ class Bank:
         self._tables: tuple[Table, ...] = ()
         self._files_table_id: int | None = None
         self._files_abbreviation: str | None = None
-        self._corrupt_records = RecordNumbers(database.bank.nrofrecords)
-        self._checksum_mismatches = RecordNumbers(database.bank.nrofrecords)
+        self._corrupt_records = RecordNumbers(self._bank_file.nrofrecords)
+        self._checksum_mismatches = RecordNumbers(self._bank_file.nrofrecords)
         self._unsupported_tables: set[int] = set()
 
     @property
@@ -145,6 +145,11 @@ class Bank:
         if self._closed:
             raise ValueError(f"the bank in {self._directory} is closed")
 
+    @property
+    def _bank_file(self) -> Datafile:
+        """The open CroBank Datafile; a Bank is only built with one, by open()."""
+        return cast(Datafile, self._database.bank)
+
     def files(self) -> Iterator[EmbeddedFile]:
         """
         The files stored in the Files table, in CroBank order, read one CroBank record per step, without names.
@@ -167,7 +172,7 @@ class Bank:
             return self._unresolved(reference, "its record number is not a number")
         if self._files_table_id is None:
             return self._unresolved(reference, "the database has no Files table")
-        if not 1 <= record <= self._database.bank.nrofrecords:
+        if not 1 <= record <= self._bank_file.nrofrecords:
             return self._unresolved(reference, f"CroBank has no record {record}")
         data = self._read(record)
         if data is None:
@@ -197,7 +202,7 @@ class Bank:
         """
         self._check_open()
         try:
-            parts = cast(RecordParts | None, self._database.bank.read_record(number))
+            parts = self._bank_file.read_record(number)
         except OSError:
             raise
         except Exception as e:
@@ -241,7 +246,7 @@ class Bank:
                     )
                 )
             return
-        for number in range(1, self._database.bank.nrofrecords + 1):
+        for number in range(1, self._bank_file.nrofrecords + 1):
             data = self._read(number)
             if not data or data[0] != table.id:
                 continue
@@ -253,7 +258,7 @@ class Bank:
     def _files(self) -> Iterator[EmbeddedFile]:
         if self._files_table_id is None:
             return
-        for number in range(1, self._database.bank.nrofrecords + 1):
+        for number in range(1, self._bank_file.nrofrecords + 1):
             data = self._read(number)
             if data and data[0] == self._files_table_id:
                 yield EmbeddedFile(number, data[1:], None)

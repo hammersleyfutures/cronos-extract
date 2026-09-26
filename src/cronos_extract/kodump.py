@@ -4,16 +4,21 @@
 This module has the functions for the 'inspect kodump' subcommand of cronos-extract.
 """
 
+import argparse
 import io
 import struct
+from typing import cast
 
 from ._format.files import open_regular_file
 from .hexdump import hexdump, toout, unhex
+from .koddecoder import KODcoding
 
 
-def decode_kod(kod, args, data):
+def decode_kod(kod: KODcoding | None, args: argparse.Namespace, data: bytes) -> None:
     """
     various methods of hexdumping KOD decoded data.
+
+    `kod` is None only with --nokod, which is handled before it is used.
     """
     if args.nokod:
         # plain hexdump, no KOD decode
@@ -22,11 +27,11 @@ def decode_kod(kod, args, data):
     elif args.shift:
         # explicitly specified shift.
         args.shift = int(args.shift, 0)
-        enc = kod.decode(args.shift, data)
+        enc = cast(KODcoding, kod).decode(args.shift, data)
         hexdump(args.offset, enc, args)
     elif args.increment:
 
-        def incdata(data, s):
+        def incdata(data: bytes, s: int) -> bytes:
             """
             add 's' to each byte.
             This is useful for finding the correct shift from an incorrectly shifted chunk.
@@ -39,12 +44,13 @@ def decode_kod(kod, args, data):
             print(f"{s:02x}: {toout(args, enc)}")
     else:
         # output with all possible 'shift' values.
+        coder = cast(KODcoding, kod)
         for s in range(256):
-            enc = kod.encode(s, data) if args.invkod else kod.decode(s, data)
+            enc = coder.encode(s, data) if args.invkod else coder.decode(s, data)
             print(f"{s:02x}: {toout(args, enc)}")
 
 
-def kod_hexdump(kod, args):
+def kod_hexdump(kod: KODcoding | None, args: argparse.Namespace) -> None:
     """
     handle the `kodump` subcommand, KOD decode a section of a data file
 

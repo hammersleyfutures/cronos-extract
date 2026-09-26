@@ -1,9 +1,10 @@
 # ABOUTME: Decodes CronosPro table definitions, field definitions and records.
 # ABOUTME: Turns raw field bytes into presentable content such as dates, times, file references and text.
 # -*- coding: utf-8 -*-
-from typing import override
+import argparse
+from typing import cast, override
 
-from ._diagnostic import Diagnostic, DiagnosticKind
+from ._diagnostic import Diagnostic, DiagnosticKind, Reporter
 from .hexdump import ashex, tohex
 from .readers import ByteReader, decode_cp1251
 
@@ -13,10 +14,10 @@ class FieldDefinition:
     Contains the properties for a single field in a record.
     """
 
-    def __init__(self, data):
+    def __init__(self, data: bytes) -> None:
         self.decode(data)
 
-    def decode(self, data):
+    def decode(self, data: bytes) -> None:
         self.defdata = data
 
         rd = ByteReader(data)
@@ -27,15 +28,15 @@ class FieldDefinition:
         self.minval = rd.readbyte()  # Always 1
         if self.typ:
             self.idx2 = rd.readdword()
-            self.maxval = rd.readdword()  # max value or length
-            self.unk4 = rd.readdword()  # Always 0x00000009 or 0x0001000d
+            self.maxval: int | None = rd.readdword()  # max value or length
+            self.unk4: int | None = rd.readdword()  # Always 0x00000009 or 0x0001000d
         else:
             self.idx2 = 0
             self.maxval = self.unk4 = None
         self.remaining = rd.readbytes()
 
     @override
-    def __str__(self):
+    def __str__(self) -> str:
         if self.typ:
             quoted_name = f"'{self.name}'"
             return (
@@ -48,10 +49,10 @@ class FieldDefinition:
 
 
 class TableImage:
-    def __init__(self, data):
+    def __init__(self, data: bytes) -> None:
         self.decode(data)
 
-    def decode(self, data):
+    def decode(self, data: bytes) -> None:
         if not len(data):
             self.filename = "none"
             self.data = b""
@@ -68,7 +69,7 @@ class TableImage:
 
 
 class TableDefinition:
-    def __init__(self, data, image=b"", *, report):
+    def __init__(self, data: bytes, image: bytes = b"", *, report: Reporter) -> None:
         """
         Decode a table definition from `data` and its image from `image`.
         `report` receives an unexpected_structure Diagnostic for each part of the definition that is not laid out as
@@ -77,13 +78,13 @@ class TableDefinition:
         self.report = report
         self.decode(data, image)
 
-    def report_structure(self, message):
+    def report_structure(self, message: str) -> None:
         """
         Report `message` as an unexpected_structure Diagnostic.
         """
         self.report(Diagnostic(DiagnosticKind.UNEXPECTED_STRUCTURE, message))
 
-    def decode(self, data, image):
+    def decode(self, data: bytes, image: bytes) -> None:
         """
         decode the 'base' / table definition
         """
@@ -112,7 +113,7 @@ class TableDefinition:
         self.headerdata = data[: rd.o]
 
         # There's (at least) two blocks describing fields, ended when encountering ffffffff
-        self.fields = []
+        self.fields: list[FieldDefinition] = []
         for _ in range(nrfields):
             deflen = rd.readword()
             fielddef = rd.readbytes(deflen)
@@ -157,14 +158,14 @@ class TableDefinition:
         self.tableimage = TableImage(image)
 
     @override
-    def __str__(self):
+    def __str__(self) -> str:
         return (
             f"{self.unk1:d},{self.version:d}<{self.unk2:d},{self.unk3:d},{self.unk4:d}>{self.tableid:d}  "
             f"{self.unk7:d},{len(self.fields):d} '{self.tablename}'  '{self.abbrev}'  "
             f"[TableImage({len(self.tableimage.data):d} bytes): {self.tableimage.filename}]"
         )
 
-    def dump(self, args):
+    def dump(self, args: argparse.Namespace) -> None:
         if args.verbose:
             print(f"table: {tohex(self.headerdata)}")
 
@@ -183,10 +184,10 @@ class Field:
     Contains a single fully decoded value.
     """
 
-    def __init__(self, fielddef, data):
+    def __init__(self, fielddef: FieldDefinition, data: bytes | str) -> None:
         self.decode(fielddef, data)
 
-    def decode(self, fielddef, data):
+    def decode(self, fielddef: FieldDefinition, data: bytes | str) -> None:
         self.typ = fielddef.typ
         self.data = data
 
@@ -201,24 +202,24 @@ class Field:
         elif self.typ == 4:
             # typ 4 is DATE, formatted like: <year-1900:signedNumber><month:2digits><day:2digits>
             try:
-                data = data.rstrip(b"\x00")
+                data = cast(bytes, data).rstrip(b"\x00")
                 y, m, d = 1900 + int(data[:-4]), int(data[-4:-2]), int(data[-2:])
                 self.content = f"{y:04d}-{m:02d}-{d:02d}"
             except ValueError:
-                self.content = decode_cp1251(data)
+                self.content = decode_cp1251(cast(bytes, data))
 
         elif self.typ == 5:
             # typ 5 is TIME, formatted like: <hour:2digits><minute:2digits>
             try:
-                data = data.rstrip(b"\x00")
+                data = cast(bytes, data).rstrip(b"\x00")
                 h, m = int(data[-4:-2]), int(data[-2:])
                 self.content = f"{h:02d}:{m:02d}"
             except ValueError:
-                self.content = decode_cp1251(data)
+                self.content = decode_cp1251(cast(bytes, data))
 
         elif self.typ == 6:
             # decode internal file reference
-            rd = ByteReader(data)
+            rd = ByteReader(cast(bytes, data))
             self.flag = rd.readdword()
             self.remlen = rd.readdword()
             self.filename = decode_cp1251(rd.readtoseperator(b"\x1e"))
@@ -228,11 +229,11 @@ class Field:
 
         elif self.typ == 7 or self.typ == 8 or self.typ == 9:
             # just hexdump foreign keys
-            self.content = ashex(data)
+            self.content = ashex(cast(bytes, data))
 
         else:
             # currently assuming everything else to be strings, which is wrong
-            self.content = decode_cp1251(data.rstrip(b"\x00"))
+            self.content = decode_cp1251(cast(bytes, data).rstrip(b"\x00"))
 
 
 class Record:
@@ -240,10 +241,10 @@ class Record:
     Contains a single fully decoded record.
     """
 
-    def __init__(self, recno, tabledef, data):
+    def __init__(self, recno: int, tabledef: list[FieldDefinition], data: bytes) -> None:
         self.decode(recno, tabledef, data)
 
-    def decode(self, recno, tabledef, data):
+    def decode(self, recno: int, tabledef: list[FieldDefinition], data: bytes) -> None:
         """
         decode the fields in a record
         """
@@ -257,7 +258,7 @@ class Record:
 
         # (field name, description of the error) for every field that could not be decoded.
         # Those fields are kept with empty content, so the record still has one field per field definition.
-        self.errors = []
+        self.errors: list[tuple[str, str]] = []
 
         rd = ByteReader(data)
         for fielddef in tabledef[1:]:
@@ -282,7 +283,7 @@ class Record:
                 self.fields.append(Field(fielddef, b""))
 
 
-def describe_error(error):
+def describe_error(error: Exception) -> str:
     """Return the type and, when it has one, the message of `error`, such as "EOFError" or "ValueError: bad"."""
     message = str(error)
     return f"{type(error).__name__}: {message}" if message else type(error).__name__
