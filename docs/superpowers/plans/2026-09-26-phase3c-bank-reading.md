@@ -360,3 +360,43 @@ def _table_records(self, table_id):
   in the roadmap and CLAUDE.md`.
 
 The controller appends this plan's Outcome section after the whole-branch review.
+
+## Outcome
+
+Implemented on branch `phase3c-bank-reading` in 10 commits after the plan (`a566e41`..`3986414`, plus this record),
+subagent-driven: an implementer and a task review per task, then a whole-branch review by Fable.
+
+- **Tests:** 875 passed on the branch before Task 2 and 898 after Task 4 (10 realdata tests deselected); ruff, format
+  and ty clean. **Golden files:** only `export-postgres-nokod.stderr` changed, by one `mismatched_kod` line for CroStru
+  and its summary line, as C2 predicted.
+- **Realdata (counts only):** fingerprints rewritten with `--update-golden`: 24 passed, 6 skipped (databases that do
+  not open with the default KOD); the 19 entries already in the file were unchanged and 5 databases the size limit
+  used to skip were added. The full run was cut off by a 9,000 s timeout after 194 of 252 tests (171 passed, 18
+  skipped, 5 xfailed, none failed); the rest, `-k "postgres or csv"`, then gave 33 passed, 27 skipped in 1 h 40 min.
+  Every realdata test has run on this branch, with no failure.
+- **Timing:** the database behind Phase 2's 19.8-minute export (v4; one data table and a Files table; 28,191 records
+  and 61,133 files) takes 1,311 s for one full API read with the index. It never had a tables × records factor: its
+  `.tad` holds 22,870,344 entries, nearly all read as live (flag `02`, a Phase 3d item), each KOD-decoded byte by byte
+  at about 120 µs a record. The largest listed CroBank (2.05 GB `.tad`) does not open with the default KOD. The
+  roadmap's 3c and v4 items and `CLAUDE.md` now say so.
+
+### Divergences from the plan and their rulings
+
+- Task 1: the `Error:` line carries `describe_error`'s `ValueError: ` prefix, as the plan allowed.
+- Task 3: `tests/test_api_values.py` also compared a decoded `FileReference` and gained the context values.
+- Task 4: an extra test pins an `on_diagnostic` exception at a live record (a scan that moved its position before
+  indexing passed every listed test). The plan's docstring sentences "CroBank is read at most once" and "up to 4 bytes
+  per CroBank record" were false and were reworded (`db6492d`).
+- Task 5: the implementer removed the size limit; the controller ran the realdata commands, because subagents have
+  stalled on long background runs. The size limit stays removed even though a full realdata run now takes about four
+  hours.
+
+### Final review
+
+Fable, `f169e6d..a496465`: ready to merge with fixes; no behavioural defect under hostile, interleaved, abandoned and
+re-entrant probing, and a crafted 1,000,000-entry `.tad` built a 4.0 MB index. Two Important findings, both
+documentation: `select_kod`'s docstring was false for `kod=None`, and `CLAUDE.md` gave the Files table a
+`records()`. Fixed in `3986414`; a scoped re-review found both addressed. Minors left as Fable triaged them: a
+throwaway `array` per scanned record in `_table_records` (negligible next to decoding), and four test-style points
+(the type-3 destruct test could join the parametrised one; the per-file KOD test branches on its expected value; the
+strudump `unused_kod` test checks membership only; the interleaving test indexes a tuple with a bool).

@@ -80,7 +80,7 @@ Found during Phase 0 and its reviews and not fixed there, each with the phase th
   with `croconvert` in Phase 2.
 - **Phase 3, from Phase 1:**
   - **(done, Phase 3a)** `Datafile.decompress` does not limit the decompressed size, so a crafted record can exhaust memory; do it with CRC checking. `_format/record.py`'s `decompress` now checks each chunk's CRC-32 and refuses past `MAX_DECOMPRESSED_BYTES` (256 MiB).
-  - **(now Phase 3d)** v4 deleted records: no real `01.11` `.tad` entry uses the `0xFFFFFFFF` length `readrec` treats as deleted, while many carry flag `02`, which `docs/cronos-research.md` calls deleted; today they are read as live records (flags `02` and `03` both). One real v4 database's `.tad` entries hold what look like 2024 Unix timestamps in their third field. `_format/tad.py`'s v4 layout keeps this behaviour and its comment names 3d as the phase that researches these flags and the third field against real databases.
+  - **(now Phase 3d)** v4 deleted records: no real `01.11` `.tad` entry uses the `0xFFFFFFFF` length `readrec` treats as deleted, while many carry flag `02`, which `docs/cronos-research.md` calls deleted; today they are read as live records (flags `02` and `03` both). One real v4 database's `.tad` entries hold what look like 2024 Unix timestamps in their third field. `_format/tad.py`'s v4 layout keeps this behaviour and its comment names 3d as the phase that researches these flags and the third field against real databases. Phase 3c measured the cost: one real v4 database has 22,870,344 `.tad` entries, nearly all read as live, of which about 89,000 belong to its one table or its Files table; KOD-decoding each in Python (about 120 µs a record) makes one full read take about 22 minutes and a full realdata run several hours.
   - KOD recovery fails on the real v4 databases whose CroBank and CroIndex headers are not KOD-encoded (both crack methods return `None`); how those databases encode records needs investigating. `tests/test_realdata.py` marks this as a strict xfail.
   - **(done, Phase 3c)** KOD selection: `koddecoder.select_kod` chooses and reports the KOD for every reader, so an
     own-KOD file read with `Kod.default()` and a KOD-encoded file read with `kod=None` are now each reported as
@@ -99,7 +99,8 @@ Found during Phase 0 and its reviews and not fixed there, each with the phase th
   instead of holding them in memory until the end (D8).
 - **Phase 3, from Phase 2:**
   - **(done, Phase 3c)** `Table.records()` no longer reads all of CroBank on every call; `Bank` indexes CroBank once,
-    as it is read, so a table read after another reads only its own records.
+    as it is read, so a table read after another reads only its own records. The slowest real database was not
+    slow for this reason: it has one data table, and reading it still takes about 22 minutes (see the v4 item).
   - **(done, Phase 3c)** an `unresolved_file_reference` diagnostic now names the table, record and field of the
     reference itself, alongside the target record and the reason.
   - **(done, Phase 3b)** the `inspect` subcommands now pass a `_cli/report.py` `Report` to the readers they

@@ -126,7 +126,9 @@ does the same without printing and returns `None` when it can't produce a permut
   `cronos-extract survey --list` and for trying the readers on real data. Never commit its contents or quote its
   entries: they name datasets that are not ours to publish. `local/realdata-fingerprints.json` holds a per-database
   record count and a SHA-256 of the API's field text for those real databases, rewritten by
-  `uv run pytest -q -m realdata tests/test_realdata.py -k fingerprint --update-golden`.
+  `uv run pytest -q -m realdata tests/test_realdata.py -k fingerprint --update-golden`. A full `-m realdata` run
+  takes about four hours, most of it one v4 database whose flag-`02` entries are read as live (a Phase 3d item); a
+  Bash call stops after ten minutes, so run it in the background and read its output file.
 - `docs/cronos-research.md` documents the file format (`.dat`/`.tad` layout, CroStru, CroBank, table and field
   definitions, compressed records, v4).
 
