@@ -238,28 +238,58 @@ def test_a_duplicate_definition_key_is_an_unexpected_structure(tmp_path: Path) -
         ) in list(bank.diagnostics)
 
 
+OTHER_KOD = cronos_extract.Kod.from_table(random_kod(seed=1))
+KOD_KINDS = (cronos_extract.DiagnosticKind.UNUSED_KOD, cronos_extract.DiagnosticKind.MISMATCHED_KOD)
+UNUSED_IN_BOTH = [
+    (cronos_extract.DiagnosticKind.UNUSED_KOD, "CroStru.dat"),
+    (cronos_extract.DiagnosticKind.UNUSED_KOD, "CroBank.dat"),
+]
+MISMATCHED_IN_BOTH = [
+    (cronos_extract.DiagnosticKind.MISMATCHED_KOD, "CroStru.dat"),
+    (cronos_extract.DiagnosticKind.MISMATCHED_KOD, "CroBank.dat"),
+]
+
+
 @pytest.mark.parametrize(
     ("version", "written_with", "opened_with", "reported"),
     [
-        (b"01.04", None, cronos_extract.Kod.from_table(random_kod(seed=1)), True),
-        (b"01.02", None, cronos_extract.Kod.from_table(random_kod(seed=1)), True),
-        (b"01.04", random_kod(seed=1), cronos_extract.Kod.from_table(random_kod(seed=1)), False),
-        (b"01.04", None, cronos_extract.Kod.from_table(INITIAL_KOD), False),
-        (b"01.04", None, None, False),
+        (b"01.04", None, OTHER_KOD, UNUSED_IN_BOTH),
+        (b"01.02", None, OTHER_KOD, UNUSED_IN_BOTH),
+        (b"01.04", random_kod(seed=1), OTHER_KOD, []),
+        (b"01.04", None, cronos_extract.Kod.from_table(INITIAL_KOD), []),
+        (b"01.04", None, None, []),
+        (b"01.04", random_kod(seed=1), cronos_extract.Kod.default(), MISMATCHED_IN_BOTH),
+        (b"01.04", random_kod(seed=1), None, MISMATCHED_IN_BOTH),
     ],
-    ids=["unencoded-own-kod-version", "default-kod-version", "encoded-with-it", "default-table", "no-kod"],
+    ids=[
+        "unencoded-own-kod-version",
+        "default-kod-version",
+        "encoded-with-it",
+        "default-table",
+        "no-kod",
+        "own-kod-read-with-the-default",
+        "own-kod-read-without-kod",
+    ],
 )
-def test_a_kod_that_no_file_uses_is_reported(
+def test_each_file_reports_a_kod_that_does_not_fit_it(
     tmp_path: Path,
     version: bytes,
     written_with: list[int] | None,
     opened_with: cronos_extract.Kod | None,
-    reported: bool,
+    reported: list[tuple[cronos_extract.DiagnosticKind, str]],
 ) -> None:
     dbdir = write_database(tmp_path / "db", [], written_with, version=version)
+    seen: list[cronos_extract.Diagnostic] = []
 
-    with cronos_extract.open(dbdir, kod=opened_with) as bank:
-        assert (cronos_extract.DiagnosticKind.UNUSED_KOD in kinds(bank)) is reported
+    if reported == MISMATCHED_IN_BOTH:
+        # Its records do not decode, so neither does the database definition.
+        with pytest.raises(cronos_extract.DatabaseDefinitionError):
+            cronos_extract.open(dbdir, kod=opened_with, on_diagnostic=seen.append)
+    else:
+        with cronos_extract.open(dbdir, kod=opened_with, on_diagnostic=seen.append):
+            pass
+
+    assert [(diagnostic.kind, diagnostic.file) for diagnostic in seen if diagnostic.kind in KOD_KINDS] == reported
 
 
 def test_an_exception_from_on_diagnostic_during_open_reaches_the_caller(tmp_path: Path) -> None:

@@ -157,7 +157,7 @@ def test_csv_export_creates_nothing_when_the_database_cannot_be_read(
         export_csv(TEST_DB, tmp_path / "out", "--nokod")
 
     assert not (tmp_path / "out").exists()
-    assert capsys.readouterr().err.splitlines()[-1] == "1 diagnostic: 1 unexpected_structure"
+    assert capsys.readouterr().err.splitlines()[-1] == "2 diagnostics: 1 unexpected_structure, 1 mismatched_kod"
 
 
 def test_csv_export_leaves_the_working_directory_unchanged(tmp_path: Path) -> None:
@@ -643,7 +643,7 @@ def test_export_of_an_undecodable_definition_exits_1_naming_the_crack_command() 
     assert result.returncode == 1
     assert result.stdout == ""
     lines = result.stderr.splitlines()
-    assert lines[-2] == "1 diagnostic: 1 unexpected_structure"
+    assert lines[-2] == "2 diagnostics: 1 unexpected_structure, 1 mismatched_kod"
     assert lines[-1].startswith("Error: the database definition in CroStru.dat of ")
     assert lines[-1].endswith(KOD_HINT)
     assert "cronos_extract.crack_kod" not in result.stderr
@@ -798,12 +798,12 @@ def test_csv_export_skips_unreadable_file_references(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     lines = result.stderr.splitlines()
     for warning in [
-        "warning: unresolved_file_reference: CroBank.dat: a file reference cannot be read: "
-        + "its record number is not a number",
-        "warning: unresolved_file_reference: CroBank.dat record 2: a file reference cannot be read: "
-        + "CroBank record 2 is deleted or corrupt",
-        "warning: unresolved_file_reference: CroBank.dat record 99: a file reference cannot be read: "
-        + "CroBank has no record 99",
+        'warning: unresolved_file_reference: table "erdgeist", record 4, field "Entry #6": '
+        + "the file cannot be read: its record number is not a number",
+        'warning: unresolved_file_reference: table "erdgeist", record 5, field "Entry #6": '
+        + "the file in CroBank record 2 cannot be read: the record is deleted or corrupt",
+        'warning: unresolved_file_reference: table "erdgeist", record 6, field "Entry #6": '
+        + "the file in CroBank record 99 cannot be read: CroBank has no such record",
     ]:
         assert lines.count(warning) == 1, result.stderr
     assert [path.name for path in (outdir / "Files-Referenced").iterdir()] == ["good.pdf"]
@@ -1229,8 +1229,8 @@ def test_a_corrupt_referenced_file_gets_one_accurate_warning(tmp_path: Path) -> 
     corrupt = [line for line in lines if line.startswith("warning: corrupt_record: CroBank.dat record 2: ")]
     assert len(corrupt) == 1, result.stderr
     unresolved = (
-        "warning: unresolved_file_reference: CroBank.dat record 2: a file reference cannot be read: "
-        "CroBank record 2 is deleted or corrupt"
+        'warning: unresolved_file_reference: table "erdgeist", record 4, field "Entry #6": '
+        "the file in CroBank record 2 cannot be read: the record is deleted or corrupt"
     )
     assert lines.count(unresolved) == 1, result.stderr
     assert "is not the number of a stored file" not in result.stderr
@@ -1256,8 +1256,8 @@ def test_a_file_reference_to_a_record_of_another_table_is_skipped(tmp_path: Path
 
     assert result.returncode == 0, result.stderr
     warning = (
-        "warning: unresolved_file_reference: CroBank.dat record 1: a file reference cannot be read: "
-        "CroBank record 1 is not a record of the Files table"
+        'warning: unresolved_file_reference: table "erdgeist", record 2, field "Entry #6": '
+        "the file in CroBank record 1 cannot be read: the record is not in the Files table"
     )
     assert result.stderr.splitlines().count(warning) == 1, result.stderr
     assert list((tmp_path / "out" / "Files-Referenced").iterdir()) == []

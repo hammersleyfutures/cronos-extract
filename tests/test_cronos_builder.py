@@ -86,7 +86,7 @@ def test_records_round_trip_through_the_reader(tmp_path: Path) -> None:
         "",
         "eleven",
     ]
-    assert file_field.value == cronos_extract.FileReference("отчёт", "pdf", 1)
+    assert file_field.value == cronos_extract.FileReference("отчёт", "pdf", 1, "erdgeist", 2, "Entry #6")
     assert stored_file == cronos_extract.EmbeddedFile(1, b"PDFDATA", "отчёт.pdf")
 
 
@@ -146,8 +146,12 @@ def test_encrypted_database_decodes_only_with_its_kod(tmp_path: Path, capsys: py
     ):
         cronos_extract.open(dbdir, on_diagnostic=seen.append)
 
-    assert [d.kind for d in seen] == [cronos_extract.DiagnosticKind.UNEXPECTED_STRUCTURE]
-    assert seen[0].message == "expected dbinfo to start with 0x03"
+    assert [(d.kind, d.file) for d in seen] == [
+        (cronos_extract.DiagnosticKind.MISMATCHED_KOD, "CroStru.dat"),
+        (cronos_extract.DiagnosticKind.MISMATCHED_KOD, "CroBank.dat"),
+        (cronos_extract.DiagnosticKind.UNEXPECTED_STRUCTURE, "CroStru.dat"),
+    ]
+    assert seen[2].message == "expected dbinfo to start with 0x03"
     captured = capsys.readouterr()
     assert (captured.out, captured.err) == ("", "")
 
@@ -336,7 +340,7 @@ def test_record_with_file_field_puts_the_reference_in_the_file_field(tmp_path: P
 
     with cronos_extract.open(dbdir) as bank:
         (record,) = bank.tables[0].records()
-        assert record["Entry #6"].value == cronos_extract.FileReference("scan", "jpg", 7)
+        assert record["Entry #6"].value == cronos_extract.FileReference("scan", "jpg", 7, "erdgeist", 1, "Entry #6")
 
 
 def test_compressed_record_holds_the_crc_of_each_chunk() -> None:

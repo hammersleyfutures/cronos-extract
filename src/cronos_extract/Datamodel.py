@@ -153,8 +153,6 @@ class TableDefinition:
             self.terminator = rd.readdword()
         except EOFError:
             self.report_structure("FieldDefinition section not terminated")
-        except Exception as e:
-            self.report_structure(f"Error '{e}' parsing Tabledefinition")
 
         self.fields.sort(key=lambda field: field.idx2)
 

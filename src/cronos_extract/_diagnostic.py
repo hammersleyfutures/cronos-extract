@@ -18,6 +18,7 @@ class DiagnosticKind(StrEnum):
     UNRESOLVED_FILE_REFERENCE = "unresolved_file_reference"
     UNREADABLE_FILE = "unreadable_file"
     UNUSED_KOD = "unused_kod"
+    MISMATCHED_KOD = "mismatched_kod"
 
 
 @dataclass(frozen=True)
@@ -27,7 +28,7 @@ class Diagnostic:
 
     `file` is a canonical file name such as "CroBank.dat", `table` a table name, `record` a record number in `file`
     (in CroBank when a table is named) and `field` a field name, each None when it does not apply. The message never
-    holds CroBank record data.
+    holds CroBank record content; it may name record numbers.
     """
 
     kind: DiagnosticKind

@@ -31,11 +31,19 @@ class FieldDefinition:
 
 @dataclass(frozen=True)
 class FileReference:
-    """A field's reference to a file stored in the Files table: the file's name, extension and CroBank record."""
+    """
+    A field's reference to a file stored in the Files table: the file's name, extension and CroBank record.
+
+    `table`, `referrer` and `field` are where the reference was read: the table's name, the CroBank record holding
+    the reference, and the field's name. Each is None for a reference built by hand.
+    """
 
     name: str
     extension: str
     record: int | None
+    table: str | None = None
+    referrer: int | None = None
+    field: str | None = None
 
 
 @dataclass(frozen=True)
@@ -124,8 +132,14 @@ def record_number(text: str) -> int | None:
         return None
 
 
-def convert_field(definition: FieldDefinition, decoded: DecodedField) -> tuple[Field, str | None]:
-    """The public Field for the field `decoded` described by `definition`, and the problem with its value, if any."""
+def convert_field(
+    definition: FieldDefinition, decoded: DecodedField, *, table: str, referrer: int
+) -> tuple[Field, str | None]:
+    """
+    The public Field for the field `decoded` described by `definition`, and the problem with its value, if any.
+
+    `table` and `referrer` are the name of the table and the CroBank record the field was read from.
+    """
     raw = cast(bytes, decoded.data)
     text = decoded.content
     if not raw:
@@ -135,7 +149,14 @@ def convert_field(definition: FieldDefinition, decoded: DecodedField) -> tuple[F
     elif definition.type == FIELD_TYPE_TIME:
         value, problem = parse_time(text)
     elif definition.type == FIELD_TYPE_FILE:
-        value = FileReference(decoded.filename, decoded.extname, record_number(decoded.filedatarecord))
+        value = FileReference(
+            decoded.filename,
+            decoded.extname,
+            record_number(decoded.filedatarecord),
+            table=table,
+            referrer=referrer,
+            field=definition.name,
+        )
         problem = None
     else:
         value, problem = text, None
@@ -171,7 +192,7 @@ def decode_record(
     system_number = decoded.fields[0].content
     fields = [Field(definitions[0], system_number, system_number, b"")]
     for definition, decoded_field in zip(definitions[1:], decoded.fields[1:], strict=True):
-        field, problem = convert_field(definition, decoded_field)
+        field, problem = convert_field(definition, decoded_field, table=table, referrer=number)
         fields.append(field)
         if problem is not None:
             diagnostics.append(

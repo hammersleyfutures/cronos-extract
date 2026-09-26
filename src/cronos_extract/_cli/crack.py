@@ -15,7 +15,7 @@ from .._api.crack import (
     stru_xref,
 )
 from .._api.datafiles import database_directory, list_directory, open_datafile
-from .._api.diagnostics import Diagnostic, DiagnosticLog, RecordNumbers
+from .._api.diagnostics import Diagnostic, DiagnosticKind, DiagnosticLog, RecordNumbers
 from ..Datafile import Datafile
 from ..hexdump import as1251, asambigoushex, asasc, tohex, unhex
 from ..koddecoder import match_with_mismatches
@@ -161,6 +161,9 @@ def raw_datafile(dbdir: str, base: str) -> Iterator[Datafile]:
     reported: RecordNumbers | None = None
 
     def report_once(diagnostic: Diagnostic) -> None:
+        # The crack reads the encoded bytes on purpose, so a KOD-encoded file read without KOD decoding is expected.
+        if diagnostic.kind == DiagnosticKind.MISMATCHED_KOD:
+            return
         if diagnostic.record is None or reported is None or reported.add(diagnostic.record):
             report.diagnostic(diagnostic)
 

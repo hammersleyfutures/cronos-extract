@@ -24,9 +24,6 @@ pytestmark = pytest.mark.realdata
 LIST_FILE = Path(__file__).resolve().parent.parent / "local" / "mash_datasets_with_CroIndex_dat.txt"
 # Record counts and SHA-256 fingerprints of the API's field text, keyed by database directory; git-ignored.
 FINGERPRINTS = LIST_FILE.parent / "realdata-fingerprints.json"
-# Every Table.records() call walks all of CroBank, so databases with larger CroBank indexes are left out of the
-# checks that read records.
-MAX_BANK_TAD_BYTES = 32_000_000
 # The number of records compared per table.
 RECORDS_COMPARED = 500
 # The number of .tad entries checked per file in the v4 deleted-length check.
@@ -61,11 +58,6 @@ def survey_of(directory: Path) -> SurveyedDatabase:
 def named(directory: Path, filename: str) -> Path | None:
     """The file in `directory` named `filename`, matched case-insensitively."""
     return next((path for path in sorted(directory.iterdir()) if path.name.lower() == filename.lower()), None)
-
-
-def bank_is_small(directory: Path) -> bool:
-    tad = named(directory, "CroBank.tad")
-    return tad is not None and tad.stat().st_size <= MAX_BANK_TAD_BYTES
 
 
 def is_v4(directory: Path) -> bool:
@@ -113,8 +105,6 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
 
 
 def test_open_reads_every_table_or_raises_a_cronos_error(dbdir: Path, capfd: pytest.CaptureFixture[str]) -> None:
-    if not bank_is_small(dbdir):
-        pytest.skip("CroBank is too large to walk once per table")
     try:
         bank = cronos_extract.open(dbdir)
     except cronos_extract.CronosError:
@@ -130,8 +120,6 @@ def test_open_reads_every_table_or_raises_a_cronos_error(dbdir: Path, capfd: pyt
 
 
 def test_no_real_database_reports_a_checksum_mismatch(dbdir: Path) -> None:
-    if not bank_is_small(dbdir):
-        pytest.skip("CroBank is too large to walk once per table")
     with open_or_skip(dbdir) as bank:
         for table in bank.tables:
             for _ in itertools.islice(table.records(), RECORDS_COMPARED):
@@ -157,8 +145,6 @@ def api_fingerprint(dbdir: Path) -> dict[str, object]:
 
 
 def test_api_output_matches_its_fingerprint(dbdir: Path, request: pytest.FixtureRequest) -> None:
-    if not bank_is_small(dbdir):
-        pytest.skip("CroBank is too large to walk once per table")
     key = str(dbdir.resolve())
     fingerprint = api_fingerprint(dbdir)
     stored = json.loads(FINGERPRINTS.read_text(encoding="utf-8")) if FINGERPRINTS.exists() else {}
@@ -274,8 +260,6 @@ def smallest_databases() -> set[Path]:
 
 
 def test_export_jsonl_holds_every_record_the_api_reads(dbdir: Path, tmp_path: Path) -> None:
-    if not bank_is_small(dbdir):
-        pytest.skip("CroBank is too large to walk once per table")
     output = tmp_path / "out.jsonl"
 
     result = export_command(dbdir, output, "--jsonl")
@@ -286,8 +270,6 @@ def test_export_jsonl_holds_every_record_the_api_reads(dbdir: Path, tmp_path: Pa
 
 
 def test_export_postgres_writes_one_insert_per_record(dbdir: Path, tmp_path: Path) -> None:
-    if not bank_is_small(dbdir):
-        pytest.skip("CroBank is too large to walk once per table")
     output = tmp_path / "out.sql"
 
     result = export_command(dbdir, output, "--postgres")

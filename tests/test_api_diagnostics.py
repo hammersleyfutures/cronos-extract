@@ -40,6 +40,7 @@ def test_the_diagnostic_kinds_have_stable_snake_case_values() -> None:
         "unresolved_file_reference",
         "unreadable_file",
         "unused_kod",
+        "mismatched_kod",
     ]
     assert DiagnosticKind.CORRUPT_RECORD == "corrupt_record"
 

@@ -23,6 +23,7 @@ from cronos_builder import (
     erdgeist_table_definition,
     ignore_problems,
     key_referencing_a_deleted_record,
+    random_kod,
     stru_records_from_test_db,
     table_definition_key_before_base001,
     write_database,
@@ -279,10 +280,23 @@ def test_strudump_without_the_database_kod_stops_with_a_message() -> None:
 
     assert result.returncode == 1
     assert result.stderr.splitlines() == [
+        "warning: mismatched_kod: CroStru.dat: the file is KOD-encoded, but is read without KOD decoding",
         "warning: unexpected_structure: CroStru.dat record 1: expected dbinfo to start with 0x03",
         "Error: the database definition is cut off after 0 keys",
         KOD_HINT,
     ]
+
+
+def test_strudump_with_a_kod_the_database_does_not_use_warns(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [], version=b"01.02", encoded=True)
+
+    result = run_command("cli", ["inspect", "strudump", "--kod", bytes(random_kod(seed=1)).hex(), dbdir])
+
+    assert result.returncode == 0
+    assert (
+        "warning: unused_kod: CroStru.dat: the file is encrypted with the default KOD, so the KOD given is not used "
+        "for it"
+    ) in result.stderr.splitlines()
 
 
 def test_strudump_with_a_wrong_kod_reports_a_record_out_of_range(tmp_path: Path) -> None:
@@ -480,6 +494,17 @@ def test_destruct_of_a_definition_it_cannot_decode_fails_with_one_error_line(
     assert result.returncode == 1
     assert result.stdout == ""
     assert result.stderr.splitlines() == [error]
+
+
+def test_destruct_of_a_crosys_type_3_record_says_it_cannot_be_decoded() -> None:
+    result = run_command("cli", ["inspect", "destruct", "-t", "3"], stdin="03")
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == (
+        "Error: the definition on stdin cannot be decoded: "
+        "ValueError: CroSys record type 3 cannot be decoded: its layout is not known\n"
+    )
 
 
 def test_crodump_prints_a_reader_diagnostic_as_a_warning_line(tmp_path: Path) -> None:

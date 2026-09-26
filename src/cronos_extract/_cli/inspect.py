@@ -19,11 +19,6 @@ from .report import Failure, Problem, Report
 ALL_RECORDS = 0xFFFFFFFF
 
 
-def destruct_sys3_def(rd: ByteReader) -> None:
-    # todo
-    pass
-
-
 def destruct_sys4_def(rd: ByteReader) -> None:
     """
     decode type 4 of the records found in CroSys.
@@ -50,7 +45,7 @@ def destruct_sys_definition(args: argparse.Namespace, data: bytes) -> None:
 
     systype = rd.readbyte()
     if systype == 3:
-        destruct_sys3_def(rd)
+        raise ValueError("CroSys record type 3 cannot be decoded: its layout is not known")
     elif systype == 4:
         destruct_sys4_def(rd)
     else:
@@ -103,7 +98,8 @@ def add_parser(subcommands: Subcommands) -> None:
         type=int,
         choices=(1, 2, 3),
         required=True,
-        help="what type of record to destruct: 1 database, 2 table or 3 CroSys definition",
+        help="what type of record to destruct: 1 database, 2 table or 3 CroSys definition (CroSys type 3 records are "
+        "recognised but not decoded)",
     )
     p.add_argument(
         "dbdir", nargs="?", default=".", help="the database whose CroStru holds keys stored by reference (-t 1)"

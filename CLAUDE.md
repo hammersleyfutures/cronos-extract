@@ -39,7 +39,9 @@ The code is layered, from bytes up to commands (`src/cronos_extract/`):
   and a database it cannot read raises a `CronosError`. It drives `Datafile`, `Database.read_db_definition` and
   `TableDefinition` directly, passing each a `report` callback (`_diagnostic.py`'s `Reporter`) that turns every
   problem reading survives into a `Diagnostic` with its `DiagnosticKind`; no reader prints. Only names in `__all__`
-  are public. `_format/files.py`'s `open_regular_file` is the one way Cro files are opened.
+  are public. `_format/files.py`'s `open_regular_file` is the one way Cro files are opened. `Bank` (`_api/bank.py`)
+  indexes CroBank as it reads it: the first `Table.records()` or `Bank.files()` generator to reach a CroBank record
+  indexes it for every table, so a table read after another reads only its own records.
 - **`Datafile`**: one `.dat`/`.tad` pair. The `.tad` is an index of `(offset, length, flags)` entries, where a length of
   `0xFFFFFFFF` means deleted. Record numbers start at 1. Each `.tad` entry is parsed by `_format/tad.py`'s layout for
   its generation: v3 keeps the inline flag in bit 31 of the length, v4 in the top byte of the offset. Every record is
@@ -79,10 +81,14 @@ The code is layered, from bytes up to commands (`src/cronos_extract/`):
 Records are obfuscated with a byte substitution table (KOD): `plain[i] = (KOD[enc[i]] - i - recno) % 256`
 (`koddecoder.KODcoding.decode`). A valid KOD is a permutation of 0–255.
 
-`Datafile` uses a KOD table given with `--kod` only when the file is encrypted with its own table: versions `01.04`,
-`01.05` and v4. For other files it quietly substitutes the default `INITIAL_KOD`. `--nokod` passes no KOD, which turns
-decoding off for every file. So `export --kod` has no effect on `test_data/all_field_types`, whose records are
-encoded with `INITIAL_KOD`, but `--nokod` does. To test a wrong or custom KOD, build an encrypted database, e.g.
+`Datafile` chooses each file's KOD through `koddecoder.select_kod`. A file whose header is not KOD-encoded (bit 0 of
+its encoding field) is read without KOD decoding. An encoded file uses a KOD table given with `--kod` only when it is
+encrypted with its own table: versions `01.04`, `01.05` and v4; other encoded files are decoded with the default
+`INITIAL_KOD`. `--nokod` passes no KOD, which turns decoding off for every file. `select_kod` reports, per file,
+`unused_kod` when a KOD other than the default is given but not used, and `mismatched_kod` when an encoded file is read
+without KOD decoding or an own-KOD file is read with the default table; `crack` drops `mismatched_kod`, because it
+reads the encoded bytes on purpose. So `export --kod` does not change how `test_data/all_field_types` decodes (it
+reports `unused_kod`), but `--nokod` does. To test a wrong or custom KOD, build an encrypted database, e.g.
 `write_database(dir, records, kod=random_kod(seed=1))`.
 
 `crack strucrack` and `crack dbcrack` derive a KOD statistically and print it; `cronos_extract.crack_kod(path, method)`
@@ -120,7 +126,9 @@ does the same without printing and returns `None` when it can't produce a permut
   `cronos-extract survey --list` and for trying the readers on real data. Never commit its contents or quote its
   entries: they name datasets that are not ours to publish. `local/realdata-fingerprints.json` holds a per-database
   record count and a SHA-256 of the API's field text for those real databases, rewritten by
-  `uv run pytest -q -m realdata tests/test_realdata.py -k fingerprint --update-golden`.
+  `uv run pytest -q -m realdata tests/test_realdata.py -k fingerprint --update-golden`. A full `-m realdata` run
+  takes about four hours, most of it one v4 database whose flag-`02` entries are read as live (a Phase 3d item); a
+  Bash call stops after ten minutes, so run it in the background and read its output file.
 - `docs/cronos-research.md` documents the file format (`.dat`/`.tad` layout, CroStru, CroBank, table and field
   definitions, compressed records, v4).
 
