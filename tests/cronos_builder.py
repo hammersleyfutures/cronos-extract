@@ -100,6 +100,44 @@ def write_header_only_datafile(directory: Path, name: str, version: bytes = b"01
     (directory / f"Cro{name}.dat").write_bytes(header)
 
 
+def extended_record_layout(use64bit: bool) -> tuple[int, int, str, str]:
+    """Return (header size, pointer size, header format, pointer format) of an extended record's blocks.
+
+    A 64-bit version's header holds an 8-byte first-extension-block offset then a 4-byte record length; a 32-bit
+    version's header holds both as 4 bytes. Every extension block starts with a pointer of the same width as the
+    header's offset field.
+    """
+    if use64bit:
+        return 12, 8, "<QL", "<Q"
+    return 8, 4, "<LL", "<L"
+
+
+def extended_record(content: bytes, offset: int, use64bit: bool) -> tuple[bytes, int]:
+    """Lay out `content` as an extended record starting at file offset `offset`; return its bytes and the .tad
+    entry's length field, the first block's size.
+
+    Matches read_extended: the first block holds the extended-record header (the first extension block's offset,
+    or 0 when there is none, and the record's length) then as much of `content` as fits in BLOCKSIZE bytes. Any
+    remaining content follows in extension blocks of exactly BLOCKSIZE bytes each, holding the next block's offset
+    then data, the last one's offset 0 and its unused tail zero-padded.
+    """
+    headersize, pointersize, header_format, pointer_format = extended_record_layout(use64bit)
+    first_chunk = content[: BLOCKSIZE - headersize]
+    remaining = content[BLOCKSIZE - headersize :]
+    first_block_size = headersize + len(first_chunk)
+    first_extension_offset = offset + first_block_size if remaining else 0
+    record = bytearray(struct.pack(header_format, first_extension_offset, len(content)) + first_chunk)
+
+    payload_capacity = BLOCKSIZE - pointersize
+    chunks = [remaining[start : start + payload_capacity] for start in range(0, len(remaining), payload_capacity)]
+    block_offset = first_extension_offset
+    for index, chunk in enumerate(chunks):
+        next_offset = block_offset + BLOCKSIZE if index + 1 < len(chunks) else 0
+        record += (struct.pack(pointer_format, next_offset) + chunk).ljust(BLOCKSIZE, b"\x00")
+        block_offset += BLOCKSIZE
+    return bytes(record), first_block_size
+
+
 def write_datafile(
     directory: Path,
     name: str,
@@ -107,12 +145,16 @@ def write_datafile(
     kod: Sequence[int] | None = None,
     version: bytes = ENCRYPTED_V3_VERSION,
     encoded: bool = False,
+    extended: bool = False,
 ) -> None:
-    """Write Cro<name>.dat and Cro<name>.tad of `version` holding `records` inline, where None marks a deleted record.
+    """Write Cro<name>.dat and Cro<name>.tad of `version` holding `records`, where None marks a deleted record.
 
     With `kod`, each record is KOD-encoded using its record number as the shift and the encoding bit is set; only
     versions encrypted with their own KOD table take one. With `encoded` and no `kod`, the records are KOD-encoded
     with the default table and the encoding bit is set, as CronosPro stores them in many files of every version.
+    With `extended`, every record is stored as an extended record spread over extension blocks instead of inline;
+    KOD encoding, when it applies, encodes the whole record before it is split into blocks, matching how the
+    reader decodes the whole reassembled record after read_extended puts it back together.
     Deleted records cannot be written for v4, because how v4 marks them is unsettled.
     """
     tad_layout(version)
@@ -126,6 +168,7 @@ def write_datafile(
         coder = KODcoding(INITIAL_KOD)
     else:
         coder = None
+    use64bit = version in VERSIONS_64BIT
     body = bytearray()
     tad_entries = []
     for recno, plain in enumerate(records, start=1):
@@ -136,11 +179,16 @@ def write_datafile(
             continue
         stored = coder.encode(recno, plain) if coder else plain
         offset = DAT_PREFIX_SIZE + len(body)
-        if version in V4_VERSIONS:
-            tad_entries.append((offset | V4_INLINE_RECORD_FLAGS << 56, len(stored)))
+        if extended:
+            record_bytes, entry_length = extended_record(stored, offset, use64bit)
+            tad_entries.append((offset, entry_length))
+            body += record_bytes
         else:
-            tad_entries.append((offset, len(stored) | V3_INLINE_BIT))
-        body += stored
+            if version in V4_VERSIONS:
+                tad_entries.append((offset | V4_INLINE_RECORD_FLAGS << 56, len(stored)))
+            else:
+                tad_entries.append((offset, len(stored) | V3_INLINE_BIT))
+            body += stored
     write_raw_datafile(directory, name, bytes(body), tad_entries, encoding=1 if coder else 0, version=version)
 
 
@@ -379,15 +427,19 @@ def write_database(
     index_records: Sequence[bytes | None] | None = None,
     version: bytes = ENCRYPTED_V3_VERSION,
     encoded: bool = False,
+    extended: bool = False,
 ) -> str:
     """Write a database of `version` with TEST_DB's table definitions and `bank_records`, returning its directory path.
 
     `extra_stru_records` are appended to the CroStru records; `index_records`, when given, are written to CroIndex.
+    `extended` writes every record, in every file, as an extended record instead of inline.
     """
-    write_datafile(directory, "Stru", [*stru_records_from_test_db(), *extra_stru_records], kod, version, encoded)
-    write_datafile(directory, "Bank", bank_records, kod, version, encoded)
+    write_datafile(
+        directory, "Stru", [*stru_records_from_test_db(), *extra_stru_records], kod, version, encoded, extended
+    )
+    write_datafile(directory, "Bank", bank_records, kod, version, encoded, extended)
     if index_records is not None:
-        write_datafile(directory, "Index", index_records, kod, version, encoded)
+        write_datafile(directory, "Index", index_records, kod, version, encoded, extended)
     return str(directory)
 
 
