@@ -10,11 +10,13 @@ from types import FrameType
 import pytest
 from cronos_builder import (
     BUILDER_VERSIONS,
+    OWN_KOD_VERSIONS,
     TEST_TABLE_FIELD_COUNT,
     TEST_TABLE_ID,
     bank_record,
     compressed_record,
     file_record,
+    random_kod,
     write_database,
 )
 
@@ -62,6 +64,21 @@ def database_records(rng: random.Random) -> list[bytes | None]:
     return records
 
 
+def choose_layout(rng: random.Random, version: bytes) -> tuple[bool, list[int] | None, bool, str]:
+    """Pick whether this case writes extended records and how it KOD-encodes them; return the values `write_database`
+    needs (extended, its own KOD table or None, whether to KOD-encode with the default table), plus a description
+    for `what`.
+
+    For a version with its own KOD table, this sometimes picks a random one of those instead of the default table.
+    """
+    extended = rng.random() < 0.5
+    if version in OWN_KOD_VERSIONS and rng.random() < 0.5:
+        table = random_kod(rng.randrange(1_000_000))
+        return extended, table, False, f"extended={extended} kod=own"
+    encoded = rng.random() < 0.5
+    return extended, None, encoded, f"extended={extended} kod={'default' if encoded else 'none'}"
+
+
 def damage(rng: random.Random, dbdir: Path) -> str:
     """Damage one Cro file of `dbdir` by flipping bits, truncating it or overwriting bytes; say what was done."""
     path = rng.choice(sorted(dbdir.iterdir()))
@@ -89,12 +106,18 @@ def test_a_damaged_database_is_read_without_crashing_hanging_or_printing(
     tmp_path: Path, capfd: pytest.CaptureFixture[str], version: bytes, index: int
 ) -> None:
     rng = random.Random(f"{SEED}:{version.decode()}:{index}")
-    dbdir = Path(write_database(tmp_path / "db", database_records(rng), version=version))
-    what = damage(rng, dbdir)
+    extended, own_kod, encoded, layout = choose_layout(rng, version)
+    dbdir = Path(
+        write_database(
+            tmp_path / "db", database_records(rng), own_kod, version=version, encoded=encoded, extended=extended
+        )
+    )
+    what = f"{damage(rng, dbdir)} ({layout})"
+    open_kwargs = {"kod": cronos_extract.Kod.from_table(own_kod)} if own_kod is not None else {}
 
     with time_limit(TIME_LIMIT_SECONDS):
         try:
-            with cronos_extract.open(dbdir) as bank:
+            with cronos_extract.open(dbdir, **open_kwargs) as bank:
                 for table in bank.tables:
                     for _ in table.records():
                         pass
