@@ -2,6 +2,7 @@
 # ABOUTME: Also builds the golden records and golden-file JSONL tests/test_api_golden.py checks per builder version.
 import datetime
 import json
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -278,6 +279,189 @@ def test_generators_from_two_tables_can_be_interleaved(tmp_path: Path) -> None:
         numbers = [next(first).number, next(second).number, next(first).number, next(second).number]
 
     assert numbers == [1, 2, 3, 4]
+
+
+# Table 1 holds records 1, 6 and 9; table 2 records 2 and 7; the Files table records 3 and 8.
+# Record 4 is deleted and record 5 is corrupt.
+TABLE_1_NUMBERS = [1, 6, 9]
+TABLE_2_NUMBERS = [2, 7]
+
+
+def mixed_database(directory: Path) -> str:
+    return database_with_extra_definition_key(
+        directory,
+        "Base002",
+        patched_table_definition(tableid=2),
+        [
+            person(),
+            bank_record(2, FIELDS),
+            file_record(b"first"),
+            None,
+            corrupt_compressed_record(),
+            person(date=b"850000"),
+            bank_record(2, FIELDS),
+            file_record(b"second"),
+            person(),
+        ],
+    )
+
+
+def record_reads(bank: cronos_extract.Bank, monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Record the number of each CroBank record `bank` reads, delegating every read to the real Datafile."""
+    numbers: list[int] = []
+    read_record = bank._bank_file.read_record
+
+    def recording_read_record(number: int) -> object:
+        numbers.append(number)
+        return read_record(number)
+
+    monkeypatch.setattr(bank._bank_file, "read_record", recording_read_record)
+    return numbers
+
+
+def sequential_reads(dbdir: str) -> tuple[list[cronos_extract.Record], list[cronos_extract.Record]]:
+    """Table 1's and table 2's records, read one table after the other from a freshly opened bank."""
+    with cronos_extract.open(dbdir) as bank:
+        first, second = bank.tables
+        return list(first.records()), list(second.records())
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_the_mixed_database_holds_the_records_its_comment_says(tmp_path: Path) -> None:
+    first, second = sequential_reads(mixed_database(tmp_path / "db"))
+
+    assert [record.number for record in first] == TABLE_1_NUMBERS
+    assert [record.number for record in second] == TABLE_2_NUMBERS
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_a_table_read_after_another_reads_only_its_own_records(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    dbdir = mixed_database(tmp_path / "db")
+    expected = sequential_reads(dbdir)
+
+    with cronos_extract.open(dbdir) as bank:
+        reads = record_reads(bank, monkeypatch)
+        first, second = bank.tables
+        assert list(first.records()) == expected[0]
+        reads.clear()
+        assert list(second.records()) == expected[1]
+
+    assert reads == TABLE_2_NUMBERS
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_an_export_reads_each_live_record_at_most_twice(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    dbdir = mixed_database(tmp_path / "db")
+    expected = sequential_reads(dbdir)
+
+    with cronos_extract.open(dbdir) as bank:
+        reads = record_reads(bank, monkeypatch)
+        first, second = bank.tables
+        yielded = (list(first.records()), list(second.records()))
+        files = list(bank.files())
+
+    assert yielded == expected
+    assert files == [
+        cronos_extract.EmbeddedFile(3, b"first", None),
+        cronos_extract.EmbeddedFile(8, b"second", None),
+    ]
+    assert max(Counter(reads).values()) <= 2
+    assert sorted(set(reads)) == list(range(1, 10))
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_interleaved_generators_yield_what_sequential_ones_do(tmp_path: Path) -> None:
+    dbdir = mixed_database(tmp_path / "db")
+    expected = sequential_reads(dbdir)
+    yielded: tuple[list[cronos_extract.Record], list[cronos_extract.Record]] = ([], [])
+
+    with cronos_extract.open(dbdir) as bank:
+        generators = [table.records() for table in bank.tables]
+        while generators:
+            for generator in list(generators):
+                record = next(generator, None)
+                if record is None:
+                    generators.remove(generator)
+                else:
+                    yielded[record.number in TABLE_2_NUMBERS].append(record)
+
+    assert yielded == expected
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_an_abandoned_generator_leaves_the_index_whole(tmp_path: Path) -> None:
+    dbdir = mixed_database(tmp_path / "db")
+    expected = sequential_reads(dbdir)
+
+    with cronos_extract.open(dbdir) as bank:
+        first, second = bank.tables
+        abandoned = first.records()
+        assert next(abandoned) == expected[0][0]
+        del abandoned
+        assert list(second.records()) == expected[1]
+        assert list(first.records()) == expected[0]
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_a_second_pass_reads_no_other_table(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    dbdir = mixed_database(tmp_path / "db")
+
+    with cronos_extract.open(dbdir) as bank:
+        reads = record_reads(bank, monkeypatch)
+        first, second = bank.tables
+        list(first.records())
+        list(second.records())
+        list(bank.files())
+        reads.clear()
+        assert [record.number for record in first.records()] == TABLE_1_NUMBERS
+
+    assert reads == TABLE_1_NUMBERS
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_a_records_loop_started_from_on_diagnostic_does_not_duplicate_records(tmp_path: Path) -> None:
+    dbdir = mixed_database(tmp_path / "db")
+    expected = sequential_reads(dbdir)
+    opened: list[cronos_extract.Bank] = []
+    read_from_on_diagnostic: list[cronos_extract.Record] = []
+
+    def on_diagnostic(diagnostic: cronos_extract.Diagnostic) -> None:
+        if diagnostic.kind == DiagnosticKind.CORRUPT_RECORD:
+            read_from_on_diagnostic.extend(opened[0].tables[0].records())
+
+    with cronos_extract.open(dbdir, on_diagnostic=on_diagnostic) as bank:
+        opened.append(bank)
+        first, second = bank.tables
+        yielded = (list(first.records()), list(second.records()))
+        again = (list(first.records()), list(second.records()))
+
+    assert read_from_on_diagnostic == expected[0]
+    assert yielded == expected
+    assert again == expected
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_a_scan_stopped_by_on_diagnostic_at_a_live_record_still_indexes_it(tmp_path: Path) -> None:
+    class StopReading(Exception):
+        pass
+
+    def on_diagnostic(diagnostic: cronos_extract.Diagnostic) -> None:
+        if diagnostic.kind == DiagnosticKind.CHECKSUM_MISMATCH:
+            raise StopReading
+
+    dbdir = database_with_extra_definition_key(
+        tmp_path / "db",
+        "Base002",
+        patched_table_definition(tableid=2),
+        [person(), compressed_record(bank_record(2, FIELDS), wrong_checksums={0}), person()],
+    )
+
+    with cronos_extract.open(dbdir, on_diagnostic=on_diagnostic) as bank:
+        first, second = bank.tables
+        with pytest.raises(StopReading):
+            list(first.records())
+        assert [record.number for record in first.records()] == [1, 3]
+        assert [record.number for record in second.records()] == [2]
 
 
 @pytest.mark.usefixtures("prints_nothing")

@@ -1,6 +1,7 @@
 # ABOUTME: open() and the Bank and Table classes, the public way to read a CronosPro database.
 # ABOUTME: Drives the internal Database, TableDefinition and Datafile readers and reports problems as diagnostics.
 import os
+from array import array
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack
 from pathlib import Path
@@ -57,7 +58,10 @@ class Table:
 
     def records(self) -> Iterator[Record]:
         """
-        The table's records in CroBank order, read one CroBank record per step.
+        The table's records in CroBank order, read lazily, one CroBank record per step.
+
+        The first generator of any table to reach a CroBank record indexes it for every table, so a table read after
+        another reads only its own records.
 
         Raises ValueError when the bank is closed, now or at any later step.
         """
@@ -96,6 +100,12 @@ class Bank:
         self._corrupt_records = RecordNumbers(self._bank_file.nrofrecords)
         self._checksum_mismatches = RecordNumbers(self._bank_file.nrofrecords)
         self._unsupported_tables: set[int] = set()
+        # The CroBank index: the next record number no scan step has indexed yet, and the live records found so far
+        # per table-id byte, in CroBank order.
+        self._scan_position = 1
+        self._index: dict[int, array[int]] = {}
+        fits_in_four_bytes = array("I").itemsize == 4 and self._bank_file.nrofrecords < 2**32
+        self._index_typecode = "I" if fits_in_four_bytes else "Q"
 
     @property
     def tables(self) -> tuple[Table, ...]:
@@ -150,7 +160,10 @@ class Bank:
 
     def files(self) -> Iterator[EmbeddedFile]:
         """
-        The files stored in the Files table, in CroBank order, read one CroBank record per step, without names.
+        The files stored in the Files table, in CroBank order, read lazily, one CroBank record per step, without names.
+
+        The first generator of any table to reach a CroBank record indexes it for every table, so files read after
+        a table read only the Files table's records.
 
         Raises ValueError when the bank is closed, now or at any later step.
         """
@@ -248,10 +261,7 @@ class Bank:
                     )
                 )
             return
-        for number in range(1, self._bank_file.nrofrecords + 1):
-            data = self._read(number)
-            if not data or data[0] != table.id:
-                continue
+        for number, data in self._table_records(table.id):
             record = decode_record(number, table.name, table.fields, table._definition.fields, data[1:])
             for diagnostic in record.diagnostics:
                 self._log.record(diagnostic)
@@ -260,10 +270,43 @@ class Bank:
     def _files(self) -> Iterator[EmbeddedFile]:
         if self._files_table_id is None:
             return
-        for number in range(1, self._bank_file.nrofrecords + 1):
+        for number, data in self._table_records(self._files_table_id):
+            yield EmbeddedFile(number, data[1:], None)
+
+    def _table_records(self, table_id: int) -> Iterator[tuple[int, bytes]]:
+        """
+        Each CroBank record number of table `table_id` with its data, table-id byte included, in CroBank order.
+
+        Records already indexed are read again from CroBank; past them, each step advances the shared scan by one
+        record and indexes it under its table-id byte, so the first generator to reach a record indexes it for every
+        table. The scan position moves on only after its record is indexed, so an exception during a step leaves
+        the index whole, and a step whose record a re-entrant call (from on_diagnostic) indexed meanwhile does not
+        index it again.
+        """
+        listed = self._index.setdefault(table_id, array(self._index_typecode))
+        taken = 0
+        while True:
+            if taken < len(listed):
+                number = listed[taken]
+                taken += 1
+                data = self._read(number)
+                if data and data[0] == table_id:
+                    yield number, data
+                continue
+            number = self._scan_position
+            if number > self._bank_file.nrofrecords:
+                return
             data = self._read(number)
-            if data and data[0] == self._files_table_id:
-                yield EmbeddedFile(number, data[1:], None)
+            if self._scan_position != number:
+                # A re-entrant call from on_diagnostic indexed this record meanwhile.
+                continue
+            if data:
+                self._index.setdefault(data[0], array(self._index_typecode)).append(number)
+            self._scan_position = number + 1
+            if data and data[0] == table_id:
+                # The record just appended to `listed`.
+                taken += 1
+                yield number, data
 
     def _load_tables(self) -> None:
         """Decode the database definition and every table definition in it."""
@@ -319,8 +362,8 @@ def open(
     Open the CronosPro database in the directory `path`.
 
     `kod` is the KOD table to decode records with, or None to read them without KOD decoding. `compact` reads the
-    CroStru and CroBank indexes from disk instead of memory. `on_diagnostic` is called with each diagnostic as it is
-    recorded.
+    CroStru and CroBank indexes from disk instead of memory; the table index of CroBank, up to 4 bytes per CroBank
+    record, is held in memory either way. `on_diagnostic` is called with each diagnostic as it is recorded.
 
     Raises OSError when `path` does not exist, is not a directory or cannot be listed; TypeError for a bytes path;
     NotACronosFile or UnsupportedVersion when CroStru or CroBank cannot be read; DatabaseDefinitionError when the
