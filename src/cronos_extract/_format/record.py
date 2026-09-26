@@ -60,12 +60,12 @@ def read_stored(source: RecordSource, recno: int, entry: TadEntry, *, require_wh
     """
     Record `recno` as stored: its bytes, reassembled from extension blocks and KOD-decoded, not decompressed.
 
-    Raises ValueError naming the record when it cannot be read; with `require_whole` false, an inline record the file
-    cuts short is returned as far as it goes, as inspect crodump shows it.
+    Raises ValueError naming the record when it cannot be read; with `require_whole` false, a record the file cuts
+    short is returned or reassembled as far as it goes, as inspect crodump shows it.
     """
     where = f"record {recno} in {source.filename}"
     data = source.read(entry.offset, entry.length)
-    if len(data) < entry.length and (require_whole or not entry.inline):
+    if len(data) < entry.length and require_whole:
         raise ValueError(
             f"{where} has {entry.length} bytes at offset {entry.offset:#x}, which runs past the end of the file"
         )

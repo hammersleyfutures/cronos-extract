@@ -13,6 +13,7 @@ from cronos_extract._format.record import (
     RecordSource,
     decode_record,
     decompress,
+    read_stored,
 )
 from cronos_extract._format.tad import TadEntry
 from cronos_extract.koddecoder import KODcoding
@@ -66,6 +67,17 @@ def test_a_record_in_extension_blocks_is_reassembled() -> None:
     parts = decode_record(source_of(data), 1, extended(0, len(first)))
 
     assert parts == RecordParts(b"0123456789abcdefghij", 0, extended=True, chain=(100, 200), length=20)
+
+
+def test_a_record_the_file_cuts_short_is_reassembled_as_far_as_it_goes_without_require_whole() -> None:
+    data = b"1234"
+    entry = extended(0, 9)
+
+    with pytest.raises(ValueError, match="is shorter than its 8-byte extended record header"):
+        read_stored(source_of(data), 1, entry, require_whole=False)
+
+    with pytest.raises(ValueError, match="which runs past the end of the file"):
+        read_stored(source_of(data), 1, entry, require_whole=True)
 
 
 @pytest.mark.parametrize(
