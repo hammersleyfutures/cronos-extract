@@ -68,6 +68,8 @@ def test_a_deleted_v4_record_is_not_read(tmp_path: Path, extended: bool) -> None
 
     with cronos_extract.open(dbdir) as bank:
         records = list(bank.tables[0].records())
+        # A flag-02 entry read as inline would put its extended header in no table, so check the entry itself.
+        assert bank._bank_file.read_record(2) is None
 
     assert [record.number for record in records] == [1, 3]
 
