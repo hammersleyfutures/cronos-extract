@@ -223,6 +223,20 @@ def test_a_tad_shorter_than_its_header_is_a_value_error(tmp_path: Path) -> None:
         pass
 
 
+def test_readdata_past_the_end_of_the_file_returns_nothing(tmp_path: Path) -> None:
+    write_datafile(tmp_path, "Bank", [b"only"])
+
+    with open_bank(tmp_path) as bank:
+        assert bank.readdata(bank.datsize + 1, 10) == b""
+
+
+def test_readdata_at_a_negative_offset_returns_nothing(tmp_path: Path) -> None:
+    write_datafile(tmp_path, "Bank", [b"only"])
+
+    with open_bank(tmp_path) as bank:
+        assert bank.readdata(-1, 10) == b""
+
+
 def test_dump_prints_the_bytes_of_a_truncated_inline_record(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     write_raw_datafile(tmp_path, "Bank", b"abc", [(DAT_PREFIX_SIZE, 10 | V3_INLINE_BIT)], version=b"01.02")
 

@@ -129,8 +129,13 @@ class Datafile:
 
     def readdata(self, ofs: int, size: int) -> bytes:
         """
-        Read raw data from the .dat file
+        Read raw data from the .dat file.
+
+        Returns b"" without seeking when `ofs` is outside 0..self.datsize: some filesystems raise OSError on a
+        seek far past the end of the file, where seeking within the file (or exactly to its end) does not.
         """
+        if not 0 <= ofs <= self.datsize:
+            return b""
         self.dat.seek(ofs)
         return self.dat.read(size)
 

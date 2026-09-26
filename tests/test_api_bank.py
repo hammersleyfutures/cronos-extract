@@ -101,6 +101,32 @@ def test_records_the_dat_file_does_not_hold_are_corrupt(tmp_path: Path) -> None:
 
 
 @pytest.mark.usefixtures("prints_nothing")
+def test_a_record_pointing_far_past_the_end_of_the_file_is_corrupt(tmp_path: Path) -> None:
+    # 1 << 50 does not fit a 32-bit offset, so this uses a 64-bit v3 version; on an ordinary disk, seeking that far
+    # past the end of the file raises OSError, which readdata must avoid so the record is reported as corrupt
+    # instead of stopping the whole export.
+    dbdir = Path(write_database(tmp_path / "db", [], version=b"01.03"))
+    data = person()
+    write_raw_datafile(
+        dbdir,
+        "Bank",
+        data,
+        [
+            (DAT_PREFIX_SIZE, len(data) | V3_INLINE_BIT),
+            (1 << 50, 5 | V3_INLINE_BIT),
+        ],
+        version=b"01.03",
+    )
+
+    with cronos_extract.open(dbdir) as bank:
+        assert [record.number for record in bank.tables[0].records()] == [1]
+        corrupt = [d for d in bank.diagnostics if d.kind == cronos_extract.DiagnosticKind.CORRUPT_RECORD]
+
+    assert [(d.file, d.record) for d in corrupt] == [("CroBank.dat", 2)]
+    assert "past the end" in corrupt[0].message
+
+
+@pytest.mark.usefixtures("prints_nothing")
 def test_a_corrupt_record_is_reported_once_however_many_tables_are_read(tmp_path: Path) -> None:
     dbdir = database_with_extra_definition_key(
         tmp_path / "db",
