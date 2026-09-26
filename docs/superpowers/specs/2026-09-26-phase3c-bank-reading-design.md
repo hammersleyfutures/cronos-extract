@@ -146,10 +146,10 @@ field's name). `_api/values.py`'s `decode_record` fills them in. A `FileReferenc
 
 `Bank.read_file`'s `unresolved_file_reference` diagnostic is located at the reference: `file="CroBank.dat"`,
 `table`, `record=referrer` and `field` from the reference. Its message names the target record, for example
-`the file in CroBank record 99 cannot be read: CroBank has no record 99`, or, when the reference holds no number,
+`the file in CroBank record 99 cannot be read: CroBank has no such record`, or, when the reference holds no number,
 `the file cannot be read: its record number is not a number`. On the command line this prints as
 `warning: unresolved_file_reference: table "Scans", record 5, field "Photo": the file in CroBank record 99 cannot be
-read: CroBank has no record 99`. For a hand-built reference the location is `CroBank.dat` alone.
+read: CroBank has no such record`. For a hand-built reference the location is `CroBank.dat` alone.
 
 The message does not name the file: `Diagnostic` promises that a message never holds CroBank record data, and a file
 name is record data. The location identifies the reference, and `reference.name` holds the name. The target record
