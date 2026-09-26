@@ -144,9 +144,9 @@ def decompress(data: bytes, where: str) -> tuple[bytes, tuple[int, ...]]:
     the crc algorithm is the one labeled 'crc-32' on this page:
         http://crcmod.sourceforge.net/crcmod.predefined.html
 
-    Raises ValueError naming `where` when the data is not valid deflate output, or the record would decompress to
-    more than MAX_DECOMPRESSED_BYTES; decompression stops at that limit. A chunk whose 8-byte header (size, flag
-    and CRC) runs past the end of the data is not decompressed and is counted as a mismatched chunk.
+    Raises ValueError when the data is not valid deflate output, or ValueError naming `where` when the record would
+    decompress to more than MAX_DECOMPRESSED_BYTES; decompression stops at that limit. A chunk whose 8-byte header
+    (size, flag and CRC) runs past the end of the data is not decompressed and is counted as a mismatched chunk.
     """
     result = bytearray()
     mismatched = []
@@ -155,6 +155,8 @@ def decompress(data: bytes, where: str) -> tuple[bytes, tuple[int, ...]]:
     while offset < len(data) - len(COMPRESSED_END):
         if offset + CHUNK_PREFIX_SIZE > len(data):
             mismatched.append(chunk)
+            # is_compressed walks the same offsets, so decode_record and dump never reach fewer than 4 header
+            # bytes here; this guards a caller that calls decompress directly, without is_compressed first.
             if offset + CHUNK_HEADER.size > len(data):
                 break
             size, _ = CHUNK_HEADER.unpack_from(data, offset)
