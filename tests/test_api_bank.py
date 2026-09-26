@@ -1,6 +1,7 @@
 # ABOUTME: Tests for reading records and files through the cronos_extract API: laziness, diagnostics and closing.
-# ABOUTME: Compares the API with Database.enumerate_records on every version tests/cronos_builder.py writes.
+# ABOUTME: Also builds the golden records and golden-file JSONL tests/test_api_golden.py checks per builder version.
 import datetime
+import json
 from pathlib import Path
 
 import pytest
@@ -25,8 +26,6 @@ from cronos_builder import (
 import cronos_extract
 from cronos_extract import DiagnosticKind
 from cronos_extract._api.diagnostics import DIAGNOSTICS_KEPT
-from cronos_extract.Database import Database
-from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
 
 KOD = random_kod(seed=11)
 FIELDS = [b"42", b"Hammersley", "Привет".encode("cp1251"), b"1240315", b"0930", b"", b"seven", b"", b"", b"", b"x"]
@@ -41,13 +40,6 @@ def person(*, date: bytes = b"1240315", file_field: bytes = b"") -> bytes:
 
 def counts(bank: cronos_extract.Bank, kind: cronos_extract.DiagnosticKind) -> int:
     return bank.diagnostic_counts.get(kind, 0)
-
-
-@pytest.fixture
-def prints_nothing(capfd: pytest.CaptureFixture[str]):
-    yield
-    captured = capfd.readouterr()
-    assert (captured.out, captured.err) == ("", "")
 
 
 @pytest.mark.usefixtures("prints_nothing")
@@ -352,7 +344,7 @@ def test_a_database_without_a_files_table_has_no_files(tmp_path: Path) -> None:
         assert diagnostic.message.endswith("the database has no Files table")
 
 
-PARITY_CASES = [
+GOLDEN_CASES = [
     (b"01.02", None),
     (b"01.03", None),
     (b"01.04", None),
@@ -362,14 +354,8 @@ PARITY_CASES = [
 ]
 
 
-@pytest.mark.parametrize(
-    ("version", "kod"),
-    PARITY_CASES,
-    ids=lambda value: value.decode() if isinstance(value, bytes) else ("kod" if value else "default"),
-)
-def test_field_text_matches_database_enumerate_records(
-    tmp_path: Path, capfd: pytest.CaptureFixture[str], version: bytes, kod: list[int] | None
-) -> None:
+def golden_records(version: bytes) -> list[bytes | None]:
+    """The records the golden tests write, including the deleted record for versions other than 01.11."""
     records = [
         person(),
         person(date=b"850000", file_field=file_reference_field("report", "pdf", 3)),
@@ -380,31 +366,34 @@ def test_field_text_matches_database_enumerate_records(
     ]
     if version != b"01.11":
         records.insert(3, None)
-    dbdir = write_database(tmp_path / "db", records, kod, version=version)
+    return records
 
-    with Database(dbdir, False, KODcoding(kod if kod else INITIAL_KOD)) as db:
-        expected_tables = {(table.tableid, table.tablename) for table in db.enumerate_tables()}
-        expected = [
-            (record.recno, [field.content for field in record.fields])
-            for table in db.enumerate_tables()
-            for record in db.enumerate_records(table)
-        ]
-    capfd.readouterr()
 
-    with cronos_extract.open(
-        dbdir, kod=cronos_extract.Kod.from_table(kod) if kod else cronos_extract.Kod.default()
-    ) as bank:
-        assert {(table.id, table.name) for table in bank.tables} == expected_tables
-        actual = [
-            (record.number, [field.text for field in record.fields])
-            for table in bank.tables
-            for record in table.records()
-        ]
+def render_api_jsonl(bank: cronos_extract.Bank) -> str:
+    """One JSON line per record read through the API, in the order `bank.tables` and `Table.records()` yield them."""
+    lines = [
+        json.dumps(
+            {
+                "table_id": table.id,
+                "table": table.name,
+                "record": record.number,
+                "fields": [field.text for field in record.fields],
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        for table in bank.tables
+        for record in table.records()
+    ]
+    return "".join(f"{line}\n" for line in lines)
 
-    assert actual == expected
-    assert len(actual) == 4
-    captured = capfd.readouterr()
-    assert (captured.out, captured.err) == ("", "")
+
+def golden_api_name(version: bytes, kod: list[int] | None, *, extended: bool) -> str:
+    return f"api/{version.decode()}-{'kod' if kod else 'default'}-{'extended' if extended else 'inline'}.jsonl"
+
+
+def golden_case_id(value: bytes | list[int] | None) -> str:
+    return value.decode() if isinstance(value, bytes) else ("kod" if value else "default")
 
 
 def test_a_checksum_mismatch_keeps_the_record_and_is_reported_once(tmp_path: Path) -> None:

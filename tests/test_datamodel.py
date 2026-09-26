@@ -4,9 +4,10 @@ import argparse
 import struct
 
 import pytest
-from cronos_builder import erdgeist_table_definition
+from cronos_builder import erdgeist_table_definition, table_definition_without_fields
 
-from cronos_extract.Datamodel import Field, FieldDefinition, TableDefinition
+from cronos_extract._diagnostic import Diagnostic, DiagnosticKind, for_table_definition
+from cronos_extract.Datamodel import Field, FieldDefinition, TableDefinition, is_table_key
 from cronos_extract.hexdump import aschr, hexdump
 
 
@@ -66,6 +67,10 @@ def test_text_field_is_decoded_from_cp1251_without_trailing_nuls() -> None:
     assert Field(make_fielddef(2), "Привет".encode("cp1251") + b"\x00\x00").content == "Привет"
 
 
+def test_text_field_holding_an_undefined_cp1251_byte_keeps_it_as_the_replacement_character() -> None:
+    assert Field(make_fielddef(2), b"a\x98b").content == "a�b"
+
+
 def test_empty_field_has_empty_content() -> None:
     assert Field(make_fielddef(2), b"").content == ""
 
@@ -90,10 +95,66 @@ def test_hexdump_ascdump_prints_text_only(capsys: pytest.CaptureFixture[str]) ->
     assert capsys.readouterr().out == "00000000: Прив\n00000004: ет!\n"
 
 
-def test_table_definition_warnings_go_through_the_warn_hook(capfd: pytest.CaptureFixture[str]) -> None:
-    messages: list[str] = []
+def test_table_definition_problems_go_through_report(capfd: pytest.CaptureFixture[str]) -> None:
+    problems: list[Diagnostic] = []
 
-    TableDefinition(erdgeist_table_definition(), warn=messages.append)
+    TableDefinition(erdgeist_table_definition(), report=problems.append)
 
-    assert messages == ["Warning: FieldDefinition Section 2 not marked with a 2"]
+    assert problems == [
+        Diagnostic(DiagnosticKind.UNEXPECTED_STRUCTURE, "FieldDefinition Section 2 not marked with a 2")
+    ]
+    assert capfd.readouterr().err == ""
+
+
+def test_a_table_definition_reporter_names_crostru_and_the_key(capfd: pytest.CaptureFixture[str]) -> None:
+    problems: list[Diagnostic] = []
+
+    TableDefinition(erdgeist_table_definition(), report=for_table_definition(problems.append, "Base001"))
+
+    assert problems == [
+        Diagnostic(
+            DiagnosticKind.UNEXPECTED_STRUCTURE,
+            "Base001: FieldDefinition Section 2 not marked with a 2",
+            file="CroStru.dat",
+        )
+    ]
+    assert capfd.readouterr().err == ""
+
+
+@pytest.mark.parametrize(
+    ("key", "is_table"),
+    [
+        ("Base000", True),
+        ("Base002", True),
+        ("BaseImage001", False),
+        ("Base", False),
+        ("Base\u0662", False),
+        ("Base\u00b2", False),
+        ("Base\u0660\u0660\u0662", False),
+    ],
+)
+def test_only_base_followed_by_ascii_digits_names_a_table(key: str, is_table: bool) -> None:
+    assert is_table_key(key) is is_table
+
+
+def test_a_table_definition_without_its_terminator_is_reported(capfd: pytest.CaptureFixture[str]) -> None:
+    problems: list[Diagnostic] = []
+
+    TableDefinition(table_definition_without_fields(tableid=2)[:-4], report=problems.append)
+
+    assert problems == [Diagnostic(DiagnosticKind.UNEXPECTED_STRUCTURE, "FieldDefinition section not terminated")]
+    assert capfd.readouterr().err == ""
+
+
+def test_a_table_definition_cut_short_in_its_second_field_section_is_reported(
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    problems: list[Diagnostic] = []
+
+    TableDefinition(table_definition_without_fields(tableid=2)[:-8], report=problems.append)
+
+    assert problems == [
+        Diagnostic(DiagnosticKind.UNEXPECTED_STRUCTURE, "Error '' parsing FieldDefinitions"),
+        Diagnostic(DiagnosticKind.UNEXPECTED_STRUCTURE, "FieldDefinition section not terminated"),
+    ]
     assert capfd.readouterr().err == ""

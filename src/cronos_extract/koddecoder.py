@@ -4,6 +4,8 @@
 Decode CroStru KOD encoding.
 """
 
+from collections.abc import Sequence
+
 INITIAL_KOD = [
     0x08,
     0x63,
@@ -270,7 +272,7 @@ class KODcoding:
     with a user specified KOD table.
     """
 
-    def __init__(self, initial=INITIAL_KOD, confidence=None):
+    def __init__(self, initial: list[int] = INITIAL_KOD, confidence: list[int] | None = None) -> None:
         self.kod = [_ for _ in initial]
         self.confidence = confidence if confidence is not None else [255] * len(self.kod)
 
@@ -287,7 +289,7 @@ class KODcoding:
         """
         return bytes((self.kod[b] - i - o) % 256 for i, b in enumerate(data))
 
-    def try_decode(self, o, data):
+    def try_decode(self, o: int, data: bytes) -> tuple[list[int], list[int]]:
         """
         decode : shift, a[0]..a[n-1] -> b[0]..b[n-1]
             b[i] = KOD[a[i]]- (i+shift)
@@ -305,14 +307,16 @@ class KODcoding:
         return bytes(self.inv[(b + i + o) % 256] for i, b in enumerate(data))
 
 
-def new(*args):
+def new(*args: list[int]) -> KODcoding:
     """
     create a KODcoding object with the specified arguments.
     """
     return KODcoding(*args)
 
 
-def match_with_mismatches(data, confidence, string, min_matching=None):
+def match_with_mismatches(
+    data: Sequence[int], confidence: Sequence[int], string: bytes, min_matching: int | None = None
+) -> list[tuple[int, int]]:
     """
     find all occurences of string in data with at least one substitution and
     at least min_matching characters matching bytes whose KOD entry is known.

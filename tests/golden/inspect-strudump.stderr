@@ -1,2 +1,2 @@
-Warning: FieldDefinition Section 2 not marked with a 2
-Warning: FieldDefinition Section 2 not marked with a 2
+warning: unexpected_structure: CroStru.dat: Base000: FieldDefinition Section 2 not marked with a 2
+warning: unexpected_structure: CroStru.dat: Base001: FieldDefinition Section 2 not marked with a 2

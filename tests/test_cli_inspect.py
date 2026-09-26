@@ -4,6 +4,7 @@ import io
 import os
 import re
 import shutil
+import struct
 from pathlib import Path
 from typing import cast
 
@@ -18,16 +19,23 @@ from cronos_builder import (
     corrupt_compressed_record,
     database_with_missing_definition,
     database_with_wrong_kod_record_out_of_range,
+    definition_with_extra_key,
+    erdgeist_table_definition,
+    ignore_problems,
     key_referencing_a_deleted_record,
     stru_records_from_test_db,
+    table_definition_key_before_base001,
     write_database,
+    write_datafile,
 )
 
 from cronos_extract import NotACronosFile
 from cronos_extract._cli import inspect
 from cronos_extract._cli.report import Failure
 from cronos_extract.Database import KOD_HINT, Database
+from cronos_extract.Datafile import Datafile
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
+from cronos_extract.koddecoder import new as new_kod
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 GOLDEN_DIR = Path(__file__).resolve().parent / "golden"
@@ -72,7 +80,7 @@ def damaged_index_db(tmp_path: Path) -> Path:
     return dbdir
 
 
-def test_a_damaged_file_the_subcommand_does_not_read_is_one_warning(
+def test_a_damaged_file_the_subcommand_does_not_read_is_one_unreadable_file_warning(
     damaged_index_db: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(REPO_ROOT)
@@ -82,8 +90,13 @@ def test_a_damaged_file_the_subcommand_does_not_read_is_one_warning(
     captured = capsys.readouterr()
     assert captured.out == golden_stdout("inspect-strudump")
     warnings = [line for line in captured.err.splitlines() if line.startswith("warning: ")]
-    assert len(warnings) == 1
+    assert len(warnings) == 3
     assert warnings[0].startswith("warning: unreadable_file: CroIndex.dat: the file cannot be read and is left out: ")
+    # The other two are TEST_DB's own table definition problems, which strudump reports for every copy of it.
+    assert warnings[1:] == [
+        f"warning: unexpected_structure: CroStru.dat: {key}: FieldDefinition Section 2 not marked with a 2"
+        for key in ("Base000", "Base001")
+    ]
 
 
 @pytest.mark.parametrize("args", [["recdump", "--index"], ["crodump"]], ids=["recdump-index", "crodump"])
@@ -112,12 +125,16 @@ def test_strudump_of_an_undecodable_definition_fails_with_the_kod_hint(capsys: p
         run_inspect("strudump", "--nokod", str(TEST_DB))
 
     assert str(failed.value) == f"the database definition is cut off after 0 keys\n{KOD_HINT}"
-    assert "WARN: expected dbinfo to start with 0x03" in capsys.readouterr().err
+    assert (
+        "warning: unexpected_structure: CroStru.dat record 1: expected dbinfo to start with 0x03"
+        in capsys.readouterr().err
+    )
 
 
 def definition_hex() -> str:
-    with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD)) as db:
-        record = cast(bytes, db.stru.readrec(1))
+    with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD), report=ignore_problems) as db:
+        stru = cast(Datafile, db.stru)
+        record = cast(bytes, stru.readrec(1))
     return record[1:].hex()
 
 
@@ -135,6 +152,17 @@ def test_destruct_type_1_reads_keys_stored_by_reference_from_the_database(
     assert run_inspect(*args) == 0
 
     assert 'BankName             - "nowa"' in capsys.readouterr().out
+
+
+def test_destruct_type_1_with_a_key_stored_by_reference_and_no_crostru_fails_cleanly(tmp_path: Path) -> None:
+    # A definition holding one key, "X", stored by reference to CroStru record 2 (readname's byte-length prefix,
+    # then a dword whose top bit is clear, so decode_db_definition reads it as an index rather than inline bytes).
+    definition = bytes([1]) + b"X" + (2).to_bytes(4, "little")
+
+    result = run_command("cli", ["inspect", "destruct", "-t", "1", str(tmp_path)], stdin=definition.hex())
+
+    assert result.returncode == 1
+    assert result.stderr == 'Error: key "X" refers to CroStru record 2, but CroStru is not open\n'
 
 
 def test_recdump_debug_stops_at_the_last_record(capsys: pytest.CaptureFixture[str]) -> None:
@@ -188,7 +216,7 @@ def test_recdump_stops_at_the_last_record_even_with_debug() -> None:
 
 
 def test_destruct_type_1_prints_a_database_definition() -> None:
-    with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD)) as db:
+    with Database(str(TEST_DB), False, KODcoding(INITIAL_KOD), report=ignore_problems) as db:
         assert db.stru is not None
         definition_record = db.stru.readrec(1)
     assert definition_record is not None
@@ -251,7 +279,7 @@ def test_strudump_without_the_database_kod_stops_with_a_message() -> None:
 
     assert result.returncode == 1
     assert result.stderr.splitlines() == [
-        "WARN: expected dbinfo to start with 0x03",
+        "warning: unexpected_structure: CroStru.dat record 1: expected dbinfo to start with 0x03",
         "Error: the database definition is cut off after 0 keys",
         KOD_HINT,
     ]
@@ -331,3 +359,135 @@ def test_inspect_crodump_marks_a_record_whose_checksum_does_not_match(tmp_path: 
     first, second = [line for line in lines[bank_start + 1 :] if line.startswith(("    1:", "    2:"))]
     assert not first.endswith("<checksum mismatch>")
     assert second.endswith(" <checksum mismatch>")
+
+
+def test_a_short_ns1_is_reported_as_a_warning_line(tmp_path: Path) -> None:
+    stru = stru_records_from_test_db()
+    dbinfo = stru[0]
+    assert dbinfo is not None
+    assert dbinfo.count(b"\x03NS1") == 1
+    stru[0] = definition_with_extra_key(dbinfo.replace(b"\x03NS1", b"\x03XS1"), "NS1", b"\x01")
+    write_datafile(tmp_path, "Stru", stru)
+    write_datafile(tmp_path, "Bank", [])
+
+    result = run_command("cli", ["inspect", "strudump", str(tmp_path)])
+
+    assert result.returncode == 0, result.stderr
+    assert "warning: unexpected_structure: CroStru.dat: NS1 is unexpectedly short" in result.stderr.splitlines()
+
+
+def test_an_ns1_password_holding_an_undefined_cp1251_byte_prints_with_the_replacement_character(
+    tmp_path: Path,
+) -> None:
+    stru = stru_records_from_test_db()
+    dbinfo = stru[0]
+    assert dbinfo is not None
+    password = b"a\x98b"
+    decoded_data = struct.pack("<LLL", 0, 0, len(password)) + password
+    ns1kod = new_kod()
+    ns1_value = struct.pack("<BB", 0, 0) + ns1kod.encode(0, decoded_data)
+    stru[0] = definition_with_extra_key(dbinfo.replace(b"\x03NS1", b"\x03XS1"), "NS1", ns1_value)
+    write_datafile(tmp_path, "Stru", stru)
+    write_datafile(tmp_path, "Bank", [])
+
+    result = run_command("cli", ["inspect", "strudump", str(tmp_path)])
+
+    assert result.returncode == 0, result.stderr
+    assert "a�b" in result.stdout
+
+
+def test_destruct_type_2_reports_problems_as_warning_lines() -> None:
+    result = run_command("cli", ["inspect", "destruct", "-t", "2"], stdin=erdgeist_table_definition().hex())
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.splitlines() == [
+        "warning: unexpected_structure: FieldDefinition Section 2 not marked with a 2"
+    ]
+
+
+def test_a_hostile_duplicate_key_is_escaped_on_inspect_stderr(tmp_path: Path) -> None:
+    stru = stru_records_from_test_db()
+    dbinfo = stru[0]
+    assert dbinfo is not None
+    once = definition_with_extra_key(dbinfo, "X\x1b[31m", b"a")
+    stru[0] = definition_with_extra_key(once, "X\x1b[31m", b"a")
+    write_datafile(tmp_path, "Stru", stru)
+    write_datafile(tmp_path, "Bank", [])
+
+    result = run_command("cli", ["inspect", "strudump", str(tmp_path)])
+
+    assert result.returncode == 0, result.stderr
+    assert "\x1b" not in result.stderr
+    assert (
+        "warning: unexpected_structure: CroStru.dat record 1: duplicate key: X\\x1b[31m" in result.stderr.splitlines()
+    )
+
+
+def test_recdump_of_an_absent_file_fails_naming_it(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [])
+
+    result = run_command("cli", ["inspect", "recdump", "--sys", dbdir])
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.splitlines() == [f"Error: {dbdir} has no CroSys.dat and CroSys.tad"]
+
+
+def test_strudump_reports_a_truncated_table_definition_and_dumps_the_later_tables(tmp_path: Path) -> None:
+    dbdir = table_definition_key_before_base001(tmp_path, "Base009", b"\x01")
+
+    result = run_command("cli", ["inspect", "strudump", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.splitlines() == [
+        "warning: unexpected_structure: CroStru.dat: Base000: FieldDefinition Section 2 not marked with a 2",
+        "warning: undecodable_table: CroStru.dat: Base009 cannot be decoded and is left out: EOFError",
+        "warning: unexpected_structure: CroStru.dat: Base001: FieldDefinition Section 2 not marked with a 2",
+    ]
+    headings = [line for line in result.stdout.splitlines() if line.startswith("== ")]
+    assert headings[:3] == ["== Base000 ==", "== Base009 ==", "== Base001 =="]
+    lines = result.stdout.splitlines()
+    assert lines[lines.index("== Base009 ==") + 1] == "== Base001 =="
+
+
+@pytest.mark.parametrize("args", [[], ["-t", "4"]])
+def test_destruct_without_a_type_it_knows_is_a_usage_error(args: list[str]) -> None:
+    result = run_command("cli", ["inspect", "destruct", *args], stdin="00")
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert "--type/-t" in result.stderr.splitlines()[-1]
+
+
+@pytest.mark.parametrize(
+    ("args", "stdin", "error"),
+    [
+        (["-t", "2"], "01", "Error: the definition on stdin cannot be decoded: EOFError"),
+        (
+            ["-t", "3"],
+            "05",
+            "Error: the definition on stdin cannot be decoded: ValueError: unsupported CroSys record type 5",
+        ),
+        (["-t", "3"], "04", "Error: the definition on stdin cannot be decoded: EOFError"),
+        (["-t", "2"], "zz", "Error: stdin does not hold a definition in hex: Non-hexadecimal digit found"),
+    ],
+)
+def test_destruct_of_a_definition_it_cannot_decode_fails_with_one_error_line(
+    args: list[str], stdin: str, error: str
+) -> None:
+    result = run_command("cli", ["inspect", "destruct", *args], stdin=stdin)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.splitlines() == [error]
+
+
+def test_crodump_prints_a_reader_diagnostic_as_a_warning_line(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [])
+    with (Path(dbdir) / "CroBank.tad").open("ab") as tad:
+        tad.write(b"\x00")
+
+    result = run_command("cli", ["inspect", "crodump", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert "warning: unexpected_structure: CroBank.dat: leftover data in .tad" in result.stderr.splitlines()

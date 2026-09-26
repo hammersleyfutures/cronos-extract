@@ -22,12 +22,7 @@ KOD = random_kod(seed=7)
 PERSON_FIELDS = [b"42", b"Hammersley", b"", b"1240315", b"0930", b"", b"", b"", b"", b"", b""]
 METHODS = ["strucrack", "dbcrack"]
 
-
-@pytest.fixture(autouse=True)
-def prints_nothing(capfd: pytest.CaptureFixture[str]):
-    yield
-    captured = capfd.readouterr()
-    assert (captured.out, captured.err) == ("", "")
+pytestmark = pytest.mark.usefixtures("prints_nothing")
 
 
 @pytest.fixture

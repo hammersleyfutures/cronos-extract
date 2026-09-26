@@ -11,9 +11,11 @@ from cronos_builder import (
     TEST_TABLE_ID,
     UNUSED_TABLE_ID,
     bank_record,
+    compressed_record,
     corrupt_compressed_record,
     crackable_database,
     random_kod,
+    stru_records_from_test_db,
     write_database,
     write_datafile,
 )
@@ -522,3 +524,16 @@ def test_noninteractive_strucrack_skips_a_stru_record_it_cannot_read(tmp_path: P
 
     assert result.returncode == 0, result.stderr
     assert result.stdout == KOD_LINE
+
+
+def test_strucrack_reports_a_crostru_checksum_mismatch_by_kind(tmp_path: Path) -> None:
+    records = [*stru_records_from_test_db(), compressed_record(b"x" * 40, wrong_checksums={0})]
+    write_datafile(tmp_path, "Stru", records, kod=None)
+
+    result = run_command("cli", ["crack", "strucrack", f"--text={len(records) - 1}:0:0:x", str(tmp_path)])
+
+    assert result.returncode == 0, result.stderr
+    lines = result.stderr.splitlines()
+    mismatches = [line for line in lines if line.startswith("warning: checksum_mismatch: CroStru.dat record ")]
+    assert len(mismatches) == 1, result.stderr
+    assert not any("unexpected_structure" in line for line in lines), result.stderr

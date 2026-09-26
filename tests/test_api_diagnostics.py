@@ -5,6 +5,7 @@ import dataclasses
 from collections.abc import Callable, Sequence
 
 import pytest
+from cronos_builder import TEST_DB
 
 from cronos_extract import (
     CronosError,
@@ -14,6 +15,7 @@ from cronos_extract import (
     NotACronosFile,
     UnsupportedVersion,
 )
+from cronos_extract import open as open_bank
 from cronos_extract._api.diagnostics import DIAGNOSTICS_KEPT, DiagnosticLog, RecordNumbers
 
 
@@ -222,3 +224,20 @@ def test_every_exception_is_a_cronos_error() -> None:
     for error in (NotACronosFile, UnsupportedVersion, DatabaseDefinitionError):
         assert issubclass(error, CronosError)
     assert issubclass(CronosError, Exception)
+
+
+def test_a_raising_callback_escapes_the_table_definition_reader() -> None:
+    class StopAtStructure(Exception):
+        pass
+
+    seen: list[Diagnostic] = []
+
+    def on_diagnostic(diagnostic: Diagnostic) -> None:
+        seen.append(diagnostic)
+        if diagnostic.kind is DiagnosticKind.UNEXPECTED_STRUCTURE:
+            raise StopAtStructure
+
+    with pytest.raises(StopAtStructure):
+        open_bank(TEST_DB, on_diagnostic=on_diagnostic)
+
+    assert [diagnostic.message for diagnostic in seen] == ["Base000: FieldDefinition Section 2 not marked with a 2"]

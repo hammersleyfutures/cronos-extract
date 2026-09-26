@@ -17,6 +17,14 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 @pytest.fixture
+def prints_nothing(capfd: pytest.CaptureFixture[str]):
+    """Assert, when the test finishes, that it wrote nothing to stdout or stderr."""
+    yield
+    captured = capfd.readouterr()
+    assert (captured.out, captured.err) == ("", "")
+
+
+@pytest.fixture
 def golden(request: pytest.FixtureRequest) -> Callable[[str, str], None]:
     """Return a function that compares text with tests/golden/<name>, or rewrites it with --update-golden."""
     update = request.config.getoption("--update-golden")

@@ -4,12 +4,13 @@
 Several functions for converting bytes to readable text or hex bytes.
 """
 
+import argparse
 import struct
-import sys
 from binascii import a2b_hex, b2a_hex
+from collections.abc import Sequence
 
 
-def unhex(data):
+def unhex(data: bytes | str) -> bytes:
     """
     convert a possibly space separated list of 2-digit hex values to a byte-array
     """
@@ -20,29 +21,21 @@ def unhex(data):
     return a2b_hex(data)
 
 
-def warn_on_stderr(message):
-    """
-    Print a reader's warning to stderr, where the commands report problems.
-    This is the default `warn` hook of Datafile, TableDefinition and Database.
-    """
-    print(message, file=sys.stderr)
-
-
-def ashex(line):
+def ashex(line: bytes) -> str:
     """
     convert a byte-array to a space separated list of 2-digit hex values.
     """
     return " ".join(f"{_:02x}" for _ in line)
 
 
-def asambigoushex(line, confidence):
+def asambigoushex(line: Sequence[int], confidence: Sequence[int]) -> str:
     """
     convert an array to a list of 2-digit hex values with potentially unset values of -1
     """
     return "".join(f"{_:02x}" if confidence[o] > 0 else "??" for o, _ in enumerate(line))
 
 
-def as1251(b):
+def as1251(b: str) -> bytes:
     """
     convert unicode text to CP-1251 bytes
     This will help parse cyrillic user entries from command line.
@@ -54,7 +47,7 @@ def as1251(b):
         raise ValueError(f"{b!r} can't be encoded as CP-1251: {e.reason} at position {e.start}") from e
 
 
-def aschr(b):
+def aschr(b: int) -> str:
     """
     convert a CP-1251 byte to a unicode character.
     This will make both cyrillic and latin text readable.
@@ -72,7 +65,7 @@ def aschr(b):
     return "."
 
 
-def asasc(line, confidence=None):
+def asasc(line: Sequence[int], confidence: Sequence[int] | None = None) -> str:
     """
     convert a CP-1251 encoded byte-array to a line of unicode characters.
     """
@@ -82,7 +75,7 @@ def asasc(line, confidence=None):
         return "".join(aschr(_) if confidence[o] > 0 else "?" for o, _ in enumerate(line))
 
 
-def hexdump(ofs, data, args):
+def hexdump(ofs: int, data: bytes, args: argparse.Namespace) -> None:
     """
     Output offset prefixed lines of hex + ascii characters.
     """
@@ -95,14 +88,14 @@ def hexdump(ofs, data, args):
             print(f"{o + ofs:08x}: {ashex(chunk):<{3 * w - 1}}  {asasc(chunk)}")
 
 
-def tohex(data):
+def tohex(data: bytes) -> str:
     """
     Convert a byte-array to a sequence of 2-digit hex values without separators.
     """
     return b2a_hex(data).decode("ascii")
 
 
-def toout(args, data):
+def toout(args: argparse.Namespace, data: bytes) -> str:
     """
     Return either ascdump or hexdump, depending on the `args.ascdump` flag.
     """
@@ -112,9 +105,12 @@ def toout(args, data):
         return tohex(data)
 
 
-def strescape(txt):
+def strescape(txt: bytes | str) -> str:
     """
     Convert bytes or text to a c-style escaped string.
+
+    Only receives values Database.dump_db_definition's regex has let through, which cannot hold 0x98, so this
+    strict decode cannot fail.
     """
     if isinstance(txt, bytes):
         txt = txt.decode("cp1251")

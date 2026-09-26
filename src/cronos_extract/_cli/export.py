@@ -16,10 +16,11 @@ from .._api.bank import open as open_bank
 from .._api.diagnostics import Diagnostic
 from .._api.errors import CronosError
 from .._api.values import Record
+from .._diagnostic import STRU_FILE
 from .csv_out import CsvWriter
 from .jsonl_out import JsonlWriter
 from .options import Subcommands, kod_options, selected_kod
-from .report import DUPLICATE_TABLE, STRU_FILE, Failure, Problem, Report, error_message
+from .report import DUPLICATE_TABLE, Failure, Problem, Report, error_message
 from .sql_out import SqlWriter
 
 # The exit status of a command stopped by Ctrl-C, as a shell reports it: 128 plus SIGINT's number.

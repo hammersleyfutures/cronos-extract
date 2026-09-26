@@ -22,7 +22,6 @@ from cronos_builder import (
 )
 
 import cronos_extract
-from cronos_extract._api.bank import is_table_key
 from cronos_extract.koddecoder import INITIAL_KOD
 
 SECTION_2_WARNINGS = [
@@ -39,11 +38,8 @@ class StopReading(Exception):
     pass
 
 
-@pytest.fixture(autouse=True)
-def prints_nothing(capfd: pytest.CaptureFixture[str]):
-    yield
-    captured = capfd.readouterr()
-    assert (captured.out, captured.err) == ("", "")
+# Every test here also asserts that opening and reading printed nothing.
+pytestmark = pytest.mark.usefixtures("prints_nothing")
 
 
 def kinds(bank: cronos_extract.Bank) -> list[cronos_extract.DiagnosticKind]:
@@ -147,6 +143,15 @@ def test_a_bytes_path_raises_type_error(tmp_path: Path) -> None:
         cronos_extract.open(bytes(tmp_path))  # ty: ignore[invalid-argument-type]
 
 
+def test_a_directory_without_a_stru_is_not_a_cronos_file(tmp_path: Path) -> None:
+    (tmp_path / "CroBank.dat").write_bytes(b"")
+
+    with pytest.raises(cronos_extract.NotACronosFile, match=r"no CroStru\.dat and CroStru\.tad") as error:
+        cronos_extract.open(tmp_path)
+
+    assert str(tmp_path) in str(error.value)
+
+
 def test_a_directory_without_a_bank_is_not_a_cronos_file(tmp_path: Path) -> None:
     dbdir = Path(write_database(tmp_path / "db", []))
     (dbdir / "CroBank.dat").unlink()
@@ -229,7 +234,7 @@ def test_a_duplicate_definition_key_is_an_unexpected_structure(tmp_path: Path) -
 
     with cronos_extract.open(dbdir) as bank:
         assert cronos_extract.Diagnostic(
-            cronos_extract.DiagnosticKind.UNEXPECTED_STRUCTURE, "duplicate key: BankName", file="CroStru.dat"
+            cronos_extract.DiagnosticKind.UNEXPECTED_STRUCTURE, "duplicate key: BankName", file="CroStru.dat", record=1
         ) in list(bank.diagnostics)
 
 
@@ -287,22 +292,6 @@ def test_an_exception_from_a_database_definition_warning_reaches_the_caller(tmp_
 
     with pytest.raises(StopReading):
         cronos_extract.open(dbdir, on_diagnostic=on_diagnostic)
-
-
-@pytest.mark.parametrize(
-    ("key", "is_table"),
-    [
-        ("Base000", True),
-        ("Base002", True),
-        ("BaseImage001", False),
-        ("Base", False),
-        ("Base\u0662", False),
-        ("Base\u00b2", False),
-        ("Base\u0660\u0660\u0662", False),
-    ],
-)
-def test_only_base_followed_by_ascii_digits_names_a_table(key: str, is_table: bool) -> None:
-    assert is_table_key(key) is is_table
 
 
 def test_on_diagnostic_receives_the_diagnostics_of_open(tmp_path: Path) -> None:

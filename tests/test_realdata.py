@@ -1,8 +1,7 @@
 # ABOUTME: Checks the cronos_extract API against Ben's real CronosPro databases, found under roots listed in local/.
 # ABOUTME: Deselected by default; run with `uv run pytest -m realdata`. Test ids are indexes, never paths.
-import contextlib
 import functools
-import io
+import hashlib
 import itertools
 import json
 import struct
@@ -14,10 +13,8 @@ from cli import run_command
 from cronos_builder import tad_layout
 
 import cronos_extract
-import cronos_extract.koddecoder
 from cronos_extract._api.info import read_file_info
 from cronos_extract._cli.sql_out import unique_sql_table_name
-from cronos_extract.Database import Database
 from cronos_extract.survey import SurveyedDatabase, read_path_list, survey_databases
 
 pytestmark = pytest.mark.realdata
@@ -25,6 +22,8 @@ pytestmark = pytest.mark.realdata
 # Each entry of the list is a survey root, as `cronos-extract survey --list` treats it: the databases are the
 # directories under it that hold Cro*.dat files.
 LIST_FILE = Path(__file__).resolve().parent.parent / "local" / "mash_datasets_with_CroIndex_dat.txt"
+# Record counts and SHA-256 fingerprints of the API's field text, keyed by database directory; git-ignored.
+FINGERPRINTS = LIST_FILE.parent / "realdata-fingerprints.json"
 # Every Table.records() call walks all of CroBank, so databases with larger CroBank indexes are left out of the
 # checks that read records.
 MAX_BANK_TAD_BYTES = 32_000_000
@@ -141,26 +140,35 @@ def test_no_real_database_reports_a_checksum_mismatch(dbdir: Path) -> None:
         assert bank.diagnostic_counts[cronos_extract.DiagnosticKind.CHECKSUM_MISMATCH] == 0
 
 
-def test_field_text_matches_database_enumerate_records(dbdir: Path) -> None:
-    if not bank_is_small(dbdir):
-        pytest.skip("CroBank is too large to walk once per table")
-    with (
-        open_or_skip(dbdir) as bank,
-        contextlib.redirect_stderr(io.StringIO()),
-        Database(str(dbdir), False, cronos_extract.koddecoder.new()) as db,
-    ):
-        internal = {(table.tableid, table.tablename): table for table in db.enumerate_tables()}
-        assert {(table.id, table.name) for table in bank.tables} == set(internal)
+def api_fingerprint(dbdir: Path) -> dict[str, object]:
+    """The record count and a SHA-256 of the API's field texts for the first RECORDS_COMPARED records of each table."""
+    with open_or_skip(dbdir) as bank:
+        tables = []
+        count = 0
         for table in bank.tables:
-            expected = [
-                (record.recno, [field.content for field in record.fields])
-                for record in itertools.islice(db.enumerate_records(internal[(table.id, table.name)]), RECORDS_COMPARED)
-            ]
-            actual = [
-                (record.number, [field.text for field in record.fields])
+            records = [
+                [record.number, [field.text for field in record.fields]]
                 for record in itertools.islice(table.records(), RECORDS_COMPARED)
             ]
-            assert actual == expected, f"table id {table.id} differs"
+            count += len(records)
+            tables.append({"id": table.id, "name": table.name, "records": records})
+    text = json.dumps(tables, ensure_ascii=False, sort_keys=True)
+    return {"records": count, "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()}
+
+
+def test_api_output_matches_its_fingerprint(dbdir: Path, request: pytest.FixtureRequest) -> None:
+    if not bank_is_small(dbdir):
+        pytest.skip("CroBank is too large to walk once per table")
+    key = str(dbdir.resolve())
+    fingerprint = api_fingerprint(dbdir)
+    stored = json.loads(FINGERPRINTS.read_text(encoding="utf-8")) if FINGERPRINTS.exists() else {}
+    if request.config.getoption("--update-golden"):
+        stored[key] = fingerprint
+        FINGERPRINTS.write_text(json.dumps(stored, indent=1, sort_keys=True), encoding="utf-8")
+        return
+    command = "uv run pytest -q -m realdata tests/test_realdata.py -k fingerprint --update-golden"
+    assert key in stored, f"no fingerprint for this database; write them with: {command}"
+    assert fingerprint == stored[key]
 
 
 def test_bank_info_agrees_with_the_survey(dbdir: Path) -> None:

@@ -5,12 +5,13 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack
 from pathlib import Path
 from types import TracebackType
-from typing import Self, cast, override
+from typing import Self, override
 
-from .._format.record import RecordParts
+from .._diagnostic import STRU_FILE, for_table_definition
 from ..Database import Database
-from ..Datamodel import TableDefinition, describe_error
-from .datafiles import database_directory, list_directory, open_datafile, optional_file_info, warn_into
+from ..Datafile import Datafile
+from ..Datamodel import TableDefinition, describe_error, is_table_key, undecodable_table
+from .datafiles import database_directory, list_directory, open_datafile, optional_file_info
 from .diagnostics import Diagnostic, DiagnosticKind, DiagnosticLog, RecordNumbers
 from .errors import DatabaseDefinitionError
 from .info import FileInfo
@@ -18,7 +19,6 @@ from .kod import Kod, kod_coder
 from .values import EmbeddedFile, FieldDefinition, FileReference, Record, decode_record
 
 DEFAULT_KOD = Kod.default()
-STRU_FILE = "CroStru.dat"
 BANK_FILE = "CroBank.dat"
 # Record data holds the table id in one byte.
 LARGEST_TABLE_ID = 255
@@ -27,11 +27,6 @@ DEFINITION_HINT = (
     "If the KOD used to read this database is not its own, the definition decodes as garbage; "
     "cronos_extract.crack_kod can recover the database's KOD."
 )
-
-
-def is_table_key(key: str) -> bool:
-    """Whether a database definition key names a table definition: "Base" followed by digits."""
-    return key.startswith("Base") and key[4:].isascii() and key[4:].isdigit()
 
 
 class Table:
@@ -45,15 +40,15 @@ class Table:
     @property
     def id(self) -> int:
         """The table id, which the first byte of each of its CroBank records holds."""
-        return int(self._definition.tableid)
+        return self._definition.tableid
 
     @property
     def name(self) -> str:
-        return str(self._definition.tablename)
+        return self._definition.tablename
 
     @property
     def abbreviation(self) -> str:
-        return str(self._definition.abbrev)
+        return self._definition.abbrev
 
     @property
     def fields(self) -> tuple[FieldDefinition, ...]:
@@ -81,17 +76,25 @@ class Bank:
     A Bank is not thread-safe. Generators from one bank may be interleaved on one thread.
     """
 
-    def __init__(self, directory: Path, database: Database, info: tuple[FileInfo, ...], log: DiagnosticLog) -> None:
+    def __init__(
+        self,
+        directory: Path,
+        database: Database,
+        bank_file: Datafile,
+        info: tuple[FileInfo, ...],
+        log: DiagnosticLog,
+    ) -> None:
         self._directory = directory
         self._database = database
+        self._bank_file = bank_file
         self._info = info
         self._log = log
         self._closed = False
         self._tables: tuple[Table, ...] = ()
         self._files_table_id: int | None = None
         self._files_abbreviation: str | None = None
-        self._corrupt_records = RecordNumbers(database.bank.nrofrecords)
-        self._checksum_mismatches = RecordNumbers(database.bank.nrofrecords)
+        self._corrupt_records = RecordNumbers(self._bank_file.nrofrecords)
+        self._checksum_mismatches = RecordNumbers(self._bank_file.nrofrecords)
         self._unsupported_tables: set[int] = set()
 
     @property
@@ -167,7 +170,7 @@ class Bank:
             return self._unresolved(reference, "its record number is not a number")
         if self._files_table_id is None:
             return self._unresolved(reference, "the database has no Files table")
-        if not 1 <= record <= self._database.bank.nrofrecords:
+        if not 1 <= record <= self._bank_file.nrofrecords:
             return self._unresolved(reference, f"CroBank has no record {record}")
         data = self._read(record)
         if data is None:
@@ -197,7 +200,7 @@ class Bank:
         """
         self._check_open()
         try:
-            parts = cast(RecordParts | None, self._database.bank.read_record(number))
+            parts = self._bank_file.read_record(number)
         except OSError:
             raise
         except Exception as e:
@@ -241,7 +244,7 @@ class Bank:
                     )
                 )
             return
-        for number in range(1, self._database.bank.nrofrecords + 1):
+        for number in range(1, self._bank_file.nrofrecords + 1):
             data = self._read(number)
             if not data or data[0] != table.id:
                 continue
@@ -253,7 +256,7 @@ class Bank:
     def _files(self) -> Iterator[EmbeddedFile]:
         if self._files_table_id is None:
             return
-        for number in range(1, self._database.bank.nrofrecords + 1):
+        for number in range(1, self._bank_file.nrofrecords + 1):
             data = self._read(number)
             if data and data[0] == self._files_table_id:
                 yield EmbeddedFile(number, data[1:], None)
@@ -277,16 +280,12 @@ class Bank:
             with self._log.guard_callback_errors():
                 try:
                     table_definition = TableDefinition(
-                        value, definition.get("BaseImage" + key[4:], b""), warn_into(self._log, STRU_FILE, f"{key}: ")
+                        value,
+                        definition.get("BaseImage" + key[4:], b""),
+                        report=for_table_definition(self._log.record, key),
                     )
                 except Exception as e:
-                    self._log.record(
-                        Diagnostic(
-                            DiagnosticKind.UNDECODABLE_TABLE,
-                            f"{key} cannot be decoded and is left out: {describe_error(e)}",
-                            file=STRU_FILE,
-                        )
-                    )
+                    self._log.record(undecodable_table(key, e))
                     continue
             if key[4:] == "000":
                 self._files_table_id = table_definition.tableid
@@ -343,10 +342,14 @@ def open(
                     "the KOD given is not used: neither CroStru.dat nor CroBank.dat is encrypted with its own KOD",
                 )
             )
-        database = Database.from_datafiles(
-            str(directory), compact, kod_coder(kod), stru, bank_file, warn_into(log, STRU_FILE)
+        database = Database.from_datafiles(str(directory), compact, kod_coder(kod), stru, bank_file, log.record)
+        bank = Bank(
+            directory,
+            database,
+            bank_file,
+            (stru_info, bank_info, *(info for info in optional if info is not None)),
+            log,
         )
-        bank = Bank(directory, database, (stru_info, bank_info, *(info for info in optional if info is not None)), log)
         bank._load_tables()
         stack.pop_all()
     return bank

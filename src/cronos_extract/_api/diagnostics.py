@@ -3,45 +3,13 @@
 from collections import Counter
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
-from enum import StrEnum
 from types import MappingProxyType
 from typing import overload, override
 
+from .._diagnostic import Diagnostic, DiagnosticKind
+
 # How many diagnostics a bank keeps; counts and the callback cover every one.
 DIAGNOSTICS_KEPT = 1000
-
-
-class DiagnosticKind(StrEnum):
-    """What kind of problem a Diagnostic reports. Later versions may add kinds."""
-
-    CORRUPT_RECORD = "corrupt_record"
-    CHECKSUM_MISMATCH = "checksum_mismatch"
-    UNDECODABLE_FIELD = "undecodable_field"
-    INVALID_VALUE = "invalid_value"
-    UNDECODABLE_TABLE = "undecodable_table"
-    UNSUPPORTED_TABLE = "unsupported_table"
-    UNEXPECTED_STRUCTURE = "unexpected_structure"
-    UNRESOLVED_FILE_REFERENCE = "unresolved_file_reference"
-    UNREADABLE_FILE = "unreadable_file"
-    UNUSED_KOD = "unused_kod"
-
-
-@dataclass(frozen=True)
-class Diagnostic:
-    """
-    A problem found while reading, which reading survived.
-
-    `file` is a canonical file name such as "CroBank.dat", `table` a table name, `record` a CroBank record number
-    and `field` a field name, each None when it does not apply. The message never holds record data.
-    """
-
-    kind: DiagnosticKind
-    message: str
-    file: str | None = None
-    table: str | None = None
-    record: int | None = None
-    field: str | None = None
 
 
 class DiagnosticsView(Sequence[Diagnostic]):

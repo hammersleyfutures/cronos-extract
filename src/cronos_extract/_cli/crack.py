@@ -15,7 +15,7 @@ from .._api.crack import (
     stru_xref,
 )
 from .._api.datafiles import database_directory, list_directory, open_datafile
-from .._api.diagnostics import DiagnosticLog
+from .._api.diagnostics import Diagnostic, DiagnosticLog, RecordNumbers
 from ..Datafile import Datafile
 from ..hexdump import as1251, asambigoushex, asasc, tohex, unhex
 from ..koddecoder import match_with_mismatches
@@ -150,11 +150,23 @@ def raw_datafile(dbdir: str, base: str) -> Iterator[Datafile]:
     """
     Cro<base> in `dbdir`, opened without KOD decoding and reading its index from disk, with its warnings on stderr.
 
-    Raises NotACronosFile or UnsupportedVersion when it cannot be read, and OSError when `dbdir` cannot be listed.
+    The crack reads some records more than once, and reading a record reports at most one problem (a checksum
+    mismatch), so a problem naming a record is printed only the first time; the records already reported are held one
+    bit each, so a hostile file's record count cannot make the set large. Raises NotACronosFile or UnsupportedVersion
+    when it cannot be read, and OSError when `dbdir` cannot be listed.
     """
     directory = database_directory(dbdir)
-    log = DiagnosticLog(Report().diagnostic)
+    report = Report()
+    # None while the file is being opened, whose problems name no record.
+    reported: RecordNumbers | None = None
+
+    def report_once(diagnostic: Diagnostic) -> None:
+        if diagnostic.record is None or reported is None or reported.add(diagnostic.record):
+            report.diagnostic(diagnostic)
+
+    log = DiagnosticLog(report_once)
     datafile, _ = open_datafile(directory, list_directory(directory), base, compact=True, kod=None, log=log)
+    reported = RecordNumbers(datafile.nrofrecords)
     try:
         yield datafile
     finally:

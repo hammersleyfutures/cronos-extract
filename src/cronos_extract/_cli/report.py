@@ -10,8 +10,8 @@ from .._api.bank import DEFINITION_HINT
 from .._api.diagnostics import Diagnostic, DiagnosticKind
 from ..Database import KOD_HINT
 
-# The canonical names of the two files a Problem can name, as the API names them.
-STRU_FILE = "CroStru.dat"
+# The canonical name of CroBank, one of the two files a Problem can name, as the API names it; the other is
+# _diagnostic.STRU_FILE.
 BANK_FILE = "CroBank.dat"
 # Kinds the command reports itself, for problems of writing the output rather than of reading the database.
 DUPLICATE_TABLE = "duplicate_table"

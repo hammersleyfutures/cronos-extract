@@ -1,20 +1,22 @@
 # ABOUTME: Database: opens the Cro*.dat/.tad file pairs found in a CronosPro database directory.
-# ABOUTME: Decodes the database and table definitions from CroStru and enumerates tables, records and files.
-import base64
+# ABOUTME: Decodes the database and table definitions from CroStru.
+import argparse
 import os
 import re
 import struct
-import sys
 from binascii import b2a_hex
+from collections.abc import Collection
 from contextlib import ExitStack
-from functools import cached_property
+from typing import Self
 
 from . import koddecoder
+from ._diagnostic import STRU_FILE, Diagnostic, DiagnosticKind, Reporter, for_table_definition
 from ._format.files import open_regular_file
 from .Datafile import Datafile
-from .Datamodel import Record, TableDefinition, describe_error
-from .hexdump import ashex, strescape, toout, warn_on_stderr
-from .readers import ByteReader
+from .Datamodel import TableDefinition, is_table_key, undecodable_table
+from .hexdump import strescape, toout
+from .koddecoder import KODcoding
+from .readers import ByteReader, decode_cp1251
 
 # Printed after a database definition error: a KOD that isn't the database's own decodes the definition as garbage.
 KOD_HINT = (
@@ -26,25 +28,57 @@ KOD_HINT = (
 ALL_FILES = ("Stru", "Index", "Bank", "Sys")
 
 
+class StoppingReporter:
+    """
+    A Reporter that passes each Diagnostic to `report` and remembers the first exception `report` raises.
+
+    The readers catch broad exceptions, so they can swallow a callback's request to stop. Once an exception is
+    remembered, every later call raises it again without calling `report`, and raise_remembered raises it for the
+    caller to check after a reader returns or raises.
+    """
+
+    def __init__(self, report: Reporter) -> None:
+        self._report = report
+        self._error: BaseException | None = None
+
+    def __call__(self, diagnostic: Diagnostic) -> None:
+        self.raise_remembered()
+        try:
+            self._report(diagnostic)
+        except BaseException as e:
+            self._error = e
+            raise
+
+    def raise_remembered(self) -> None:
+        """Raise the exception `report` raised, if it raised one."""
+        if self._error is not None:
+            raise self._error
+
+
 class Database:
     """represent the entire database, consisting of Stru, Index and Bank files"""
 
-    # The number of records enumerate_records yielded with fields that could not be decoded.
-    incomplete_records = 0
-
-    def __init__(self, dbdir, compact, kod, files=ALL_FILES, warn=warn_on_stderr):
+    def __init__(
+        self,
+        dbdir: str,
+        compact: bool,
+        kod: KODcoding | None,
+        report: Reporter,
+        files: Collection[str] = ALL_FILES,
+    ) -> None:
         """
         `dbdir` is the directory containing the Cro*.dat and Cro*.tad files.
         `compact` if set, the .tad file is not cached in memory, making dumps 15 % slower
         `kod` is a KOD coder object, or None to read the records without KOD decoding.
+        `report` receives a Diagnostic for each problem that reading survives, such as a part of the database
+        definition that is not laid out as expected.
         `files` names the components to open, from ALL_FILES; the others are None.
-        `warn` receives a message for each part of the database definition that is not laid out as expected.
         """
         self.dbdir = dbdir
         self.compact = compact
         self.kod = kod
         self.files = files
-        self.warn = warn
+        self.report = report
 
         # Stru+Index+Bank for the components for most databases
         self.stru = self.getfile("Stru")
@@ -56,17 +90,19 @@ class Database:
         self.sys = self.getfile("Sys")
 
     @classmethod
-    def from_datafiles(cls, dbdir, compact, kod, stru, bank, warn):
+    def from_datafiles(
+        cls, dbdir: str, compact: bool, kod: KODcoding | None, stru: Datafile, bank: Datafile, report: Reporter
+    ) -> Self:
         """
         Make a Database of the CroStru and CroBank Datafiles `stru` and `bank`, which the caller has opened.
         Closing the Database closes them.
         """
-        db = cls(dbdir, compact, kod, files=(), warn=warn)
+        db = cls(dbdir, compact, kod, report, files=())
         db.stru = stru
         db.bank = bank
         return db
 
-    def close(self):
+    def close(self) -> None:
         """
         Close the files of every component of the database.
         """
@@ -74,13 +110,13 @@ class Database:
             if datafile:
                 datafile.close()
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, *exc_info):
+    def __exit__(self, *exc_info: object) -> None:
         self.close()
 
-    def getfile(self, name):
+    def getfile(self, name: str) -> Datafile | None:
         """
         Returns a Datafile object for `name`.
         this function expects a `Cro<name>.dat` and a `Cro<name>.tad` file.
@@ -100,19 +136,20 @@ class Database:
                 return self.opendatafile(name, datname, tadname)
         except OSError:
             return None
+        return None
 
-    def opendatafile(self, name, datname, tadname):
+    def opendatafile(self, name: str, datname: str, tadname: str) -> Datafile:
         """
         Open a .dat/.tad pair as a Datafile, closing both files again if it can't be read.
         """
         with ExitStack() as stack:
             dat = stack.enter_context(open_regular_file(datname))
             tad = stack.enter_context(open_regular_file(tadname))
-            datafile = Datafile(name, dat, tad, self.compact, self.kod, self.warn)
+            datafile = Datafile(name, dat, tad, self.compact, self.kod, self.report)
             stack.pop_all()
         return datafile
 
-    def getname(self, name, ext):
+    def getname(self, name: str, ext: str) -> str | None:
         """
         Get a case-insensitive filename match for 'name.ext'.
         Returns None when no matching file was not found.
@@ -123,7 +160,7 @@ class Database:
                 return os.path.join(self.dbdir, fn)
         return None
 
-    def dump(self, args):
+    def dump(self, args: argparse.Namespace) -> None:
         """
         Calls the `dump` method on all database components.
         """
@@ -136,29 +173,42 @@ class Database:
         if self.sys:
             self.sys.dump(args)
 
-    def missing_stru_message(self):
+    def missing_stru_message(self) -> str:
         """
         Returns the message that explains that the database directory has no CroStru files.
         """
         return f"no CroStru.dat and CroStru.tad found in {self.dbdir}, which hold the table definitions"
 
-    def decode_db_definition(self, data):
+    def report_structure(self, message: str, record: int | None = None) -> None:
+        """
+        Report `message` as an unexpected_structure Diagnostic about CroStru, at `record` when it is given.
+        """
+        self.report(Diagnostic(DiagnosticKind.UNEXPECTED_STRUCTURE, message, file=STRU_FILE, record=record))
+
+    def decode_db_definition(self, data: bytes) -> dict[str, bytes]:
         """
         decode the 'bank' / database definition
+
+        Raises ValueError when a key stored by reference names a CroStru record that is not open, out of range,
+        deleted, or when the definition is cut off.
         """
         rd = ByteReader(data)
 
-        d = dict()
+        d: dict[str, bytes] = dict()
         try:
             while not rd.eof():
                 keyname = rd.readname()
                 if keyname in d:
-                    self.warn(f"WARN: duplicate key: {keyname}")
+                    self.report_structure(f"duplicate key: {keyname}", record=1)
 
                 index_or_length = rd.readdword()
                 if index_or_length >> 31:
                     d[keyname] = rd.readbytes(index_or_length & 0x7FFFFFFF)
                 else:
+                    if self.stru is None:
+                        raise ValueError(
+                            f'key "{keyname}" refers to CroStru record {index_or_length}, but CroStru is not open'
+                        )
                     if not 1 <= index_or_length <= self.stru.nrofrecords:
                         raise ValueError(
                             f'key "{keyname}" refers to CroStru record {index_or_length}, '
@@ -170,13 +220,13 @@ class Database:
                             f'key "{keyname}" refers to CroStru record {index_or_length}, which is deleted'
                         )
                     if refdata[:1] != b"\x04":
-                        self.warn("WARN: expected refdata to start with 0x04")
+                        self.report_structure("expected refdata to start with 0x04", record=index_or_length)
                     d[keyname] = refdata[1:]
         except EOFError as e:
             raise ValueError(f"the database definition is cut off after {len(d)} keys") from e
         return d
 
-    def dump_db_definition(self, args, dbdict):
+    def dump_db_definition(self, args: argparse.Namespace, dbdict: dict[str, bytes]) -> None:
         """
         decode the 'bank' / database definition
         """
@@ -186,21 +236,24 @@ class Database:
             else:
                 print(f'{k:<20} - "{strescape(v)}"')
 
-    def read_db_definition(self):
+    def read_db_definition(self) -> dict[str, bytes]:
         """
         Read and decode the database definition from CroStru record 1.
-        Raises ValueError when CroStru has no record 1, when it is deleted, or when it can't be decoded.
+        Raises ValueError when CroStru is not open, has no record 1, when it is deleted, or when it can't be
+        decoded.
         """
+        if self.stru is None:
+            raise ValueError("CroStru is not open, so it has no database definition")
         if self.stru.nrofrecords < 1:
             raise ValueError("CroStru holds no records, so it has no database definition")
         dbinfo = self.stru.readrec(1)
         if dbinfo is None:
             raise ValueError("CroStru record 1, which holds the database definition, is deleted")
         if dbinfo[:1] != b"\x03":
-            self.warn("WARN: expected dbinfo to start with 0x03")
+            self.report_structure("expected dbinfo to start with 0x03", record=1)
         return self.decode_db_definition(dbinfo[1:])
 
-    def dump_db_table_defs(self, args):
+    def dump_db_table_defs(self, args: argparse.Namespace) -> None:
         """
         decode the table defs from recid #1, which always has table-id #3
         Note that I don't know if it is better to refer to this by recid, or by table-id.
@@ -211,17 +264,26 @@ class Database:
         dbdef = self.read_db_definition()
         self.dump_db_definition(args, dbdef)
 
+        report = StoppingReporter(self.report)
         for k, v in dbdef.items():
-            if k.startswith("Base") and k[4:].isnumeric():
+            if is_table_key(k):
                 print(f"== {k} ==")
-                tbdef = TableDefinition(v, dbdef.get("BaseImage" + k[4:], b""))
+                try:
+                    tbdef = TableDefinition(
+                        v, dbdef.get("BaseImage" + k[4:], b""), report=for_table_definition(report, k)
+                    )
+                except Exception as e:
+                    report.raise_remembered()
+                    report(undecodable_table(k, e))
+                    continue
+                report.raise_remembered()
                 tbdef.dump(args)
             elif k == "NS1":
                 self.dump_ns1(v)
 
-    def dump_ns1(self, data):
+    def dump_ns1(self, data: bytes) -> None:
         if len(data) < 2:
-            print("NS1 is unexpectedly short", file=sys.stderr)
+            self.report_structure("NS1 is unexpectedly short")
             return
         (
             unk1,
@@ -234,140 +296,37 @@ class Database:
         decoded_data = ns1kod.decode(sh, data[2:])
 
         if len(decoded_data) < 12:
-            print("NS1 is unexpectedly short", file=sys.stderr)
+            self.report_structure("NS1 is unexpectedly short")
             return
         (
             serial,
             unk2,
             pwlen,
         ) = struct.unpack_from("<LLL", decoded_data, 0)
-        password = decoded_data[12 : 12 + pwlen].decode("cp1251")
+        password = decode_cp1251(decoded_data[12 : 12 + pwlen])
 
         print(f"== NS1: ({unk1:02x},{sh:02x}) -> {serial:6d}, {unk2:d}, {pwlen:d}:'{password}'")
 
-    def enumerate_tables(self, files=False):
-        """
-        yields a TableDefinition object for all `BaseNNN` entries found in CroStru
-        """
-        if not self.stru:
-            raise FileNotFoundError(self.missing_stru_message())
-        try:
-            dbdef = self.read_db_definition()
-        except Exception as e:
-            print(f"ERROR decoding db definition: {e}", file=sys.stderr)
-            print(KOD_HINT, file=sys.stderr)
-            return
-
-        for k, v in dbdef.items():
-            if k.startswith("Base") and k[4:].isnumeric():
-                if files and k[4:] == "000":
-                    yield TableDefinition(v)
-                if not files and k[4:] != "000":
-                    yield TableDefinition(v, dbdef.get("BaseImage" + k[4:], b""))
-
-    def enumerate_records(self, table):
-        """
-        Yields a Record object for all records in CroBank matching
-        the tableid from `table`
-
-        usage:
-        for tab in db.enumerate_tables():
-            for rec in db.enumerate_records(tab):
-                print(sqlformatter(tab, rec))
-        """
-        for i in range(self.bank.nrofrecords):
-            data = self.readbankrec(i + 1)
-            if data and data[0] == table.tableid:
-                record = Record(i + 1, table.fields, data[1:])
-                if record.errors:
-                    self.incomplete_records += 1
-                for fieldname, error in record.errors:
-                    print(
-                        f'Warning: record {i + 1:d} in table "{table.tablename}": field "{fieldname}" could not be '
-                        f"decoded ({error}) and is left empty -- {ashex(data)}",
-                        file=sys.stderr,
-                    )
-                yield record
-            del data
-
-    def enumerate_files(self, table):
-        """
-        Yield all file contents found in CroBank for `table`.
-        This is most likely the table with id 0.
-        """
-        for i in range(self.bank.nrofrecords):
-            data = self.readbankrec(i + 1)
-            if data and data[0] == table.tableid:
-                yield i + 1, data[1:]
-
-    def readbankrec_or_raise(self, recno):
-        """
-        Read record `recno` from CroBank, returning None when the record is deleted.
-        Raises LookupError, naming the record, when the record is corrupt.
-        """
-        try:
-            return self.bank.readrec(recno)
-        except (ValueError, struct.error) as e:
-            raise LookupError(f"CroBank record {recno:d} is corrupt: {describe_error(e)}") from e
-
-    def readbankrec(self, recno):
-        """
-        Read record `recno` from CroBank.
-        Returns None when the record is deleted, or when it is corrupt, after printing a warning.
-        """
-        try:
-            return self.readbankrec_or_raise(recno)
-        except LookupError as e:
-            print(f"Warning: {e}; skipping it", file=sys.stderr)
-            return None
-
-    @cached_property
-    def files_tableid(self):
-        """
-        The table id of the Files table, which holds the stored files, or None when the database has no Files table.
-        """
-        table = next(self.enumerate_tables(files=True), None)
-        return table.tableid if table else None
-
-    def get_record(self, index, asbase64=False):
-        """
-        Retrieve a stored file's record from CroBank with record number `index`.
-        Raises LookupError, naming the reason, when `index` is not the number of a readable record of the Files table.
-        """
-        try:
-            recno = int(index)
-        except ValueError:
-            raise LookupError(f"{index!r} is not a record number") from None
-        if not 1 <= recno <= self.bank.nrofrecords:
-            raise LookupError(f"CroBank has no record {recno:d}")
-        data = self.readbankrec_or_raise(recno)
-        if data is None:
-            raise LookupError(f"CroBank record {recno:d} is deleted")
-        if not data or data[0] != self.files_tableid:
-            raise LookupError(f"CroBank record {recno:d} is not a record of the Files table")
-        if asbase64:
-            return base64.b64encode(data[1:]).decode("utf-8")
-        else:
-            return data[1:]
-
-    def recdump(self, args):
+    def recdump(self, args: argparse.Namespace) -> None:
         """
         Function for outputing record contents of the various .dat files.
 
         This function is mostly useful for reverse-engineering the database format.
+        Raises ValueError naming the file when the chosen file is not open.
         """
         if args.index:
-            dbfile = self.index
+            name = "Index"
         elif args.sys:
-            dbfile = self.sys
+            name = "Sys"
         elif args.stru:
-            dbfile = self.stru
+            name = "Stru"
         else:
-            dbfile = self.bank
+            name = "Bank"
+        # Each component is kept in the attribute named after it: index, sys, stru and bank.
+        dbfile = getattr(self, name.lower())
 
         if not dbfile:
-            print(".dat not found", file=sys.stderr)
-            return
+            raise ValueError(f"no Cro{name}.dat and Cro{name}.tad in {self.dbdir}")
         nerr = 0
         nr_recnone = 0
         nr_recempty = 0

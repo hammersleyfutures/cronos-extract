@@ -36,10 +36,10 @@ The code is layered, from bytes up to commands (`src/cronos_extract/`):
 
 - **Public API** (`cronos_extract/__init__.py`, implemented in `_api/`): `open()` returns a `Bank` of `Table`s whose
   `records()` yield `Record`s of `Field`s with `value`, `text` and `raw`; problems it survives are `Diagnostic`s,
-  and a database it cannot read raises a `CronosError`. It drives `Datafile`, `Database.read_db_definition`,
-  `TableDefinition` and `Datamodel.Record` directly, never the printing `enumerate_*` generators, which only tests
-  still call, and passes a `warn` hook to the readers that print. Only names in `__all__` are public.
-  `_format/files.py`'s `open_regular_file` is the one way Cro files are opened.
+  and a database it cannot read raises a `CronosError`. It drives `Datafile`, `Database.read_db_definition` and
+  `TableDefinition` directly, passing each a `report` callback (`_diagnostic.py`'s `Reporter`) that turns every
+  problem reading survives into a `Diagnostic` with its `DiagnosticKind`; no reader prints. Only names in `__all__`
+  are public. `_format/files.py`'s `open_regular_file` is the one way Cro files are opened.
 - **`Datafile`**: one `.dat`/`.tad` pair. The `.tad` is an index of `(offset, length, flags)` entries, where a length of
   `0xFFFFFFFF` means deleted. Record numbers start at 1. Each `.tad` entry is parsed by `_format/tad.py`'s layout for
   its generation: v3 keeps the inline flag in bit 31 of the length, v4 in the top byte of the offset. Every record is
@@ -51,13 +51,12 @@ The code is layered, from bytes up to commands (`src/cronos_extract/`):
 - **`Database`**: opens `CroStru`, `CroIndex`, `CroBank` and `CroSys` in a directory, matching names case-insensitively,
   and closes them via `with Database(...)`. CroStru record 1 holds the *database definition*, a list of key/value pairs.
   A value is either inline, or a reference to another CroStru record when the high bit of its length is clear.
-  `BaseNNN` keys are table definitions, and `Base000` is the Files table that stores embedded files.
-  `enumerate_tables` is also used internally, by `files_tableid`; `enumerate_records` is used only by tests (the
-  Phase 1 parity tests and `test_cronos_builder.py`), and `enumerate_files` has no caller left. The Database
+  `BaseNNN` keys are table definitions, and `Base000` is the Files table that stores embedded files. The Database
   directory maps to the Cronos "Bank", a table to a "Base", and a record id to the "System Number".
 - **`Datamodel`**: `TableDefinition`/`FieldDefinition` decode definitions, and `Record`/`Field` turn record bytes into
-  presentable content (dates, times, text). Field type 6 is a file reference into the Files table. Record fields that
-  fail to decode are left empty and counted in `Database.incomplete_records`, which no caller reads anymore.
+  presentable content (dates, times, text). Field type 6 is a file reference into the Files table. `_api/values.py`'s
+  `decode_record` reports a field that fails to decode as `undecodable_field`, and a date or time that fails to parse
+  as `invalid_value`; the field's `value` is `None` and its `text` falls back to the raw text.
 - **Commands**:
   - `cronos-extract` (`cli.py`) builds the parser and dispatches to four subcommands; its `main()` is the one place
     that turns an exception into an `Error:` line and an exit status (0 finished, 1 cannot read or failed, 2 usage,
@@ -71,8 +70,9 @@ The code is layered, from bytes up to commands (`src/cronos_extract/`):
   - `inspect` (`_cli/inspect.py`) has `strudump`, `recdump`, `crodump`, `destruct` and `kodump` over the internal
     readers, opening the Cro files itself so that only a file the subcommand reads can stop it.
   - `crack` (`_cli/crack.py`) has `strucrack` and `dbcrack` over `_api/crack.py`'s statistics.
-- **`readers.ByteReader`** is the sequential reader every decoder uses. It raises `EOFError` past the end and decodes
-  names as CP-1251, replacing undefined bytes.
+- **`readers.ByteReader`** is the sequential reader every decoder uses. It raises `EOFError` past the end. All CP-1251
+  text in the readers, names included, decodes through `readers.decode_cp1251`, which replaces the one byte CP-1251
+  leaves undefined (`0x98`) with U+FFFD instead of dropping or raising on it.
 
 ### KOD cipher
 
@@ -91,10 +91,15 @@ does the same without printing and returns `None` when it can't produce a permut
 
 ### Error-handling conventions
 
-- Diagnostics go to **stderr**, escaped, one line each, through `_cli/report.py`; `export` writes SQL and JSON Lines
-  to stdout, so a stray `print` corrupts the export.
-- Corrupt structures raise `ValueError` naming the record and file. Readers of CroBank records turn that into
-  `LookupError`, then warn and skip the record (`Database.readbankrec`). Exports keep going and report counts at the end.
+- A problem a reader survives is a `Diagnostic` (`_diagnostic.py`): a `kind`, `message`, and the `file`, `table`,
+  `record` and `field` it concerns, each `None` when it does not apply. Readers take a required `report` callback and
+  call it with each `Diagnostic` as it happens; none of them prints. `export` passes `cronos_extract.open`'s
+  `on_diagnostic`; `inspect` passes a `_cli/report.py` `Report`'s `diagnostic` method. Either way the diagnostic
+  becomes one escaped `warning: kind: location: message` line on **stderr**, through `_cli/report.py`; `export`
+  writes SQL and JSON Lines to stdout, so a stray `print` corrupts the export.
+- Corrupt structures raise `ValueError` naming the record and file. `Bank._read` (`_api/bank.py`) catches an
+  exception reading a CroBank record, reports it as `corrupt_record` the first time only, and skips the record.
+  Exports keep going and report counts at the end.
 - A database definition that can't be decoded is `DatabaseDefinitionError`: `export` exits 1 with one `Error:` line
   naming `cronos-extract crack strucrack`; `inspect strudump` prints the error and `KOD_HINT`.
 
@@ -108,10 +113,14 @@ does the same without printing and returns `None` when it can't produce a permut
 - Before a subcommand is wired into `cli.py`, or to read its output in this process,
   `tests/cli.py::run_in_process(add_parser, args)` parses real arguments and runs the handler.
 - `tests/test_cli_characterisation.py` compares full command output with `tests/golden/`.
+- `tests/golden/api/*.jsonl` pin the public API's field text per record, one file per builder version, KOD case and
+  record layout (`tests/test_api_golden.py`).
 - `local/` is gitignored and holds machine-local test assets. `local/mash_datasets_with_CroIndex_dat.txt` lists
   real CronosPro database directories (v3 `01.02` and `01.03`, v4 `01.11`, no v7) for
   `cronos-extract survey --list` and for trying the readers on real data. Never commit its contents or quote its
-  entries: they name datasets that are not ours to publish.
+  entries: they name datasets that are not ours to publish. `local/realdata-fingerprints.json` holds a per-database
+  record count and a SHA-256 of the API's field text for those real databases, rewritten by
+  `uv run pytest -q -m realdata tests/test_realdata.py -k fingerprint --update-golden`.
 - `docs/cronos-research.md` documents the file format (`.dat`/`.tad` layout, CroStru, CroBank, table and field
   definitions, compressed records, v4).
 
