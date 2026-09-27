@@ -681,10 +681,10 @@ def test_export_of_an_own_kod_v4_bank_with_the_default_kod_exits_1_naming_dbcrac
     assert result.returncode == 1
     assert result.stdout == ""
     assert result.stderr.splitlines() == [
-        "warning: mismatched_kod: CroBank.dat: the file's header shows that the KOD given is not its KOD",
+        "warning: mismatched_kod: CroBank.dat: the file's header shows that the KOD used is not its KOD",
         "",
         "1 diagnostic: 1 mismatched_kod",
-        f"Error: CroBank.dat in {dbdir} has a header that shows the KOD given is not the database's KOD. "
+        f"Error: CroBank.dat in {dbdir} has a header that shows the KOD used is not the database's KOD. "
         + "export --crack dbcrack uses the KOD that cronos-extract crack dbcrack derives.",
     ]
 
@@ -697,10 +697,10 @@ def test_export_of_an_own_kod_v4_stru_with_the_default_kod_exits_1_naming_strucr
     assert result.returncode == 1
     assert result.stdout == ""
     assert result.stderr.splitlines() == [
-        "warning: mismatched_kod: CroStru.dat: the file's header shows that the KOD given is not its KOD",
+        "warning: mismatched_kod: CroStru.dat: the file's header shows that the KOD used is not its KOD",
         "",
         "1 diagnostic: 1 mismatched_kod",
-        f"Error: CroStru.dat in {dbdir} has a header that shows the KOD given is not the database's KOD. "
+        f"Error: CroStru.dat in {dbdir} has a header that shows the KOD used is not the database's KOD. "
         + "export --crack strucrack uses the KOD that cronos-extract crack strucrack derives.",
     ]
 

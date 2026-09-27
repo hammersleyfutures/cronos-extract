@@ -54,20 +54,20 @@ reimplemented.
 
 `select_kod`'s rows for a KOD-encoded v4 file become: with a KOD (default or not) that the header accepts, decode with
 it and report nothing; with one it rejects, decode with it and report `mismatched_kod` with the message `the file's
-header shows that the KOD given is not its KOD`; with none, 3c's row (`mismatched_kod`, read without KOD decoding).
+header shows that the KOD used is not its KOD`; with none, 3c's row (`mismatched_kod`, read without KOD decoding).
 When the check is None, 3c's rows apply. Files that are not KOD-encoded, v3 files and `01.04`/`01.05` keep 3c's table.
 
 `open()` raises `WrongKod` (a new `CronosError`) when the KOD in use fails the header check of a KOD-encoded v4 CroStru
 or CroBank: CroStru first, then CroBank, both before the database definition is decoded. So a wrong KOD, default or
 given, is refused; a default KOD the header accepts is used; with `kod=None` nothing is checked and 3c's warning stays.
-The message names the file and the directory, says its header shows the KOD is not the database's, and ends with a
-hint: one constant naming `cronos_extract.crack_kod(path, "dbcrack")` for CroBank, another naming `"strucrack"` for
-CroStru; the command line's `error_message` replaces each with its own hint naming `--crack dbcrack` or `--crack
-strucrack` and the matching `cronos-extract crack` command, each pinned by a subprocess test. `open()` learns the
-verdict by calling `kod_fits_header(datafile.header, datafile.kod)` after each `open_datafile` (`datafile.kod` is None
-with `kod=None`, so nothing is checked). The `mismatched_kod` diagnostic is reported while the file is opened, so it
-still precedes `WrongKod`'s `Error:` line. `inspect` opens files through `Database` and
-keeps the warning.
+The message, `Cro<Stru|Bank>.dat in {directory} has a header that shows the KOD used is not the database's KOD.`,
+names the file and the directory, and ends with a hint: one constant naming `cronos_extract.crack_kod(path,
+"dbcrack")` for CroBank, another naming `"strucrack"` for CroStru; the command line's `error_message` replaces each
+with its own hint naming `--crack dbcrack` or `--crack strucrack` and the matching `cronos-extract crack` command,
+each pinned by a subprocess test. `open()` learns the verdict by calling `kod_fits_header(datafile.header,
+datafile.kod)` after each `open_datafile` (`datafile.kod` is None with `kod=None`, so nothing is checked). The
+`mismatched_kod` diagnostic is reported while the file is opened, so it still precedes `WrongKod`'s `Error:` line.
+`inspect` opens files through `Database` and keeps the warning.
 
 3d's `OwnKodRequired`, its hint and its header-flag rule are removed outright (it was never released): `WrongKod`
 takes its place in `__all__`, in `open()`'s and the package's docstrings, and in the tests, which move to the new rule.

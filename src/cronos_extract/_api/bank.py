@@ -375,7 +375,7 @@ def refuse_a_kod_the_header_rejects(datafile: Datafile, directory: Path, hint: s
     """Raise WrongKod, ending with `hint`, when `datafile`'s header shows that the KOD decoding it is not its own."""
     if datafile.kod is not None and kod_fits_header(datafile.header, datafile.kod) is False:
         raise WrongKod(
-            f"Cro{datafile.name}.dat in {directory} has a header that shows the KOD given is not the database's KOD. "
+            f"Cro{datafile.name}.dat in {directory} has a header that shows the KOD used is not the database's KOD. "
             f"{hint}"
         )
 

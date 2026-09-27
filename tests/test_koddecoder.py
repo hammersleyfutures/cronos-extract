@@ -181,7 +181,7 @@ def test_kod_fits_header_says_nothing_about_a_v4_file_too_short_for_the_check(tm
     assert kod_fits_header(seven_bytes, KODcoding(INITIAL_KOD)) is None
 
 
-WRONG_KOD_MESSAGE = "the file's header shows that the KOD given is not its KOD"
+WRONG_KOD_MESSAGE = "the file's header shows that the KOD used is not its KOD"
 
 
 def v4_header(written_with: list[int], check_size: int = 8) -> DatHeader:

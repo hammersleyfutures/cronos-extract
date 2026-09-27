@@ -297,7 +297,7 @@ def test_strudump_of_an_own_kod_v4_bank_with_the_default_kod_warns_and_is_not_re
     assert result.returncode == 0, result.stderr
     assert "Error:" not in result.stderr
     assert (
-        "warning: mismatched_kod: CroBank.dat: the file's header shows that the KOD given is not its KOD"
+        "warning: mismatched_kod: CroBank.dat: the file's header shows that the KOD used is not its KOD"
         in result.stderr.splitlines()
     )
 

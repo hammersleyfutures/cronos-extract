@@ -356,7 +356,7 @@ def select_kod(header: DatHeader, kod: KODcoding | None, filename: str) -> tuple
     if fits is not None:
         if fits:
             return kod, None
-        return kod, problem(DiagnosticKind.MISMATCHED_KOD, "the file's header shows that the KOD given is not its KOD")
+        return kod, problem(DiagnosticKind.MISMATCHED_KOD, "the file's header shows that the KOD used is not its KOD")
     if not header.own_kod:
         if is_default:
             return new(), None

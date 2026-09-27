@@ -304,7 +304,7 @@ def a_record() -> bytes:
 
 def wrong_kod_message(filename: str, dbdir: str, method: str) -> str:
     return (
-        f"{filename} in {dbdir} has a header that shows the KOD given is not the database's KOD. "
+        f"{filename} in {dbdir} has a header that shows the KOD used is not the database's KOD. "
         f'cronos_extract.crack_kod(path, "{method}") can recover the database\'s KOD.'
     )
 
@@ -361,7 +361,7 @@ def test_a_kod_a_v4_header_rejects_raises_wrong_kod_naming_the_file_checked_firs
         (
             cronos_extract.DiagnosticKind.MISMATCHED_KOD,
             refused_file,
-            "the file's header shows that the KOD given is not its KOD",
+            "the file's header shows that the KOD used is not its KOD",
         )
     ]
 
@@ -384,6 +384,21 @@ def test_a_v4_database_whose_headers_accept_the_kod_opens_without_kod_warnings(
         assert [record["Entry #1"].text for table in bank.tables for record in table.records()] == ["42", "42"]
 
     assert [diagnostic for diagnostic in seen if diagnostic.kind in KOD_KINDS] == []
+
+
+def test_a_kod_encoded_v4_stru_read_without_kod_decoding_is_not_refused(tmp_path: Path) -> None:
+    dbdir = v4_database(tmp_path / "db", random_kod(seed=1), random_kod(seed=1))
+    seen: list[cronos_extract.Diagnostic] = []
+
+    # Nothing is checked without a KOD, so the still-encoded definition fails to decode instead of raising WrongKod.
+    with pytest.raises(cronos_extract.DatabaseDefinitionError) as failed:
+        cronos_extract.open(dbdir, kod=None, on_diagnostic=seen.append)
+
+    assert not isinstance(failed.value, cronos_extract.WrongKod)
+    assert [(diagnostic.kind, diagnostic.file) for diagnostic in seen if diagnostic.kind in KOD_KINDS] == [
+        (cronos_extract.DiagnosticKind.MISMATCHED_KOD, "CroStru.dat"),
+        (cronos_extract.DiagnosticKind.MISMATCHED_KOD, "CroBank.dat"),
+    ]
 
 
 def test_a_v4_bank_too_short_for_the_check_is_not_refused(tmp_path: Path) -> None:
