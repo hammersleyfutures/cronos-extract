@@ -145,18 +145,20 @@ databases for something that is not a problem reading.
 ### D4. The realdata checks classify per file and catch garbage
 
 - `tests/test_realdata.py`'s `is_v4` asks whether CroBank is v4. The `.tad` check runs on every Cro file whose own
-  header is v4 and gains the assertion that the header's deleted count equals the entries D1's rule marks deleted, reading
-  every entry in chunks rather than the first `TAD_ENTRIES_CHECKED`; the dbcrack test runs on every database whose
-  CroBank is v4.
-- A new test: for every database that opens with the default KOD, at least 90% of its first 10,000 live CroBank
-  records carry the table id of a table in `bank.tables` or of the Files table. It reads records through
-  `bank._bank_file.read_record` and the Files table's id through `bank._files_table_id`; a database with no live
-  records among them is skipped; its failure message says how many records carry an id of a table the definition
-  names but `bank.tables` left out (`undecodable_table`), so a wrong KOD and a left-out table are told apart. A real
-  database that fails it is reported, not the threshold loosened.
+  header is v4 and gains the assertion that the header's deleted count equals the entries D1's rule marks deleted,
+  reading every entry in chunks rather than the first `TAD_ENTRIES_CHECKED`; the dbcrack test runs on every database
+  whose CroBank is v4.
+- A new test: for every database that opens with the default KOD and whose CroBank header is KOD-encoded, at least
+  90% of its first 10,000 live CroBank records carry the table id of a table in `bank.tables` or of the Files table.
+  It reads records through `bank._bank_file.read_record` and the Files table's id through `bank._files_table_id`; a
+  database whose CroBank is not KOD-encoded (no KOD can decode it wrongly) is skipped, saying so, and so is one with
+  fewer than 100 live records among them (too few to judge a fraction by); its failure message says how many records
+  carry an id of a table the definition names but `bank.tables` left out (`undecodable_table`), so a wrong KOD and a
+  left-out table are told apart. A real database that fails it is reported, not the threshold loosened.
 - The mixed database now raises `OwnKodRequired`: its fingerprint is removed from `local/realdata-fingerprints.json`,
-  and `V4_CRACK_XFAIL`'s reason says what the run shows those databases fail on (dbcrack returning None, or the
-definition not decoding with its KOD), and that their own-KOD CroStru is the open question (3e).
+  and `V4_CRACK_XFAIL`'s reason says what the run shows: dbcrack returns None for those databases because their
+  CroBank and CroIndex are not KOD-encoded, so there are no encoded records to learn from; their CroStru is encoded
+  with its own KOD and holds too few records for strucrack, which is the open question (3e).
 
 ### D5. 3c's records are corrected
 

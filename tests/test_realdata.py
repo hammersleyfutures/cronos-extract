@@ -34,6 +34,8 @@ TAD_ENTRIES_CHECKED = 1_000_000
 # a table id the definition names.
 LIVE_RECORDS_SAMPLED = 10_000
 LIVE_RECORDS_MATCH_FRACTION = 0.9
+# The garbage check skips a database with fewer live CroBank records than this, too few to judge a fraction by.
+MIN_LIVE_RECORDS_SAMPLED = 100
 DBCRACK_TEST = "test_dbcrack_recovers_a_kod_that_opens_a_v4_database"
 # The tests that run on the 01.11 databases only.
 V4_TESTS = ("test_v4_tad_entries_never_use_the_v3_deleted_length", DBCRACK_TEST)
@@ -41,8 +43,9 @@ V4_TESTS = ("test_v4_tad_entries_never_use_the_v3_deleted_length", DBCRACK_TEST)
 # recovers it for the others.
 V4_CRACK_XFAIL = pytest.mark.xfail(
     strict=True,
-    reason="neither crack method recovers the KOD of a real 01.11 database whose CroBank header is not "
-    "KOD-encoded; how v4 encodes records is an open item",
+    reason="dbcrack returns None: this database's CroBank and CroIndex are not KOD-encoded, so there are no encoded "
+    "records to learn from; its CroStru is encoded with its own KOD and holds too few records for strucrack, which "
+    "is Phase 3e's question",
 )
 
 
@@ -251,9 +254,12 @@ def test_live_records_belong_to_the_tables_the_definition_names(dbdir: Path) -> 
     At least 90% of the first 10,000 live CroBank records carry the table id of a table in bank.tables or of the
     Files table, catching records decoded with the wrong KOD. A record whose id instead belongs to a table the
     definition names but bank.tables left out is counted separately, so a wrong KOD and a left-out table are told
-    apart.
+    apart. Only a KOD-encoded CroBank can be decoded with the wrong KOD, and a fraction of fewer than 100 records
+    says little, so any other database is skipped.
     """
     with open_or_skip(dbdir, compact=True) as bank:
+        if not bank._bank_file.header.kod_encoded:
+            pytest.skip("CroBank's header says its records are not KOD-encoded, so no KOD can decode them wrongly")
         known_ids = {table.id for table in bank.tables}
         if bank._files_table_id is not None:
             known_ids.add(bank._files_table_id)
@@ -279,8 +285,8 @@ def test_live_records_belong_to_the_tables_the_definition_names(dbdir: Path) -> 
                 left_out_ids = defined_table_ids(bank) - known_ids
             if table_id in left_out_ids:
                 left_out += 1
-        if sampled == 0:
-            pytest.skip("no live CroBank records among the first records")
+        if sampled < MIN_LIVE_RECORDS_SAMPLED:
+            pytest.skip(f"{sampled} live CroBank records, fewer than the {MIN_LIVE_RECORDS_SAMPLED} the check needs")
         assert matched >= sampled * LIVE_RECORDS_MATCH_FRACTION, (
             f"{sampled - matched} of {sampled} sampled live records carry a table id bank.tables does not have "
             f"({left_out} of those are ids of tables the definition names but bank.tables left out)"
