@@ -5,6 +5,7 @@ import signal
 import subprocess
 import sys
 import time
+from importlib.metadata import version
 from pathlib import Path
 
 import pytest
@@ -32,7 +33,7 @@ def test_version_prints_the_package_version() -> None:
     result = run_command("cli", ["--version"])
 
     assert result.returncode == 0
-    assert result.stdout == "cronos-extract 1.0.0\n"
+    assert result.stdout == f"cronos-extract {version('cronos-extract')}\n"
     assert result.stderr == ""
 
 
