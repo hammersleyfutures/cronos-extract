@@ -48,7 +48,7 @@ it survives as a diagnostic.
   failure writes one `Error:` line on stderr, with no traceback.
 - If the `.tad` file of CroBank lists deleted records, the export tells how many.
 - `cronos-extract --version` prints the version.
-- The library checks the CRC-32 of each compressed record. It keeps a record whose CRC-32 does not agree with its
+- The library examines the CRC-32 of each compressed record. It keeps a record whose CRC-32 does not agree with its
   data, and it reports the record as `checksum_mismatch`.
 - The header of a KOD-encoded v4 file shows whether a KOD is its KOD. If the header of CroStru or CroBank rejects the
   KOD, `open()` raises `WrongKod`. `crack_kod()` does not return a KOD that the header of the file rejects.
