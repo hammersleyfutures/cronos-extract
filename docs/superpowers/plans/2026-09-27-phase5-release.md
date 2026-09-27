@@ -138,7 +138,7 @@ The controller appends the Outcome; the release steps (R5) follow the pull reque
 
 ## Outcome
 
-Implemented on branch `phase5-release` in 13 commits after the plan (`02622a0`..`b4a2acf`, plus this record),
+Implemented on branch `phase5-release` in 11 commits after the plan (`02622a0`..`b4a2acf`, plus this record),
 subagent-driven: an implementer and a task review per task, then a whole-branch review by Fable and one fix wave. The
 branch also holds the Phase 3f spike's record (`0c9fb2e`), made before this plan.
 
