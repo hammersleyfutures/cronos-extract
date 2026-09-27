@@ -41,6 +41,8 @@
 
 Ben is making `hammersleyfutures/cronos-extract` private until the package is published to PyPI. Check the repository's visibility (`gh repo view hammersleyfutures/cronos-extract --json visibility,isFork`) at the start of the session, and plan around these consequences:
 
+**Note (2026-09-27):** The repository was already public. See the roadmap's decision 9.
+
 - GitHub does not let a public fork be made private. Making it private needs the fork detached from alephdata's network first (GitHub Support), or a new private repository with this history pushed to it. If a new repository is used, update the `origin` remote and every `-R hammersleyfutures/cronos-extract` in this plan.
 - CodeQL code scanning on a private repository needs a GitHub Code Security licence. Without it the `codeql.yml` workflow and the `CodeQL` check fail or don't run (Task 3); ask Ben whether to keep the workflow, disable it, or run the CodeQL CLI locally instead (`codeql database create` + `codeql database analyze ... codeql/python-queries:codeql-suites/python-security-and-quality.qls`; the CLI bundle is at https://github.com/github/codeql-action/releases).
 - Copilot code review on a private repository needs a Copilot plan with code review (Task 4).
@@ -59,6 +61,7 @@ Ben is making `hammersleyfutures/cronos-extract` private until the package is pu
 - The GitHub fork is to be detached from alephdata's fork network — Ben does this via GitHub Support.
 - A courtesy issue on alephdata/cronodump is drafted (Appendix B). Do not post it. Ben will post it once he has developed the package further and published it to PyPI, after approving the final text.
 - Ben is making the GitHub repository private until the PyPI release (decided 2026-09-15). See "Private repository" above.
+  **Note (2026-09-27):** The repository was already public. See the roadmap's decision 9.
 
 ---
 
@@ -291,6 +294,7 @@ Expected: `state=MERGED`; `master` contains the merge; tests pass on `master`.
 - **Task 7:** `CLAUDE.md` merged as PR #4 (`a10d51a`).
 - **Task 8:** the modernisation brainstorm produced `docs/superpowers/specs/2026-09-15-modernisation-roadmap-design.md`, merged with the plans as PR #5 (`c4a4dba`). Phase 0 of that roadmap merged as PR #6 (`d24afe9`); PR #7 (`9a5562b`) recorded the survey result and ignored `local/`.
 - The repository was still public on 2026-09-15; making it private remains intended before the PyPI release.
+  **Note (2026-09-27):** The repository was already public. See the roadmap's decision 9.
 - Appendix A remains the input backlog for the roadmap's later phases; items raised during Phase 0 are carried forward in the spec.
 
 ## Appendix A: Modernisation backlog (not part of PR 2)

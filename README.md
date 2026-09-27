@@ -48,7 +48,8 @@ The command creates the directory `cronos-extract-YYYY-mm-dd-HH-MM-SS-ffffff/` i
 directory holds:
 
 - A CSV file for each table.
-- `Files-FL/`, with each file that the database stores. This includes the files that no record refers to.
+- `Files-<abbreviation>/` (the Files table's abbreviation, `Files-FL/` for the test database), with each file that
+  the database stores. This includes the files that no record refers to.
 - `Files-Referenced/`, with the files that the records refer to, under their own names.
 
 `Files-Referenced/` appears at the first record of a table with a file field. It also appears for a record whose
@@ -111,7 +112,7 @@ database reports that its table definitions have an unexpected layout. Thus `--s
 cronos-extract export --csv --strict -o strict test_data/all_field_types   # exits 1, because of the diagnostics
 ```
 
-The header of a v4 Cro file shows whether a KOD is the KOD of the database. If the header rejects the KOD, the
+The header of a v4 Cro file shows when a KOD is not the KOD of the database. If the header rejects the KOD, the
 export stops and exits with 1. Its `Error:` line names the `export --crack` method that can recover the correct KOD.
 If the database definition cannot be decoded, the `Error:` line names `cronos-extract crack strucrack`.
 

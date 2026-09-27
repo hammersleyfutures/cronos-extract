@@ -50,7 +50,7 @@ it survives as a diagnostic.
 - `cronos-extract --version` prints the version.
 - The library examines the CRC-32 of each compressed record. It keeps a record whose CRC-32 does not agree with its
   data, and it reports the record as `checksum_mismatch`.
-- The header of a KOD-encoded v4 file shows whether a KOD is its KOD. If the header of CroStru or CroBank rejects the
+- The header of a KOD-encoded v4 file shows when a KOD is not its KOD. If the header of CroStru or CroBank rejects the
   KOD, `open()` raises `WrongKod`. `crack_kod()` does not return a KOD that the header of the file rejects.
 - If a file does not use the KOD that the library got, the library reports `unused_kod`. If the KOD is not correct
   for a file, the library reports `mismatched_kod`.
