@@ -762,7 +762,7 @@ def test_a_crack_that_recovers_nothing_exits_1(tmp_path: Path) -> None:
     result = run_command("cli", ["export", "--jsonl", "--crack", "dbcrack", dbdir])
 
     assert result.returncode == 1
-    assert "cronos-extract crack strucrack" in last_line(result.stderr)
+    assert f"cronos-extract crack dbcrack {dbdir}" in last_line(result.stderr)
 
 
 def test_strict_exits_1_after_writing_the_output(tmp_path: Path) -> None:

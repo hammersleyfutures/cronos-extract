@@ -67,7 +67,7 @@ def selected_kod(args: argparse.Namespace) -> Kod | None:
         if kod is None:
             raise Failure(
                 f"{args.crack} cannot recover the KOD of {args.dbdir}; recover it with "
-                f"cronos-extract crack strucrack {args.dbdir} and pass it with --kod"
+                f"cronos-extract crack {args.crack} {args.dbdir} and pass it with --kod"
             )
         return kod
     return Kod.default()
