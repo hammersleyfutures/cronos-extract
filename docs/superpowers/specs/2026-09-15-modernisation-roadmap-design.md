@@ -34,13 +34,17 @@ Every decision below was made with Ben on 2026-09-15.
     own spec, plan and pull request; 3a is designed in `2026-09-25-phase3a-datafile-core-design.md`. **Phase 3e
     added (decided 2026-09-26):** research into the locked v4 CroStru files (the `.dat` header's 256 bytes, known
     plaintext from CroStru's known structure), the unexplained v4 `.tad` flags `04`, `08`, `0c` and `07`, and the
-    third `.tad` field's timestamps, with `2026-09-26-phase3d-v4-fixes-design.md`'s Evidence as its brief.
+    third `.tad` field's timestamps, with `2026-09-26-phase3d-v4-fixes-design.md`'s Evidence as its brief. **Phase 3f
+    added (decided 2026-09-27):** Phase 3e found that a v4 `.dat` header checks a KOD exactly and that CroStru record
+    1 holds known plaintext (`2026-09-27-phase3e-v4-header-kod-design.md`'s Evidence), but left recovering the KOD of
+    the locked v4 databases to a phase of its own: 3f, a known-plaintext KOD solver, before 1.0, with 3e's Evidence as
+    its brief.
 
 ## Roadmap
 
 Each phase is a separate spec, plan and pull request, in this order. Phase 4 (v7) comes after 1.0 (decision 13).
 
-**Status (2026-09-26):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is complete: it is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below, and was merged as PR #9. Phase 2 is designed in `2026-09-17-phase2-command-line-design.md` and was merged as PR #11. Phase 3a is designed in `2026-09-25-phase3a-datafile-core-design.md` and was merged as PR #12. Phase 3b is designed in `2026-09-26-phase3b-definitions-diagnostics-design.md` and was merged as PR #13. Phase 3c is designed in `2026-09-26-phase3c-bank-reading-design.md` and was merged as PR #14. Phase 3d is designed in `2026-09-26-phase3d-v4-fixes-design.md` and implemented on branch `phase3d-v4-fixes`, pull request pending.
+**Status (2026-09-27):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is complete: it is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below, and was merged as PR #9. Phase 2 is designed in `2026-09-17-phase2-command-line-design.md` and was merged as PR #11. Phase 3a is designed in `2026-09-25-phase3a-datafile-core-design.md` and was merged as PR #12. Phase 3b is designed in `2026-09-26-phase3b-definitions-diagnostics-design.md` and was merged as PR #13. Phase 3c is designed in `2026-09-26-phase3c-bank-reading-design.md` and was merged as PR #14. Phase 3d is designed in `2026-09-26-phase3d-v4-fixes-design.md` and was merged as PR #15. Phase 3e is designed in `2026-09-27-phase3e-v4-header-kod-design.md` and implemented on branch `phase3e-v4-header-kod`, pull request pending. Phase 3f, the known-plaintext KOD solver, is next.
 
 ### Phase 0 — version survey
 
@@ -56,7 +60,7 @@ The `cronos-extract` subcommands (`survey`, `export`, `inspect`, `crack`), globa
 
 ### Phase 3 — restructure behind the façade
 
-Type annotations throughout; one record-decoding path in place of the copies in `Datafile.readrec` and `Datafile.dump`; a reader interface per format version; one CP-1251 decoding policy; one KOD-selection function; diagnostics in place of `print`. Fixes: tables with ids above 255, CRC checking, a diagnostic when a supplied KOD is not used, warnings printed once per problem instead of once per table pass, and the Files table header. The Phase 1 and Phase 2 tests guard every step. Delivered as 3a–3d (decision 14), with research into what 3d could not settle carried forward as Phase 3e.
+Type annotations throughout; one record-decoding path in place of the copies in `Datafile.readrec` and `Datafile.dump`; a reader interface per format version; one CP-1251 decoding policy; one KOD-selection function; diagnostics in place of `print`. Fixes: tables with ids above 255, CRC checking, a diagnostic when a supplied KOD is not used, warnings printed once per problem instead of once per table pass, and the Files table header. The Phase 1 and Phase 2 tests guard every step. Delivered as 3a–3e (decision 14): 3e researched what 3d could not settle, and checks a KOD against a v4 file's header. Phase 3f, a known-plaintext KOD solver for the v4 databases whose own-KOD CroStru is locked, follows before Phase 5, with `2026-09-27-phase3e-v4-header-kod-design.md`'s Evidence as its brief.
 
 ### Phase 4 — v7 reader (after 1.0)
 
@@ -91,10 +95,22 @@ Found during Phase 0 and its reviews and not fixed there, each with the phase th
     2023–2024 Unix timestamps seen in one real database, are unexplained and become Phase 3e's research. One real
     database is a mixed-generation database (v3 CroStru, v4 own-KOD KOD-encoded CroBank and CroIndex) with
     22,870,296 genuine live records: read with the wrong, default KOD before 3d its export was garbage; `open()`
-    now refuses it with `OwnKodRequired` unless its own KOD is given, and `crack_kod(path, "dbcrack")` recovers that
-    KOD in 2 s. Its slowness is the record count and per-byte KOD decoding (about 120 µs a record), not flag-`02`
+    now refuses it with `WrongKod` (Phase 3e) unless its own KOD is given, and `crack_kod(path, "dbcrack")` recovers
+    that KOD in 2 s. Its slowness is the record count and per-byte KOD decoding (about 120 µs a record), not flag-`02`
     entries read as live.
-  - KOD recovery fails on the real v4 databases whose CroBank and CroIndex headers are not KOD-encoded (both crack methods return `None`); how those databases encode records needs investigating. `tests/test_realdata.py` marks this as a strict xfail.
+  - **(done, Phase 3e)** the v4 `.dat` header's KOD check and the v4 `.tad` flags: the header block after the 19-byte
+    header starts with 8 zero bytes KOD-encoded with the database's own KOD, so `koddecoder.kod_fits_header` checks a
+    KOD exactly. `select_kod` reports a KOD a KOD-encoded v4 file's header rejects, the default included, `open()`
+    refuses one for CroStru or CroBank with `WrongKod` (in place of 3d's `OwnKodRequired`), and `crack_kod` does not
+    return one for the file it read. A v4 entry is inline when flag bit `0x04` is set, so flag-`08` records are read
+    as the extended records they are; bit `0x08` looks like "the third field is a time", and bit `0x01` and flag `03`
+    stay unexplained. `docs/cronos-research.md` records the evidence and its limits, and `tests/test_realdata.py`
+    asserts it.
+  - **(researched, Phase 3e; open for Phase 3f)** KOD recovery fails on the real v4 databases whose CroBank and
+    CroIndex headers are not KOD-encoded (both crack methods return `None`): their CroStru is encoded with their own
+    KOD and holds too few records for strucrack (3d). Phase 3e found that its header gives away 8 KOD entries and that
+    known plaintext in its record 1 (`Base000`) recovered 78 correct entries of 256 in one database; recovering the
+    rest is Phase 3f. `tests/test_realdata.py` marks this as a strict xfail.
   - Decoding KOD faster: `koddecoder.KODcoding.decode` decodes one byte at a time in Python, about 120 µs a record,
     so about 45 minutes for the 22.87 million records of the slowest real database. `bytes.translate` for the table
     lookup, then a position ramp, could do this faster.

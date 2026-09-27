@@ -79,6 +79,8 @@ under `tests/golden/api/` change by that record's absence being real rather than
 
 ### D2. `open()` refuses an own-KOD CroBank with the default KOD
 
+(2026-09-27) Replaced by Phase 3e's E2: `WrongKod` and the header check.
+
 `open()` raises `OwnKodRequired`, a new public `CronosError` in `__all__`, when CroBank is v4, its header is
 KOD-encoded, and the KOD in use equals the default one, whether it was given or left as the default. It applies to v4
 only: that is where the evidence is. `01.04` and `01.05` files are also marked own-KOD, but none is among the real

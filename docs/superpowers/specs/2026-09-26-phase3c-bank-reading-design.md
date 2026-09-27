@@ -113,6 +113,10 @@ its `report` callback; `open()`'s own `unused_kod` check goes. Every reader of a
 CroBank encoded with its own KOD) is no longer `mismatched_kod`: `open()` now refuses it with `OwnKodRequired`. See
 3d D2.
 
+**(2026-09-27, Phase 3e):** for a KOD-encoded v4 file whose header can tell, 3e's E2 replaces the rows above: a KOD
+the header accepts, the default included, is used and not reported; one it rejects is used and reported as
+`mismatched_kod`, and `open()` refuses it for CroStru or CroBank with `WrongKod`, which replaced `OwnKodRequired`.
+
 "KOD-encoded" is bit 0 of the `.dat` header's encoding field (`DatHeader.kod_encoded`); "its own KOD" is
 `DatHeader.own_kod` (versions `01.04`, `01.05` and v4). `kod_encoded` is tested first: `own_kod` matters only for an
 encoded file, so a v4 file whose header is not KOD-encoded (as some real v4 databases are) takes the "not KOD-encoded"

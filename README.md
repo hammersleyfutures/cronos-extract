@@ -25,8 +25,8 @@ once a record of a table with a file field is written, a `Files-Referenced/` dir
 records refer to, under their own names; it appears at that first record, even when its file field is empty.
 `-o DIR` names the directory instead; it must not exist, because an export never overwrites anything.
 
-If the export stops with an error about the database definition, or its output is unreadable, the database is
-probably encrypted with its own KOD; see [Recovering the KOD](#recovering-the-kod-of-an-encrypted-database).
+If the export stops with an error about the database definition or the KOD, or its output is unreadable, the
+database is probably encrypted with its own KOD; see [Recovering the KOD](#recovering-the-kod-of-an-encrypted-database).
 
 
 # Exporting

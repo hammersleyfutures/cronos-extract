@@ -35,23 +35,24 @@ uv run cronos-extract survey test_data    # report each database's format versio
 The code is layered, from bytes up to commands (`src/cronos_extract/`):
 
 - **Public API** (`cronos_extract/__init__.py`, implemented in `_api/`): `open()` returns a `Bank` of `Table`s whose
-  `records()` yield `Record`s of `Field`s with `value`, `text` and `raw`; problems it survives are `Diagnostic`s,
-  and a database it cannot read raises a `CronosError`, including `OwnKodRequired` for a v4 CroBank whose own KOD
-  was not given. It drives `Datafile`, `Database.read_db_definition` and `TableDefinition` directly, passing each a
-  `report` callback (`_diagnostic.py`'s `Reporter`) that turns every problem reading survives into a `Diagnostic`
-  with its `DiagnosticKind`; no reader prints. Only names in `__all__` are public. `_format/files.py`'s
-  `open_regular_file` is the one way Cro files are opened. `Bank` (`_api/bank.py`) indexes CroBank as it reads it:
-  the first `Table.records()` or `Bank.files()` generator to reach a CroBank record indexes it for every table, so a
-  table read after another reads only its own records. `Bank.deleted_records` is the count of deleted records
-  CroBank's `.tad` header states; those records are not read.
+  `records()` yield `Record`s of `Field`s with `value`, `text` and `raw`; problems it survives are `Diagnostic`s, and a
+  database it cannot read raises a `CronosError`, including `WrongKod` for a KOD-encoded v4 CroStru or CroBank whose
+  header shows that the KOD used is not its own. It drives `Datafile`, `Database.read_db_definition` and
+  `TableDefinition` directly, passing each a `report` callback (`_diagnostic.py`'s `Reporter`) that turns every problem
+  reading survives into a `Diagnostic` with its `DiagnosticKind`; no reader prints. Only names in `__all__` are public.
+  `_format/files.py`'s `open_regular_file` is the one way Cro files are opened. `Bank` (`_api/bank.py`) indexes CroBank
+  as it reads it: the first `Table.records()` or `Bank.files()` generator to reach a CroBank record indexes it for every
+  table, so a table read after another reads only its own records. `Bank.deleted_records` is the count of deleted
+  records CroBank's `.tad` header states; those records are not read.
 - **`Datafile`**: one `.dat`/`.tad` pair. The `.tad` is an index of `(offset, length, flags)` entries, where a length of
   `0xFFFFFFFF` means deleted. Record numbers start at 1. Each `.tad` entry is parsed by `_format/tad.py`'s layout for
-  its generation: v3 keeps the inline flag in bit 31 of the length, v4 in the top byte of the offset, where bit 0x02 set
-  with bit 0x01 clear marks a deleted record. Every record is decoded by `_format/record.py`'s `decode_record`, one
-  pipeline of reassembling extension blocks, KOD-decoding the data using the record number as the shift (when bit 0 of
-  the `.dat` header's encoding field is set), then CRC-checking and decompressing zlib chunks, at most 256 MiB
-  decompressed. `read_record` returns the decoded parts together with the chunks whose CRC did not match. v3
-  (`01.02`–`01.05`) and v4 (`01.11`, `01.13`, `01.14`) store the flags in different bits; v7 (`01.19`) is not supported.
+  its generation: v3 keeps the inline flag in bit 31 of the length, v4 in bit 0x04 of the top byte of the offset, where
+  bit 0x02 set with bit 0x01 clear marks a deleted record. Every record is decoded by `_format/record.py`'s
+  `decode_record`, one pipeline of reassembling extension blocks, KOD-decoding the data using the record number as the
+  shift (when bit 0 of the `.dat` header's encoding field is set), then CRC-checking and decompressing zlib chunks, at
+  most 256 MiB decompressed. `read_record` returns the decoded parts together with the chunks whose CRC did not match.
+  v3 (`01.02`–`01.05`) and v4 (`01.11`, `01.13`, `01.14`) store the flags in different bits; v7 (`01.19`) is not
+  supported.
 - **`Database`**: opens `CroStru`, `CroIndex`, `CroBank` and `CroSys` in a directory, matching names case-insensitively,
   and closes them via `with Database(...)`. CroStru record 1 holds the *database definition*, a list of key/value pairs.
   A value is either inline, or a reference to another CroStru record when the high bit of its length is clear.
@@ -89,15 +90,23 @@ encrypted with its own table: versions `01.04`, `01.05` and v4; other encoded fi
 `INITIAL_KOD`. `--nokod` passes no KOD, which turns decoding off for every file. `select_kod` reports, per file,
 `unused_kod` when a KOD other than the default is given but not used, and `mismatched_kod` when an encoded file is read
 without KOD decoding or an own-KOD file is read with the default table; `crack` drops `mismatched_kod`, because it
-reads the encoded bytes on purpose. `open()` refuses a v4 CroBank that is encoded with its own KOD and read with the
-default one, raising `OwnKodRequired` instead of reporting `mismatched_kod`, since the default KOD decodes its
-records as garbage; `inspect` and `--nokod` are unchanged and keep the `mismatched_kod` warning. So `export --kod`
-does not change how `test_data/all_field_types` decodes (it reports `unused_kod`), but `--nokod` does. To test a
-wrong or custom KOD, build an encrypted database, e.g. `write_database(dir, records, kod=random_kod(seed=1))`.
+reads the encoded bytes on purpose.
+
+A v4 file's header checks a KOD exactly: the 8 bytes after the 19-byte `.dat` header are zeros KOD-encoded like
+record 0 with the database's own KOD, so `koddecoder.kod_fits_header` is True only for that KOD (None for v3, v7 and
+a file too short to hold them). For a KOD-encoded v4 file, `select_kod` decodes with the KOD given, the default
+included, and reports `mismatched_kod` when the header rejects it; `open()` then raises `WrongKod`, checking CroStru
+and then CroBank before the database definition is decoded, so a default KOD the header accepts is used and a wrong
+one, default or given, is refused. `inspect` and `--nokod` never refuse and keep the `mismatched_kod` warning; v3
+files, `01.04` and `01.05` are never checked. So `export --kod` does not change how `test_data/all_field_types`
+decodes (it reports `unused_kod`), but `--nokod` does. To test a wrong or custom KOD, build an encrypted database,
+e.g. `write_database(dir, records, kod=random_kod(seed=1))`; the builder encodes a v4 file's check bytes with the
+file's KOD.
 
 `crack strucrack` and `crack dbcrack` derive a KOD statistically and print it; `cronos_extract.crack_kod(path, method)`
-does the same without printing and returns `None` when it can't produce a permutation. `export --crack` and
-`inspect … --crack` call `crack_kod`.
+does the same without printing and returns `None` when it can't produce a permutation, or when the v4 header of the
+file it read (CroStru for strucrack, CroBank for dbcrack) rejects it; the crack commands treat such a KOD as
+unresolved. `export --crack` and `inspect … --crack` call `crack_kod`.
 
 ### Error-handling conventions
 

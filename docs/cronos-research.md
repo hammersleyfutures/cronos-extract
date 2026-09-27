@@ -40,7 +40,8 @@ Most Bank files use blocksize == 0x0040
 most Index files use blocksize == 0x0400
 most Stru files use blocksize == 0x0200
 
-This is followed by a block of 0x101 or 0x100 minus 19 bytes seemingly random data.
+This is followed by a block of 0x101 or 0x100 minus 19 bytes seemingly random data. In a v4 file this block is
+KOD-encoded with the database's own KOD, and its first 8 bytes check a KOD: see "the header block" under v4 format.
 
 The unknown word is unclear but seems not to be random, might be a checksum.
 
@@ -322,7 +323,53 @@ flags:
     04  - compressed { int16be size; int16be flag int32le crc; byte data[size-6]; } 00 00 02
     00  - extended record
 
+The real `01.11` `.tad` files (30 databases, read in the Phase 3d and 3e research of 2026-09-26 and 2026-09-27) hold
+only the flag bytes `00`, `02`, `04`, `06`, `07`, `08` and `0c`. Flag `03` has not been seen, though the list above
+calls it deleted. As far as seen:
+
+- **Bit `0x02` with bit `0x01` clear is "deleted"**, and the record's data stays in the `.dat` file. In every v4 `.tad`
+  holding such entries, the header's deleted count equals the number of entries whose flag byte is `02` or `06`. One
+  CroIndex also has 2 entries with flag `07`, which the header does not count. What bit `0x01` means is not known.
+- **Bit `0x04` looks like "inline".** Entries with flag `00` point at extended-record headers and entries with flag
+  `04` at inline data. All 838 flag-`08` CroBank entries of the one database that has them point at extended-record
+  headers; its few flag-`0c` entries mostly do not.
+- **Bit `0x08` looks like "the third field is a time".** The third `.tad` field of those flag-`08` entries holds a Unix
+  time (2023–2024).
+
+The database with flags `08` and `0c` cannot be opened yet, so bits `0x04` and `0x08` are not confirmed by reading
+its records, and the `0c` sample is tiny. `_format/tad.py` reads a v4 entry as inline when bit `0x04` is set and as
+extended otherwise, which includes the unseen flags `01`, `03`, `05` and `09`; `tests/test_realdata.py` fails on any
+flag byte not listed above, so an unseen flag is found before it is read by that rule.
+
+No `01.13` or `01.14` file has been seen. They are read with the same 16-byte entries as `01.11`, since these notes
+do not tell the v4 versions apart.
+
 ## .dat
 
 The .dat file of a 01.11 database has 64bit offsets, like the 01.03 file format.
+
+## the header block
+
+In a v4 file, bytes 19 to 255 (237 bytes, after the 19-byte header) are the same in every Cro file of the database.
+They are KOD-encoded with the database's own KOD, like the start of a record numbered 0: decoded as
+`(KOD[h[19 + j]] - j) % 256`, the first 8 bytes are zero, then 24 bytes look random, then zeros again, then long runs
+of a constant value that drifts slowly down (the inverse KOD read in order with a drifting offset). This holds in all
+5 v4 files whose own KOD is known, in two databases. The default KOD decodes at most 1 of the 8 to zero in every v4
+file, including files whose records are not KOD-encoded. v3 headers do not follow this scheme at any shift.
+
+So the header checks a KOD exactly: a KOD is a v4 file's own exactly when those 8 bytes decode to zeros, and a wrong
+KOD passes by chance about once in 256⁸. `koddecoder.kod_fits_header` makes this check as
+`kod.decode(0, check) == bytes(8)`; `select_kod`, `cronos_extract.open()` (which raises `WrongKod`) and `crack_kod`
+use it for KOD-encoded v4 files. A database whose KOD cannot be recovered still gives away 8 entries of its KOD:
+`KOD[h[19 + j]] = j` for `j` from 0 to 7.
+
+## known plaintext in CroStru record 1
+
+Five real v4 databases do not open: their CroStru is KOD-encoded with its own KOD and holds too few records for
+strucrack's statistics. Known plaintext recovers much of such a KOD. `Base000` (the Files table definition) is stored
+inline in CroStru record 1 and is 92 of 93 bytes identical in two unrelated databases. Sliding one database's
+`Base000` over the other's still-encoded record 1, together with the header's 8 entries, leaves exactly one
+consistent offset (the true one) and 78 correct KOD entries of 256. Record 1's keys are sorted and come from a small
+vocabulary (`Bank`, `BankId`, `BankName`, `Base000`, `Base001`, …, `NS1`, `USERINFO`, `Version`). A known-plaintext
+KOD solver built on these facts is planned before 1.0 (Phase 3f of the roadmap).
 
