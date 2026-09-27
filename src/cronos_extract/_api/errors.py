@@ -18,5 +18,5 @@ class DatabaseDefinitionError(CronosError):
     """The database definition in CroStru record 1 is missing or cannot be decoded."""
 
 
-class OwnKodRequired(CronosError):
-    """CroBank is a v4 file encrypted with the database's own KOD, and the KOD given is the default one."""
+class WrongKod(CronosError):
+    """The header of a KOD-encoded v4 CroStru or CroBank shows that the KOD given, or the default, is not its KOD."""

@@ -12,9 +12,10 @@ from .._diagnostic import STRU_FILE, for_table_definition
 from ..Database import Database
 from ..Datafile import Datafile
 from ..Datamodel import TableDefinition, describe_error, is_table_key, undecodable_table
+from ..koddecoder import kod_fits_header
 from .datafiles import database_directory, list_directory, open_datafile, optional_file_info
 from .diagnostics import Diagnostic, DiagnosticKind, DiagnosticLog, RecordNumbers
-from .errors import DatabaseDefinitionError, OwnKodRequired
+from .errors import DatabaseDefinitionError, WrongKod
 from .info import FileInfo
 from .kod import Kod, kod_coder
 from .values import EmbeddedFile, FieldDefinition, FileReference, Record, decode_record
@@ -28,7 +29,8 @@ DEFINITION_HINT = (
     "If the KOD used to read this database is not its own, the definition decodes as garbage; "
     "cronos_extract.crack_kod can recover the database's KOD."
 )
-OWN_KOD_HINT = 'cronos_extract.crack_kod(path, "dbcrack") can recover the database\'s KOD.'
+STRU_KOD_HINT = 'cronos_extract.crack_kod(path, "strucrack") can recover the database\'s KOD.'
+BANK_KOD_HINT = 'cronos_extract.crack_kod(path, "dbcrack") can recover the database\'s KOD.'
 
 
 class Table:
@@ -369,6 +371,15 @@ class Bank:
         self._tables = tuple(tables)
 
 
+def refuse_a_kod_the_header_rejects(datafile: Datafile, directory: Path, hint: str) -> None:
+    """Raise WrongKod, ending with `hint`, when `datafile`'s header shows that the KOD decoding it is not its own."""
+    if datafile.kod is not None and kod_fits_header(datafile.header, datafile.kod) is False:
+        raise WrongKod(
+            f"Cro{datafile.name}.dat in {directory} has a header that shows the KOD given is not the database's KOD. "
+            f"{hint}"
+        )
+
+
 def open(
     path: str | os.PathLike[str],
     *,
@@ -387,9 +398,9 @@ def open(
     unexpected_structure, and `deleted_records` is then the number of entries.
 
     Raises OSError when `path` does not exist, is not a directory or cannot be listed; TypeError for a bytes path;
-    NotACronosFile or UnsupportedVersion when CroStru or CroBank cannot be read; OwnKodRequired when CroBank is a v4
-    file encrypted with the database's own KOD and `kod` is the default one, which would decode its records as
-    garbage; DatabaseDefinitionError when the database definition cannot be decoded.
+    NotACronosFile or UnsupportedVersion when CroStru or CroBank cannot be read; WrongKod when the header of a
+    KOD-encoded v4 CroStru or CroBank, checked in that order, shows that `kod` is not the database's KOD, which would
+    decode its records as garbage; DatabaseDefinitionError when the database definition cannot be decoded.
     """
     directory = database_directory(path)
     names = list_directory(directory)
@@ -397,13 +408,10 @@ def open(
     with ExitStack() as stack:
         stru, stru_info = open_datafile(directory, names, "Stru", compact=compact, kod=kod, log=log)
         stack.callback(stru.close)
+        refuse_a_kod_the_header_rejects(stru, directory, STRU_KOD_HINT)
         bank_file, bank_info = open_datafile(directory, names, "Bank", compact=compact, kod=kod, log=log)
         stack.callback(bank_file.close)
-        if bank_info.generation == "v4" and bank_info.kod_encoded and kod == DEFAULT_KOD:
-            raise OwnKodRequired(
-                f"{BANK_FILE} in {directory} is encrypted with the database's own KOD, which the default KOD would "
-                f"decode as garbage. {OWN_KOD_HINT}"
-            )
+        refuse_a_kod_the_header_rejects(bank_file, directory, BANK_KOD_HINT)
         deleted_records = bank_file.nrdeleted
         if deleted_records > bank_file.nrofrecords:
             log.record(

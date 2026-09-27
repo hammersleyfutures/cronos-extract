@@ -17,7 +17,6 @@ from cronos_builder import (
     TEST_TABLE_FILE_FIELD_INDEX,
     TEST_TABLE_ID,
     V3_INLINE_BIT,
-    V4_VERSIONS,
     DeletedRecord,
     bank_record,
     compressed_record,
@@ -490,9 +489,7 @@ def test_a_database_of_extended_records_reads_back_the_same_as_inline(tmp_path: 
     assert extended_texts == inline_texts
 
 
-# open() refuses a v4 CroBank that is KOD-encoded when read with the default KOD, so v4 is left out here; the test
-# below reads v4 extended records encoded with the database's own KOD.
-@pytest.mark.parametrize("version", [version for version in BUILDER_VERSIONS if version not in V4_VERSIONS])
+@pytest.mark.parametrize("version", BUILDER_VERSIONS)
 def test_a_database_of_extended_kod_encoded_records_reads_back_the_same_as_inline(
     tmp_path: Path, version: bytes
 ) -> None:

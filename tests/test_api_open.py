@@ -25,6 +25,7 @@ from cronos_builder import (
 )
 
 import cronos_extract
+from cronos_extract._format.header import DAT_HEADER
 from cronos_extract.koddecoder import INITIAL_KOD
 
 SECTION_2_WARNINGS = [
@@ -301,21 +302,116 @@ def a_record() -> bytes:
     return bank_record(TEST_TABLE_ID, fields)
 
 
+def wrong_kod_message(filename: str, dbdir: str, method: str) -> str:
+    return (
+        f"{filename} in {dbdir} has a header that shows the KOD given is not the database's KOD. "
+        f'cronos_extract.crack_kod(path, "{method}") can recover the database\'s KOD.'
+    )
+
+
+def v4_database(directory: Path, stru_kod: list[int], bank_kod: list[int]) -> str:
+    """Write a 01.11 database whose CroStru is KOD-encoded with `stru_kod` and CroBank with `bank_kod`."""
+    write_datafile(directory, "Stru", stru_records_from_test_db(), kod=stru_kod, version=b"01.11")
+    write_datafile(directory, "Bank", [a_record(), a_record()], kod=bank_kod, version=b"01.11")
+    return str(directory)
+
+
+WRONG_KOD = cronos_extract.Kod.from_table(random_kod(seed=2))
+
+
+@pytest.mark.parametrize("compact", [False, True], ids=["in-memory", "compact"])
+@pytest.mark.parametrize(
+    ("stru_kod", "bank_kod", "opened_with", "refused_file", "method"),
+    [
+        (random_kod(seed=1), random_kod(seed=1), None, "CroStru.dat", "strucrack"),
+        (random_kod(seed=1), random_kod(seed=1), cronos_extract.Kod.default(), "CroStru.dat", "strucrack"),
+        (random_kod(seed=1), random_kod(seed=1), WRONG_KOD, "CroStru.dat", "strucrack"),
+        (INITIAL_KOD, INITIAL_KOD, OTHER_KOD, "CroStru.dat", "strucrack"),
+        (INITIAL_KOD, random_kod(seed=1), None, "CroBank.dat", "dbcrack"),
+        (random_kod(seed=1), INITIAL_KOD, OTHER_KOD, "CroBank.dat", "dbcrack"),
+    ],
+    ids=[
+        "both-own-default-left-out",
+        "both-own-default-given",
+        "both-own-another-given",
+        "both-default-another-given",
+        "stru-accepts-the-default-bank-does-not",
+        "stru-accepts-its-own-bank-does-not",
+    ],
+)
+def test_a_kod_a_v4_header_rejects_raises_wrong_kod_naming_the_file_checked_first(
+    tmp_path: Path,
+    stru_kod: list[int],
+    bank_kod: list[int],
+    opened_with: cronos_extract.Kod | None,
+    refused_file: str,
+    method: str,
+    compact: bool,
+) -> None:
+    dbdir = v4_database(tmp_path / "db", stru_kod, bank_kod)
+    seen: list[cronos_extract.Diagnostic] = []
+    kod = {} if opened_with is None else {"kod": opened_with}
+
+    with pytest.raises(cronos_extract.WrongKod) as refused:
+        cronos_extract.open(dbdir, compact=compact, on_diagnostic=seen.append, **kod)
+
+    assert str(refused.value) == wrong_kod_message(refused_file, dbdir, method)
+    # The warning comes while the refused file is opened, so before the refusal; the definition is never decoded.
+    assert [(diagnostic.kind, diagnostic.file, diagnostic.message) for diagnostic in seen] == [
+        (
+            cronos_extract.DiagnosticKind.MISMATCHED_KOD,
+            refused_file,
+            "the file's header shows that the KOD given is not its KOD",
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    ("stru_kod", "bank_kod", "opened_with"),
+    [
+        (INITIAL_KOD, INITIAL_KOD, cronos_extract.Kod.default()),
+        (random_kod(seed=1), random_kod(seed=1), OTHER_KOD),
+    ],
+    ids=["the-default-table", "its-own-kod"],
+)
+def test_a_v4_database_whose_headers_accept_the_kod_opens_without_kod_warnings(
+    tmp_path: Path, stru_kod: list[int], bank_kod: list[int], opened_with: cronos_extract.Kod
+) -> None:
+    dbdir = v4_database(tmp_path / "db", stru_kod, bank_kod)
+    seen: list[cronos_extract.Diagnostic] = []
+
+    with cronos_extract.open(dbdir, kod=opened_with, on_diagnostic=seen.append) as bank:
+        assert [record["Entry #1"].text for table in bank.tables for record in table.records()] == ["42", "42"]
+
+    assert [diagnostic for diagnostic in seen if diagnostic.kind in KOD_KINDS] == []
+
+
+def test_a_v4_bank_too_short_for_the_check_is_not_refused(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [], version=b"01.11", encoded=True)
+    bank_path = tmp_path / "db" / "CroBank.dat"
+    bank_path.write_bytes(bank_path.read_bytes()[: DAT_HEADER.size + 7])
+    seen: list[cronos_extract.Diagnostic] = []
+
+    with cronos_extract.open(dbdir, on_diagnostic=seen.append) as bank:
+        assert [table.name for table in bank.tables] == ["erdgeist"]
+
+    # Without the check, the 3c rule applies: a v4 file is encrypted with its own KOD, read here with the default.
+    assert [(diagnostic.kind, diagnostic.file) for diagnostic in seen if diagnostic.kind in KOD_KINDS] == [
+        (cronos_extract.DiagnosticKind.MISMATCHED_KOD, "CroBank.dat")
+    ]
+
+
 @pytest.mark.parametrize("compact", [False, True], ids=["in-memory", "compact"])
 @pytest.mark.parametrize("given", [False, True], ids=["left-out", "given"])
-def test_an_own_kod_v4_bank_is_refused_with_the_default_kod(tmp_path: Path, given: bool, compact: bool) -> None:
+def test_an_own_kod_v4_bank_raises_wrong_kod_with_the_default_kod(tmp_path: Path, given: bool, compact: bool) -> None:
     dbdir = database_with_own_kod_v4_bank(tmp_path / "db", [a_record(), a_record()])
     seen: list[cronos_extract.Diagnostic] = []
     kod = {"kod": cronos_extract.Kod.default()} if given else {}
 
-    with pytest.raises(cronos_extract.OwnKodRequired) as refused:
+    with pytest.raises(cronos_extract.WrongKod) as refused:
         cronos_extract.open(dbdir, compact=compact, on_diagnostic=seen.append, **kod)
 
-    assert str(refused.value) == (
-        f"CroBank.dat in {dbdir} is encrypted with the database's own KOD, which the default KOD would decode as "
-        'garbage. cronos_extract.crack_kod(path, "dbcrack") can recover the database\'s KOD.'
-    )
-    # The warning comes while CroBank is opened, so before the refusal; the definition is never decoded.
+    assert str(refused.value) == wrong_kod_message("CroBank.dat", dbdir, "dbcrack")
     assert [(diagnostic.kind, diagnostic.file) for diagnostic in seen] == [
         (cronos_extract.DiagnosticKind.MISMATCHED_KOD, "CroBank.dat")
     ]
@@ -356,12 +452,10 @@ def test_an_own_kod_v4_bank_with_an_encoded_stru_read_without_kod_decoding_is_no
 
 @pytest.mark.parametrize(
     ("version", "encoded"),
-    [(b"01.04", True), (b"01.11", False)],
-    ids=["v3-own-kod-version-encoded-with-the-default", "unencoded-v4"],
+    [(b"01.04", True), (b"01.11", False), (b"01.11", True)],
+    ids=["v3-own-kod-version-encoded-with-the-default", "unencoded-v4", "v4-encoded-with-the-default"],
 )
-def test_a_bank_that_is_not_an_encoded_v4_bank_is_not_refused_with_the_default_kod(
-    tmp_path: Path, version: bytes, encoded: bool
-) -> None:
+def test_a_bank_the_default_kod_fits_opens_with_the_default_kod(tmp_path: Path, version: bytes, encoded: bool) -> None:
     dbdir = write_database(tmp_path / "db", [a_record()], version=version, encoded=encoded)
 
     with cronos_extract.open(dbdir) as bank:
@@ -374,6 +468,8 @@ def test_crack_kod_recovers_the_kod_of_an_own_kod_v4_bank_that_open_refuses(tmp_
     dbdir = database_with_own_kod_v4_bank(tmp_path / "db", zero_byte_records)
     write_datafile(tmp_path / "db", "Index", zero_byte_records, kod=random_kod(seed=1), version=b"01.11")
 
+    with pytest.raises(cronos_extract.WrongKod):
+        cronos_extract.open(dbdir)
     assert cronos_extract.crack_kod(dbdir, "dbcrack") == OTHER_KOD
 
 

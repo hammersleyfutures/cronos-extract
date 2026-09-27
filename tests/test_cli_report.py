@@ -4,13 +4,14 @@ import io
 
 import pytest
 
-from cronos_extract import DatabaseDefinitionError, Diagnostic, DiagnosticKind, OwnKodRequired
-from cronos_extract._api.bank import DEFINITION_HINT, OWN_KOD_HINT
+from cronos_extract import DatabaseDefinitionError, Diagnostic, DiagnosticKind, WrongKod
+from cronos_extract._api.bank import BANK_KOD_HINT, DEFINITION_HINT, STRU_KOD_HINT
 from cronos_extract._cli.report import (
+    BANK_KOD_COMMAND_HINT,
     DUPLICATE_TABLE,
     KIND_ORDER,
-    OWN_KOD_COMMAND_HINT,
     REPLACED_NUL,
+    STRU_KOD_COMMAND_HINT,
     EscapingStream,
     Failure,
     Problem,
@@ -181,8 +182,10 @@ def test_an_error_message_names_the_command_line_hint_in_place_of_the_api_one() 
     error = DatabaseDefinitionError(f"the definition cannot be decoded: ValueError: bad. {DEFINITION_HINT}")
 
     assert error_message(error) == f"the definition cannot be decoded: ValueError: bad. {KOD_HINT}"
-    own_kod = OwnKodRequired(f"CroBank.dat needs its own KOD. {OWN_KOD_HINT}")
-    assert error_message(own_kod) == f"CroBank.dat needs its own KOD. {OWN_KOD_COMMAND_HINT}"
+    wrong_stru_kod = WrongKod(f"CroStru.dat rejects the KOD. {STRU_KOD_HINT}")
+    assert error_message(wrong_stru_kod) == f"CroStru.dat rejects the KOD. {STRU_KOD_COMMAND_HINT}"
+    wrong_bank_kod = WrongKod(f"CroBank.dat rejects the KOD. {BANK_KOD_HINT}")
+    assert error_message(wrong_bank_kod) == f"CroBank.dat rejects the KOD. {BANK_KOD_COMMAND_HINT}"
     assert error_message(OSError(2, "No such file or directory")) == "[Errno 2] No such file or directory"
 
 

@@ -179,3 +179,73 @@ def test_kod_fits_header_says_nothing_about_a_v4_file_too_short_for_the_check(tm
     assert (header.kod_check, len(seven_bytes.kod_check)) == (b"", 7)
     assert kod_fits_header(header, KODcoding(INITIAL_KOD)) is None
     assert kod_fits_header(seven_bytes, KODcoding(INITIAL_KOD)) is None
+
+
+WRONG_KOD_MESSAGE = "the file's header shows that the KOD given is not its KOD"
+
+
+def v4_header(written_with: list[int], check_size: int = 8) -> DatHeader:
+    """A KOD-encoded 01.11 header whose check bytes are the first `check_size` written with `written_with`."""
+    return DatHeader(b"01.11", 0, 1, 0x40, KODcoding(written_with).encode(0, bytes(8))[:check_size])
+
+
+@pytest.mark.parametrize(
+    ("written_with", "given", "decoded_with", "expected"),
+    [
+        (OTHER_KOD, OTHER_KOD, OTHER_KOD, None),
+        (INITIAL_KOD, INITIAL_KOD, INITIAL_KOD, None),
+        (OTHER_KOD, INITIAL_KOD, INITIAL_KOD, (DiagnosticKind.MISMATCHED_KOD, WRONG_KOD_MESSAGE)),
+        (INITIAL_KOD, OTHER_KOD, OTHER_KOD, (DiagnosticKind.MISMATCHED_KOD, WRONG_KOD_MESSAGE)),
+        (OTHER_KOD, random_kod(seed=2), random_kod(seed=2), (DiagnosticKind.MISMATCHED_KOD, WRONG_KOD_MESSAGE)),
+        (
+            OTHER_KOD,
+            None,
+            None,
+            (DiagnosticKind.MISMATCHED_KOD, "the file is KOD-encoded, but is read without KOD decoding"),
+        ),
+    ],
+    ids=[
+        "own-accepted",
+        "default-accepted",
+        "default-rejected",
+        "other-rejected-default-file",
+        "other-rejected-own-file",
+        "none",
+    ],
+)
+def test_select_kod_follows_the_header_of_a_kod_encoded_v4_file(
+    written_with: list[int],
+    given: list[int] | None,
+    decoded_with: list[int] | None,
+    expected: tuple[DiagnosticKind, str] | None,
+) -> None:
+    coder, diagnostic = select_kod(v4_header(written_with), None if given is None else KODcoding(given), "CroBank.dat")
+
+    assert (None if coder is None else coder.kod) == decoded_with
+    assert diagnostic == (None if expected is None else Diagnostic(*expected, file="CroBank.dat"))
+
+
+@pytest.mark.parametrize("check_size", [0, 7])
+@pytest.mark.parametrize(
+    ("given", "expected"),
+    [
+        (
+            INITIAL_KOD,
+            (
+                DiagnosticKind.MISMATCHED_KOD,
+                "the file is encrypted with its own KOD, but is read with the default one; if its records do not "
+                "decode, recover its KOD by cracking it",
+            ),
+        ),
+        (random_kod(seed=2), None),
+    ],
+    ids=["default", "other"],
+)
+def test_select_kod_keeps_3c_rows_for_a_v4_file_too_short_for_the_check(
+    check_size: int, given: list[int], expected: tuple[DiagnosticKind, str] | None
+) -> None:
+    coder, diagnostic = select_kod(v4_header(OTHER_KOD, check_size), KODcoding(given), "CroBank.dat")
+
+    assert coder is not None
+    assert coder.kod == given
+    assert diagnostic == (None if expected is None else Diagnostic(*expected, file="CroBank.dat"))
