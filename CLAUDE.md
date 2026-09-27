@@ -47,7 +47,7 @@ The code is layered, from bytes up to commands (`src/cronos_extract/`):
 - **`Datafile`**: one `.dat`/`.tad` pair. The `.tad` is an index of `(offset, length, flags)` entries, where a length of
   `0xFFFFFFFF` means deleted. Record numbers start at 1. Each `.tad` entry is parsed by `_format/tad.py`'s layout for
   its generation: v3 keeps the inline flag in bit 31 of the length, v4 in the top byte of the offset, where bit 0x02
-  marks a deleted record. Every record is decoded by `_format/record.py`'s `decode_record`, one pipeline of
+  set with bit 0x01 clear marks a deleted record. Every record is decoded by `_format/record.py`'s `decode_record`, one pipeline of
   reassembling extension blocks, KOD-decoding the data using the record number as the shift (when bit 0 of the
   `.dat` header's encoding field is set), then CRC-checking and decompressing zlib chunks, at most 256 MiB
   decompressed. `read_record` returns the decoded parts together with the chunks whose CRC did not match. v3

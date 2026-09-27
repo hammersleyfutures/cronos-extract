@@ -14,7 +14,7 @@ from cronos_builder import ignore_problems, tad_layout
 import cronos_extract
 from cronos_extract._api.info import read_file_info
 from cronos_extract._cli.sql_out import unique_sql_table_name
-from cronos_extract._format.tad import DELETED_LENGTH, V4_DELETED_FLAG, V4_FLAG_SHIFT
+from cronos_extract._format.tad import DELETED_LENGTH, V4_FLAG_SHIFT, is_v4_deleted
 from cronos_extract._format.tad import tad_layout as production_tad_layout
 from cronos_extract.Datamodel import TableDefinition, is_table_key
 from cronos_extract.survey import SurveyedDatabase, read_path_list, survey_databases
@@ -195,8 +195,8 @@ def test_tad_layout_matches_what_the_builder_writes(dbdir: Path) -> None:
 def test_v4_tad_entries_never_use_the_v3_deleted_length(dbdir: Path) -> None:
     """
     Every v4 .tad file's entries never use the v3 deleted length, and the header's deleted count equals the
-    entries whose flags carry the deleted bit; this runs on every Cro file whose own header is v4, since a
-    database's CroBank can be v4 while its CroStru is v3.
+    entries whose flags mark them deleted (bit 0x02 set, bit 0x01 clear); this runs on every Cro file whose own
+    header is v4, since a database's CroBank can be v4 while its CroStru is v3.
     """
     checked = 0
     for info in survey_of(dbdir).files:
@@ -214,7 +214,7 @@ def test_v4_tad_entries_never_use_the_v3_deleted_length(dbdir: Path) -> None:
                 usable = len(chunk) - len(chunk) % layout.entry.size
                 for offset, length, _checksum in layout.entry.iter_unpack(chunk[:usable]):
                     assert length != DELETED_LENGTH, f"Cro{info.name}.tad"
-                    if offset >> V4_FLAG_SHIFT & V4_DELETED_FLAG:
+                    if is_v4_deleted(offset >> V4_FLAG_SHIFT):
                         deleted_by_flag += 1
         assert deleted_by_flag == header_deleted, f"Cro{info.name}.tad"
         checked += 1

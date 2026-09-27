@@ -86,7 +86,8 @@ Found during Phase 0 and its reviews and not fixed there, each with the phase th
   - **(done, Phase 3d)** v4 deleted records: no real `01.11` `.tad` entry uses the `0xFFFFFFFF` length `readrec`
     treats as deleted, but every one with a nonzero header deleted count carries flag `02`, which
     `docs/cronos-research.md` calls deleted. `_format/tad.py`'s v4 layout now marks an entry deleted when its flag
-    byte has bit `0x02` set, so it is no longer read as live; flags `04`, `08`, `0c` and `07`, and the third field's
+    byte has bit `0x02` set and bit `0x01` clear (the header counts flags `02` and `06`, not `07`), so it is no
+    longer read as live; flags `04`, `08`, `0c` and `07`, and the third field's
     2023–2024 Unix timestamps seen in one real database, are unexplained and become Phase 3e's research. One real
     database is a mixed-generation database (v3 CroStru, v4 own-KOD KOD-encoded CroBank and CroIndex) with
     22,870,296 genuine live records: read with the wrong, default KOD before 3d its export was garbage; `open()`

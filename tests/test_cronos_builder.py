@@ -301,6 +301,7 @@ def test_the_tad_header_counts_the_deleted_records(
                 (0, DELETED_RECORD_LENGTH),
                 (0x02 << 56 | DAT_PREFIX_SIZE, 1),
                 (0x06 << 56 | DAT_PREFIX_SIZE, 1),
+                (0x07 << 56 | DAT_PREFIX_SIZE, 1),
                 (0x04 << 56 | DAT_PREFIX_SIZE, 1),
             ],
             (0xFFFFFFFE, 3, 0, 0),

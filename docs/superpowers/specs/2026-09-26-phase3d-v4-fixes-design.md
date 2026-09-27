@@ -22,13 +22,14 @@ separate, time-boxed research phase; decoding KOD faster (an open item).
 
 Over the 30 listed real databases:
 
-- **v4 `.tad` bit `0x02` is "deleted".** In every v4 `.tad` holding such entries, the header's deleted count equals the
-  number of entries whose flag byte has bit `0x02` set: 47 = 47 flag `02` (one CroBank), 4 = 4 (another CroBank),
-  1 = 1 (a CroIndex), and 199,273 = 117,767 flag `02` + 81,506 flag `06` (a CroIndex). Other flag bytes seen: `00`,
-  `04` (the great majority of live entries), `08` and `0c` (one database, whose third field holds 2023–2024 Unix
-  times), and `07` (2 entries).
+- **v4 `.tad` bit `0x02` with bit `0x01` clear is "deleted".** In every v4 `.tad` holding such entries, the header's
+  deleted count equals the number of entries whose flag byte is `02` or `06`: 47 = 47 flag `02` (one CroBank),
+  4 = 4 (another CroBank), 1 = 1 (a CroIndex), and 199,273 = 117,767 flag `02` + 81,506 flag `06` (a CroIndex). That
+  CroIndex also has 2 entries with flag `07`, which has bit `0x02` set as well as bit `0x01`; the header does not
+  count them, so 199,275 of its entries have bit `0x02` set. Other flag bytes seen: `00`, `04` (the great majority of
+  live entries), and `08` and `0c` (one database, whose third field holds 2023–2024 Unix times).
 - **The deleted count in the header is exact for v3 too.** 10 of 30 CroBank files have a nonzero header deleted count;
-  in all 10 it equals the entries marked deleted (v3 length `0xFFFFFFFF`, v4 bit `0x02`).
+  in all 10 it equals the entries marked deleted (v3 length `0xFFFFFFFF`, v4 bit `0x02` with bit `0x01` clear).
   `test_data/all_field_types`' CroBank lists 85 deleted records among its 86 entries.
 - **Mixed generations exist.** One database has a v3 (`01.02`) CroStru and a v4 (`01.11`) CroBank and CroIndex, both
   KOD-encoded, marked own-KOD. The realdata harness classifies a database by its CroStru, so its v4 checks never ran on
@@ -47,13 +48,15 @@ Over the 30 listed real databases:
 
 Each decision below was made with Ben on 2026-09-26.
 
-### D1. A v4 entry with bit `0x02` set is deleted
+### D1. A v4 entry with bit `0x02` set and bit `0x01` clear is deleted
 
-`_format/tad.py`'s v4 layout marks an entry deleted when its flag byte has bit `0x02` set (`V4_DELETED_FLAG = 0x02`),
-in addition to the `0xFFFFFFFF` length both generations already treat as deleted. The entry keeps its offset, length
+`_format/tad.py`'s v4 layout marks an entry deleted when its flag byte has bit `0x02` set and bit `0x01` clear
+(`flags & 0x03 == 0x02`, with `V4_DELETED_FLAG = 0x02`), in addition to the `0xFFFFFFFF` length both generations
+already treat as deleted. So flags `02` and `06` are deleted, and `07` is live. The entry keeps its offset, length
 and flags: in v4 only the flag bit marks it, so its data is still in the `.dat` file. Whether a v4 entry is inline
 ignores the deleted bit (`inline = bool(flags & ~0x02)`), so a deleted entry that was extended (flag `02`) is read
-back through its extension blocks and one that was inline (flag `06`) is not. The comment above the v4 flags
+back through its extension blocks and one that was inline (flag `06`) is not; a live flag-`07` entry is read as
+inline, as its bit `0x04` suggests. The comment above the v4 flags
 records the evidence and says that `04`, `08`, `0c` and `07` are unexplained (3e).
 
 `Datafile.read_record` returns None for it, as for a v3 deleted record, so `Table.records()`, `Bank.files()`,
@@ -142,7 +145,7 @@ databases for something that is not a problem reading.
 ### D4. The realdata checks classify per file and catch garbage
 
 - `tests/test_realdata.py`'s `is_v4` asks whether CroBank is v4. The `.tad` check runs on every Cro file whose own
-  header is v4 and gains the assertion that the header's deleted count equals the entries with bit `0x02`, reading
+  header is v4 and gains the assertion that the header's deleted count equals the entries D1's rule marks deleted, reading
   every entry in chunks rather than the first `TAD_ENTRIES_CHECKED`; the dbcrack test runs on every database whose
   CroBank is v4.
 - A new test: for every database that opens with the default KOD, at least 90% of its first 10,000 live CroBank
@@ -190,6 +193,10 @@ Fable reviewed this spec against the code. Each finding was checked and adopted;
 - **The cap** lives in `open()`, and the builder needs a header deleted-count parameter (D3).
 - **Records:** `open()`'s and the package's docstrings, 3c's C2 table, `CLAUDE.md`'s KOD section, and the v4 API golden
   files are named (D1–D3, D5).
+- **(2026-09-26, after the realdata run)** The first evidence summed only flags `02` and `06` and missed that flag
+  `07` also has bit `0x02` set. The realdata `.tad` check, counting every entry with bit `0x02`, found 199,275 such
+  entries in a CroIndex whose header counts 199,273: the 2 flag-`07` entries, which have bit `0x01` set too, are not
+  counted. D1's rule is now bit `0x02` set and bit `0x01` clear, and the `.tad` check (D4) counts with it.
 
 ## Delivery
 

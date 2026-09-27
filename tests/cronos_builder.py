@@ -46,8 +46,10 @@ OWN_KOD_VERSIONS = (b"01.04", b"01.05", b"01.11")
 V3_INLINE_BIT = 1 << 31
 # A v4 .tad keeps the flag byte in the top of the offset; 0x04 marks a record stored inline.
 V4_INLINE_RECORD_FLAGS = 0x04
-# The v4 flag bit that marks a deleted record, whose data stays in the .dat file.
+# The v4 flag bit that marks a deleted record, whose data stays in the .dat file, when bit 0x01 is clear.
 V4_DELETED_FLAG = 0x02
+# The v4 flag bits the deleted rule looks at: the deleted bit and bit 0x01.
+V4_DELETED_MASK = 0x03
 V4_FLAG_SHIFT = 56
 DELETED_RECORD_LENGTH = 0xFFFFFFFF
 FIELD_SEPARATOR = b"\x1e"
@@ -93,7 +95,7 @@ def is_deleted_entry(version: bytes, offset: int, length: int) -> bool:
     """Whether the .tad entry (`offset` field, `length` field) of `version` marks a deleted record."""
     if length == DELETED_RECORD_LENGTH:
         return True
-    return version in V4_VERSIONS and bool(offset >> V4_FLAG_SHIFT & V4_DELETED_FLAG)
+    return version in V4_VERSIONS and (offset >> V4_FLAG_SHIFT & V4_DELETED_MASK) == V4_DELETED_FLAG
 
 
 def write_raw_datafile(

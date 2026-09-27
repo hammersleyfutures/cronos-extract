@@ -118,6 +118,17 @@ def test_record_that_the_dat_file_does_not_hold_is_reported(
         bank.readrec(1)
 
 
+@pytest.mark.parametrize(("flags", "expected"), [(0x07, b"hello"), (0x06, None), (0x04, b"hello")])
+def test_a_v4_inline_entry_is_deleted_only_with_bit_0x02_set_and_bit_0x01_clear(
+    tmp_path: Path, flags: int, expected: bytes | None
+) -> None:
+    write_raw_datafile(tmp_path, "Bank", b"hello", [(flags << 56 | FIRST_BLOCK, 5)], version=b"01.11")
+
+    with open_bank(tmp_path) as bank:
+        assert bank.readrec(1) == expected
+        assert bank.nrdeleted == (expected is None)
+
+
 def test_record_of_length_zero_is_empty(tmp_path: Path) -> None:
     write_raw_datafile(tmp_path, "Bank", b"", [(FIRST_BLOCK + 10_000, 0)])
 
