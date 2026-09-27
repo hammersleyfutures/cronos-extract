@@ -1,4 +1,4 @@
-# ABOUTME: Parses the 19-byte header that starts every Cro*.dat file.
+# ABOUTME: Parses the 19-byte header that starts every Cro*.dat file, and reads the KOD check bytes after it.
 # ABOUTME: Reports the format version, its generation and the encoding flags.
 import struct
 from dataclasses import dataclass
@@ -15,6 +15,9 @@ V3_VERSIONS = (b"01.02", b"01.03", b"01.04", b"01.05")
 V4_VERSIONS = (b"01.11", b"01.13", b"01.14")
 # 01.19 has not been seen in a real database; this release does not read its .tad index.
 V7_VERSIONS = (b"01.19",)
+# A v4 file's header block, after the 19-byte header, starts with this many zero bytes encoded with the database's
+# own KOD, which tell whether a KOD is the file's.
+KOD_CHECK_SIZE = 8
 
 # The CronosPro generations a header's version belongs to.
 type Generation = Literal["v3", "v4", "v7", "unknown"]
@@ -22,12 +25,13 @@ type Generation = Literal["v3", "v4", "v7", "unknown"]
 
 @dataclass(frozen=True)
 class DatHeader:
-    """The fields of a Cro*.dat file header."""
+    """The fields of a Cro*.dat file header, and the KOD check bytes that follow it (b"" when not read)."""
 
     version: bytes
     unknown: int
     encoding: int
     blocksize: int
+    kod_check: bytes = b""
 
     @property
     def version_text(self) -> str:
@@ -80,3 +84,9 @@ def read_dat_header(file: BinaryIO, *, where: str) -> DatHeader:
     if magic != MAGIC:
         raise ValueError(f"{where} is not a Cronos file: unknown magic {magic!r}")
     return DatHeader(version=version, unknown=unknown, encoding=encoding, blocksize=blocksize)
+
+
+def read_kod_check(file: BinaryIO) -> bytes:
+    """Read the KOD_CHECK_SIZE bytes that follow the header of `file`, or fewer when the file ends before them."""
+    file.seek(DAT_HEADER.size)
+    return file.read(KOD_CHECK_SIZE)

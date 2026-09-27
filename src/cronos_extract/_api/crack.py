@@ -6,6 +6,7 @@ from contextlib import ExitStack
 from typing import Literal
 
 from ..Datafile import Datafile
+from ..koddecoder import KODcoding, kod_fits_header
 from .datafiles import database_directory, list_directory, open_datafile
 from .diagnostics import DiagnosticLog
 from .errors import NotACronosFile, UnsupportedVersion
@@ -108,14 +109,20 @@ def kod_is_resolved(kod: list[int], confidence: list[int]) -> bool:
     return all(value > 0 for value in confidence) and sorted(kod) == list(range(256))
 
 
+def header_rejects(datafile: Datafile, kod: list[int]) -> bool:
+    """Whether the v4 header of `datafile` shows that `kod` is not its database's KOD; False when it cannot tell."""
+    return kod_fits_header(datafile.header, KODcoding(kod)) is False
+
+
 def crack_kod(path: str | os.PathLike[str], method: Literal["strucrack", "dbcrack"]) -> Kod | None:
     """
     Recover the KOD table of the database in the directory `path` from its encrypted records, printing nothing.
 
     "strucrack" reads CroStru; "dbcrack" reads CroBank and CroIndex. Returns None when the method cannot recover a
-    permutation of 0-255, including when dbcrack finds no readable CroIndex. Records that cannot be read are
-    skipped. Raises NotACronosFile or UnsupportedVersion when CroStru or CroBank cannot be read, and ValueError for
-    an unknown method.
+    permutation of 0-255, including when dbcrack finds no readable CroIndex, and when the v4 header of the file it
+    checks, CroStru for strucrack and CroBank for dbcrack, shows that the permutation is not the database's KOD.
+    Records that cannot be read are skipped. Raises NotACronosFile or UnsupportedVersion when CroStru or CroBank
+    cannot be read, and ValueError for an unknown method.
     """
     if method not in ("strucrack", "dbcrack"):
         raise ValueError(f"unknown crack method {method!r}; use 'strucrack' or 'dbcrack'")
@@ -130,6 +137,7 @@ def crack_kod(path: str | os.PathLike[str], method: Literal["strucrack", "dbcrac
         if method == "strucrack":
             kod, confidence = kod_from_xref(stru_xref(stru))
             fill_single_gap(kod, confidence)
+            checked = stru
         else:
             try:
                 index, _ = open_datafile(directory, names, "Index", compact=True, kod=None, log=log)
@@ -137,4 +145,7 @@ def crack_kod(path: str | os.PathLike[str], method: Literal["strucrack", "dbcrac
                 return None
             stack.callback(index.close)
             kod, confidence = kod_from_xref(bank_and_index_xref(bank, index))
-    return Kod.from_table(kod) if kod_is_resolved(kod, confidence) else None
+            checked = bank
+    if not kod_is_resolved(kod, confidence) or header_rejects(checked, kod):
+        return None
+    return Kod.from_table(kod)

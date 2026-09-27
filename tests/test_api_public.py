@@ -20,10 +20,10 @@ PUBLIC_NAMES = [
     "FileReference",
     "Kod",
     "NotACronosFile",
-    "OwnKodRequired",
     "Record",
     "Table",
     "UnsupportedVersion",
+    "WrongKod",
     "crack_kod",
     "open",
 ]
@@ -40,8 +40,8 @@ def test_the_public_names_are_exactly_those_in_all() -> None:
             assert module.startswith("cronos_extract._api.")
 
 
-def test_own_kod_required_is_a_cronos_error() -> None:
-    assert issubclass(cronos_extract.OwnKodRequired, cronos_extract.CronosError)
+def test_wrong_kod_is_a_cronos_error() -> None:
+    assert issubclass(cronos_extract.WrongKod, cronos_extract.CronosError)
 
 
 def test_the_roadmap_example_reads_a_record(tmp_path: Path) -> None:

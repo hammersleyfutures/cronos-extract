@@ -12,15 +12,20 @@ DELETED_LENGTH = 0xFFFFFFFF
 V3_INLINE_BIT = 1 << 31
 # The flag byte of an inline v3 entry: the top byte of its length field, which holds only bit 31.
 V3_INLINE_FLAGS = 0x80
-# A v4 entry keeps its flags in the top byte of the offset field. 00 marks an extended record and 04 (most live
-# entries) an inline one. Bit 02 with bit 01 clear marks a deleted record whose data stays in the .dat file: in every
-# real v4 .tad holding such entries, the header's deleted count equals the entries with flags 02 and 06, and flag 07,
-# which has bit 01 set as well, is not counted. What 04, 08, 0c and 07 mean is unexplained (Phase 3e); any flag
-# other than the deleted bit is read as inline.
+# A v4 entry keeps its flags in the top byte of the offset field. Bit 04 marks an inline entry; every flag with bit
+# 04 clear is read as extended, including 00, 02 and 08 (seen) and 01, 03, 05 and 09 (not seen). Bit 02 with bit 01
+# clear marks a deleted record whose data stays in the .dat file: in every real v4 .tad holding such entries, the
+# header's deleted count equals the entries with flags 02 and 06, and flag 07, which has bit 01 set as well, is not
+# counted. Evidence for bit 04 (Phase 3e's research spike, 2026-09-27): of the one database seen with flag-08
+# entries, all 838 of 838 point at extended-record headers and carry a Unix time in the third .tad field, while its
+# few flag-0c entries mostly do not; that database cannot be opened yet, so this is not confirmed by reading its
+# records, and the 0c sample is tiny.
 V4_FLAG_SHIFT = 56
 V4_DELETED_FLAG = 0x02
 # The flag bits the deleted rule looks at: the deleted bit and bit 01.
 V4_DELETED_MASK = 0x03
+# The flag bit that marks a v4 entry's data as stored inline rather than as an extended record.
+V4_INLINE_FLAG = 0x04
 V3_HEADER = struct.Struct("<2L")
 V4_HEADER = struct.Struct("<4L")
 # v3's 01.03 and 01.05 have 64-bit file offsets and 01.02 and 01.04 32-bit ones. Every v4 entry has a 64-bit offset
@@ -84,7 +89,7 @@ class TadLayout:
             length,
             flags,
             checksum,
-            inline=bool(flags & ~V4_DELETED_FLAG),
+            inline=bool(flags & V4_INLINE_FLAG),
             deleted=is_v4_deleted(flags),
         )
 

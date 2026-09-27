@@ -1,5 +1,5 @@
-# ABOUTME: KOD substitution cipher that CronosPro uses to obfuscate records.
-# ABOUTME: Provides the default KOD table, shifted decode/encode, choosing a file's KOD, and fuzzy string matching.
+# ABOUTME: KOD substitution cipher that CronosPro uses to obfuscate records, and its default table.
+# ABOUTME: Shifted decode/encode, choosing a file's KOD, checking a KOD against a v4 header, fuzzy string matching.
 """
 Decode CroStru KOD encoding.
 """
@@ -7,7 +7,7 @@ Decode CroStru KOD encoding.
 from collections.abc import Sequence
 
 from ._diagnostic import Diagnostic, DiagnosticKind
-from ._format.header import DatHeader
+from ._format.header import KOD_CHECK_SIZE, DatHeader
 
 INITIAL_KOD = [
     0x08,
@@ -317,13 +317,27 @@ def new(*args: list[int]) -> KODcoding:
     return KODcoding(*args)
 
 
+def kod_fits_header(header: DatHeader, kod: KODcoding) -> bool | None:
+    """
+    Whether `kod` is the KOD of the v4 file whose header is `header`, or None when the header cannot tell.
+
+    A v4 file's header block starts with KOD_CHECK_SIZE zero bytes encoded like record 0 with the database's own KOD,
+    so only that KOD decodes them to zeros. The header cannot tell for other generations, or when the file ended
+    before the check bytes.
+    """
+    if header.generation != "v4" or len(header.kod_check) < KOD_CHECK_SIZE:
+        return None
+    return kod.decode(0, header.kod_check) == bytes(KOD_CHECK_SIZE)
+
+
 def select_kod(header: DatHeader, kod: KODcoding | None, filename: str) -> tuple[KODcoding | None, Diagnostic | None]:
     """
     Return the coder for this file's records (None: no KOD decoding) and at most one diagnostic naming `filename`.
 
     With no KOD given, nothing is decoded. When a KOD is given, a file that is not KOD-encoded is read without KOD
     decoding, one encrypted with the default KOD is read with the default, and only a file encrypted with its own
-    KOD is read with the KOD given.
+    KOD is read with the KOD given. A KOD-encoded v4 file whose header can tell is read with the KOD given, which is
+    reported when the header shows it is not the file's.
     """
 
     def problem(kind: DiagnosticKind, message: str) -> Diagnostic:
@@ -338,6 +352,11 @@ def select_kod(header: DatHeader, kod: KODcoding | None, filename: str) -> tuple
         )
     if kod is None:
         return None, problem(DiagnosticKind.MISMATCHED_KOD, "the file is KOD-encoded, but is read without KOD decoding")
+    fits = kod_fits_header(header, kod)
+    if fits is not None:
+        if fits:
+            return kod, None
+        return kod, problem(DiagnosticKind.MISMATCHED_KOD, "the file's header shows that the KOD used is not its KOD")
     if not header.own_kod:
         if is_default:
             return new(), None

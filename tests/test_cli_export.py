@@ -21,6 +21,7 @@ from cronos_builder import (
     complex_field,
     compressed_record,
     corrupt_compressed_record,
+    crackable_database,
     database_with_extra_definition_key,
     database_with_files_abbreviation,
     database_with_missing_definition,
@@ -39,6 +40,7 @@ from cronos_builder import (
     stru_records_from_test_db,
     write_database,
     write_datafile,
+    write_kod_check,
 )
 
 from cronos_extract import DatabaseDefinitionError, FieldDefinition
@@ -681,12 +683,27 @@ def test_export_of_an_own_kod_v4_bank_with_the_default_kod_exits_1_naming_dbcrac
     assert result.returncode == 1
     assert result.stdout == ""
     assert result.stderr.splitlines() == [
-        "warning: mismatched_kod: CroBank.dat: the file is encrypted with its own KOD, but is read with the default "
-        + "one; if its records do not decode, recover its KOD by cracking it",
+        "warning: mismatched_kod: CroBank.dat: the file's header shows that the KOD used is not its KOD",
         "",
         "1 diagnostic: 1 mismatched_kod",
-        f"Error: CroBank.dat in {dbdir} is encrypted with the database's own KOD, which the default KOD would decode "
-        + "as garbage. export --crack dbcrack uses the KOD that cronos-extract crack dbcrack derives.",
+        f"Error: CroBank.dat in {dbdir} has a header that shows the KOD used is not the database's KOD. "
+        + "export --crack dbcrack uses the KOD that cronos-extract crack dbcrack derives.",
+    ]
+
+
+def test_export_of_an_own_kod_v4_stru_with_the_default_kod_exits_1_naming_strucrack(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [table_record({0: b"42"})], random_kod(seed=1), version=b"01.11")
+
+    result = run_command("cli", ["export", "--jsonl", dbdir])
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.splitlines() == [
+        "warning: mismatched_kod: CroStru.dat: the file's header shows that the KOD used is not its KOD",
+        "",
+        "1 diagnostic: 1 mismatched_kod",
+        f"Error: CroStru.dat in {dbdir} has a header that shows the KOD used is not the database's KOD. "
+        + "export --crack strucrack uses the KOD that cronos-extract crack strucrack derives.",
     ]
 
 
@@ -763,6 +780,21 @@ def test_a_crack_that_recovers_nothing_exits_1(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert f"cronos-extract crack dbcrack {dbdir}" in last_line(result.stderr)
+
+
+def test_a_crack_whose_kod_the_v4_header_rejects_exits_1_naming_the_crack_command(tmp_path: Path) -> None:
+    dbdir = crackable_database(tmp_path / "db", [table_record({0: b"x"})], random_kod(seed=7), version=b"01.11")
+    write_kod_check(Path(dbdir), "Bank", random_kod(seed=8))
+
+    result = run_command("cli", ["export", "--jsonl", "--crack", "dbcrack", dbdir])
+
+    assert result.returncode == 1
+    assert (result.stdout, result.stderr) == (
+        "",
+        "no diagnostics\n"
+        f"Error: dbcrack cannot recover the KOD of {dbdir}; recover it with cronos-extract crack dbcrack {dbdir} "
+        "and pass it with --kod\n",
+    )
 
 
 def test_strict_exits_1_after_writing_the_output(tmp_path: Path) -> None:

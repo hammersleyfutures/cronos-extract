@@ -16,6 +16,7 @@ from cronos_builder import (
     compressed_record,
     corrupt_compressed_record,
     ignore_problems,
+    random_kod,
     write_datafile,
     write_raw_datafile,
 )
@@ -254,3 +255,11 @@ def test_dump_prints_the_bytes_of_a_truncated_inline_record(tmp_path: Path, caps
     (line,) = [line for line in capsys.readouterr().out.splitlines() if line.startswith("    1:")]
     assert "616263" in line
     assert "<" not in line
+
+
+def test_a_datafile_keeps_the_kod_check_bytes_on_its_header(tmp_path: Path) -> None:
+    write_datafile(tmp_path, "Bank", [b"record"], kod=random_kod(seed=1), version=b"01.11")
+
+    with open_bank(tmp_path) as bank:
+        assert bank.header.kod_check == (tmp_path / "CroBank.dat").read_bytes()[19:27]
+        assert len(bank.header.kod_check) == 8

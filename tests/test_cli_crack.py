@@ -18,6 +18,7 @@ from cronos_builder import (
     stru_records_from_test_db,
     write_database,
     write_datafile,
+    write_kod_check,
 )
 
 from cronos_extract import Kod, NotACronosFile, crack_kod
@@ -544,3 +545,95 @@ def test_strucrack_reports_a_crostru_checksum_mismatch_by_kind(tmp_path: Path) -
     mismatches = [line for line in lines if line.startswith("warning: checksum_mismatch: CroStru.dat record ")]
     assert len(mismatches) == 1, result.stderr
     assert not any("unexpected_structure" in line for line in lines), result.stderr
+
+
+OTHER_KOD = random_kod(seed=8)
+
+
+def rejected_message(filename: str) -> str:
+    """What a crack prints on stderr when `filename`'s v4 header rejects the KOD it recovered: a line, then the KOD."""
+    return f"the recovered KOD does not fit {filename}'s header, so it is not the database's KOD\n" + KOD_LINE
+
+
+@pytest.fixture
+def encrypted_v4_db(tmp_path: Path) -> str:
+    return crackable_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, PERSON_FIELDS)], KOD, version=b"01.11")
+
+
+@pytest.fixture
+def rejecting_v4_db(encrypted_v4_db: str) -> str:
+    """A v4 database whose CroStru, CroBank and CroSys headers were written with another KOD than their records."""
+    dbdir = Path(encrypted_v4_db)
+    write_datafile(dbdir, "Sys", [bytes(256)] * 8, KOD, version=b"01.11")
+    for name in ("Stru", "Bank", "Sys"):
+        write_kod_check(dbdir, name, OTHER_KOD)
+    return encrypted_v4_db
+
+
+@pytest.mark.parametrize(
+    ("args", "status"),
+    [(["strucrack"], 0), (["strucrack", "--noninteractive"], 0), (["dbcrack"], 0)],
+    ids=["strucrack", "noninteractive", "dbcrack"],
+)
+def test_a_crack_whose_kod_a_v4_header_accepts_is_unaffected(
+    encrypted_v4_db: str, args: list[str], status: int, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert run_crack(*args, encrypted_v4_db) == status
+
+    captured = capsys.readouterr()
+    assert captured.out.endswith(KOD_LINE)
+    assert "does not fit" not in captured.err
+
+
+@pytest.mark.parametrize(
+    ("sys_args", "filename"), [([], "CroStru.dat"), (["--sys"], "CroSys.dat")], ids=["stru", "sys"]
+)
+def test_an_interactive_strucrack_whose_kod_the_header_rejects_says_so_and_exits_0(
+    rejecting_v4_db: str, sys_args: list[str], filename: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert run_crack("strucrack", *sys_args, rejecting_v4_db) == 0
+
+    captured = capsys.readouterr()
+    assert "Processing record number" in captured.out
+    assert bytes(KOD).hex() not in captured.out
+    assert captured.err == rejected_message(filename)
+
+
+@pytest.mark.parametrize(
+    ("sys_args", "filename"), [([], "CroStru.dat"), (["--sys"], "CroSys.dat")], ids=["stru", "sys"]
+)
+def test_a_noninteractive_strucrack_whose_kod_the_header_rejects_says_so_and_exits_1(
+    rejecting_v4_db: str, sys_args: list[str], filename: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert run_crack("strucrack", "--noninteractive", *sys_args, rejecting_v4_db) == 1
+
+    captured = capsys.readouterr()
+    assert "Processing record number" in captured.out
+    assert bytes(KOD).hex() not in captured.out
+    assert captured.err == rejected_message(filename)
+
+
+@pytest.mark.parametrize(
+    ("args", "status"),
+    [
+        (["strucrack"], 0),
+        (["strucrack", "--sys"], 0),
+        (["strucrack", "--noninteractive"], 1),
+        (["strucrack", "--noninteractive", "--sys"], 1),
+        (["dbcrack"], 1),
+    ],
+    ids=["strucrack", "sys", "noninteractive", "noninteractive-sys", "dbcrack"],
+)
+def test_a_silent_crack_whose_kod_the_header_rejects_prints_nothing(
+    rejecting_v4_db: str, args: list[str], status: int, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert run_crack(*args, "--silent", rejecting_v4_db) == status
+
+    assert capsys.readouterr() == ("", "")
+
+
+def test_a_dbcrack_whose_kod_the_header_rejects_says_so_and_exits_1(rejecting_v4_db: str) -> None:
+    result = run_command("cli", ["crack", "dbcrack", rejecting_v4_db])
+
+    assert result.returncode == 1
+    assert (result.stdout, result.stderr) == ("", rejected_message("CroBank.dat"))

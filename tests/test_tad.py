@@ -91,15 +91,27 @@ def test_the_header_gives_the_deleted_record_counts() -> None:
 
 
 @pytest.mark.parametrize(
-    ("flags", "deleted"),
-    [(0x02, True), (0x06, True), (0x07, False), (0x00, False), (0x04, False), (0x08, False), (0x0C, False)],
+    ("flags", "inline", "deleted"),
+    [
+        (0x00, False, False),
+        (0x01, False, False),
+        (0x02, False, True),
+        (0x03, False, False),
+        (0x04, True, False),
+        (0x05, True, False),
+        (0x06, True, True),
+        (0x07, True, False),
+        (0x08, False, False),
+        (0x09, False, False),
+        (0x0C, True, False),
+    ],
 )
-def test_a_v4_entry_with_the_deleted_bit_and_not_bit_0x01_is_deleted(flags: int, deleted: bool) -> None:
+def test_a_v4_entry_is_inline_only_when_bit_0x04_is_set(flags: int, inline: bool, deleted: bool) -> None:
     layout = tad_layout(b"01.11")
     assert layout is not None
 
     parsed = layout.parse(ENTRY_64.pack(flags << 56 | 0x100, 9, 3))
 
-    assert parsed == TadEntry(0x100, 9, flags, 3, inline=(flags & ~0x02) != 0, deleted=deleted)
+    assert parsed == TadEntry(0x100, 9, flags, 3, inline=inline, deleted=deleted)
     assert is_v4_deleted(flags) == deleted
     assert V4_DELETED_FLAG == 0x02

@@ -17,7 +17,6 @@ from cronos_builder import (
     TEST_TABLE_FILE_FIELD_INDEX,
     TEST_TABLE_ID,
     V3_INLINE_BIT,
-    V4_VERSIONS,
     DeletedRecord,
     bank_record,
     compressed_record,
@@ -44,6 +43,7 @@ from cronos_builder import (
     write_database,
     write_datafile,
     write_header_only_datafile,
+    write_kod_check,
     write_raw_datafile,
 )
 
@@ -236,6 +236,13 @@ def test_v4_record_flags_are_in_the_top_byte_of_the_offset(tmp_path: Path) -> No
 
     offset, length, _ = struct.unpack("<QLL", (tmp_path / "CroBank.tad").read_bytes()[16:])
     assert (offset >> 56, offset & ((1 << 56) - 1), length) == (0x04, DAT_PREFIX_SIZE, 4)
+
+
+def test_v4_extended_flags_are_in_the_top_byte_of_the_offset(tmp_path: Path) -> None:
+    write_datafile(tmp_path, "Bank", [b"\x01abc"], version=b"01.11", extended=True, extended_flags=0x08)
+
+    offset, _, _ = struct.unpack("<QLL", (tmp_path / "CroBank.tad").read_bytes()[16:])
+    assert offset >> 56 == 0x08
 
 
 def test_v3_record_flags_are_in_the_top_byte_of_the_length(tmp_path: Path) -> None:
@@ -490,9 +497,7 @@ def test_a_database_of_extended_records_reads_back_the_same_as_inline(tmp_path: 
     assert extended_texts == inline_texts
 
 
-# open() refuses a v4 CroBank that is KOD-encoded when read with the default KOD, so v4 is left out here; the test
-# below reads v4 extended records encoded with the database's own KOD.
-@pytest.mark.parametrize("version", [version for version in BUILDER_VERSIONS if version not in V4_VERSIONS])
+@pytest.mark.parametrize("version", BUILDER_VERSIONS)
 def test_a_database_of_extended_kod_encoded_records_reads_back_the_same_as_inline(
     tmp_path: Path, version: bytes
 ) -> None:
@@ -529,3 +534,51 @@ def test_a_database_of_extended_records_kod_encoded_with_its_own_table_reads_bac
         extended_texts = [[field.text for field in record.fields] for record in bank.tables[0].records()]
 
     assert extended_texts == inline_texts
+
+
+@pytest.mark.parametrize(
+    ("kod", "encoded"),
+    [(random_kod(seed=1), False), (None, True), (None, False)],
+    ids=["own-kod", "default-kod", "not-encoded"],
+)
+def test_a_v4_file_holds_zeros_encoded_with_its_kod_after_the_header(
+    tmp_path: Path, kod: list[int] | None, encoded: bool
+) -> None:
+    write_datafile(tmp_path, "Bank", [b"record"], kod=kod, version=b"01.11", encoded=encoded)
+
+    data = (tmp_path / "CroBank.dat").read_bytes()
+
+    assert KODcoding(kod or INITIAL_KOD).decode(0, data[19:27]) == bytes(8)
+    assert data[27:DAT_PREFIX_SIZE] == bytes(DAT_PREFIX_SIZE - 27)
+
+
+def test_a_v4_raw_datafile_encodes_its_check_bytes_with_the_kod_given(tmp_path: Path) -> None:
+    kod = random_kod(seed=4)
+    write_raw_datafile(tmp_path, "Bank", b"", [], version=b"01.11", kod=kod)
+
+    data = (tmp_path / "CroBank.dat").read_bytes()
+
+    assert data[19:27] == KODcoding(kod).encode(0, bytes(8))
+    assert len(data) == DAT_PREFIX_SIZE
+
+
+def test_write_kod_check_rewrites_only_the_check_bytes(tmp_path: Path) -> None:
+    write_datafile(tmp_path, "Bank", [b"record"], kod=random_kod(seed=1), version=b"01.11")
+    before = (tmp_path / "CroBank.dat").read_bytes()
+    other = random_kod(seed=2)
+
+    write_kod_check(tmp_path, "Bank", other)
+
+    after = (tmp_path / "CroBank.dat").read_bytes()
+    assert after[19:27] == KODcoding(other).encode(0, bytes(8))
+    assert (after[:19], after[27:]) == (before[:19], before[27:])
+
+
+@pytest.mark.parametrize("version", [b"01.02", b"01.03", b"01.04", b"01.05"])
+def test_a_v3_file_keeps_zero_padding_after_the_header(tmp_path: Path, version: bytes) -> None:
+    kod = random_kod(seed=1) if version in OWN_KOD_VERSIONS else None
+    write_datafile(tmp_path, "Bank", [b"record"], kod=kod, version=version)
+
+    data = (tmp_path / "CroBank.dat").read_bytes()
+
+    assert data[19:DAT_PREFIX_SIZE] == bytes(DAT_PREFIX_SIZE - 19)

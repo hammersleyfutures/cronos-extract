@@ -23,8 +23,8 @@ This API promises:
   listing more than the ``.tad`` has entries is reported as ``unexpected_structure``, and the count is then the
   number of entries.
 - A database ``open()`` cannot read raises a ``CronosError``: ``NotACronosFile``, ``UnsupportedVersion``,
-  ``OwnKodRequired`` (a v4 CroBank encrypted with the database's own KOD, with the default KOD given or left out) or
-  ``DatabaseDefinitionError``.
+  ``WrongKod`` (a KOD-encoded v4 CroStru or CroBank whose header shows that the KOD given, or the default, is not
+  its KOD) or ``DatabaseDefinitionError``.
 - ``Field.value`` is ``str``, ``datetime.date``, ``datetime.time``, ``FileReference`` or ``None``; later versions may
   add types. Numbers are ``str``. A date stored with only its year is ``str``, such as ``"1985-00-00"``.
 - ``compact=True`` reads the CroStru and CroBank indexes from disk instead of memory, for very large databases. The
@@ -36,7 +36,7 @@ This API promises:
 from ._api.bank import Bank, Table, open
 from ._api.crack import crack_kod
 from ._api.diagnostics import Diagnostic, DiagnosticKind
-from ._api.errors import CronosError, DatabaseDefinitionError, NotACronosFile, OwnKodRequired, UnsupportedVersion
+from ._api.errors import CronosError, DatabaseDefinitionError, NotACronosFile, UnsupportedVersion, WrongKod
 from ._api.info import FileInfo
 from ._api.kod import Kod
 from ._api.values import EmbeddedFile, Field, FieldDefinition, FileReference, Record
@@ -54,10 +54,10 @@ __all__ = [
     "FileReference",
     "Kod",
     "NotACronosFile",
-    "OwnKodRequired",
     "Record",
     "Table",
     "UnsupportedVersion",
+    "WrongKod",
     "crack_kod",
     "open",
 ]

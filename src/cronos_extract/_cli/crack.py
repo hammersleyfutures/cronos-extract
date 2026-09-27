@@ -9,6 +9,7 @@ from .. import koddecoder
 from .._api.crack import (
     bank_and_index_xref,
     fill_single_gap,
+    header_rejects,
     kod_from_xref,
     kod_is_resolved,
     readable_records,
@@ -23,6 +24,18 @@ from .options import Subcommands
 from .report import Report
 
 KEY_MESSAGE = "Pass the following database key to cronos-extract export --kod or inspect --kod to decrypt the database:"
+
+
+def print_rejected(table: Datafile, kod: list[int]) -> None:
+    """
+    Print on stderr that the v4 header of `table` rejects the recovered `kod`, then `kod`, as an unresolved crack
+    prints its estimate: a KOD the header rejects never goes to stdout.
+    """
+    print(
+        f"the recovered KOD does not fit Cro{table.name}.dat's header, so it is not the database's KOD\n"
+        + tohex(bytes(kod)),
+        file=sys.stderr,
+    )
 
 
 def color_code(c: str, confidence: int, forced: bool, force: bool) -> str:
@@ -184,7 +197,7 @@ def run_strucrack(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
 
 
 def run_dbcrack(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
-    """Recover the KOD from CroBank and CroIndex, exiting 1 when it cannot."""
+    """Recover the KOD from CroBank and CroIndex, exiting 1 when it cannot or CroBank's v4 header rejects it."""
     with ExitStack() as stack:
         bank = stack.enter_context(raw_datafile(args.dbdir, "Bank"))
         index = stack.enter_context(raw_datafile(args.dbdir, "Index"))
@@ -220,7 +233,9 @@ def derive_kod_from_stru(table: Datafile, args: argparse.Namespace) -> list[int]
     """
     Derive the KOD table from the encrypted records of `table`, CroStru or CroSys, as strucrack's help describes.
     Prints the record dump for finding known text in it, and the KOD when it is resolved; --silent prints only the
-    KOD. Returns None when entries stay unresolved. Raises CrackInputError for a --text that does not fit `table`.
+    KOD. Returns None when entries stay unresolved, and when the v4 header of `table` rejects the KOD, which is then
+    printed on stderr, not stdout, with a line saying so, unless --silent. Raises CrackInputError for a --text that
+    does not fit `table`.
     """
     xref = stru_xref(table)
 
@@ -360,6 +375,11 @@ def derive_kod_from_stru(table: Datafile, args: argparse.Namespace) -> list[int]
             print_unresolved(KOD, KOD_CONFIDENCE, unset_count)
         return None
 
+    if header_rejects(table, KOD):
+        if not args.silent:
+            print_rejected(table, KOD)
+        return None
+
     if not args.silent:
         print(KEY_MESSAGE, file=sys.stderr)
     print(tohex(bytes(KOD)))
@@ -373,7 +393,8 @@ def derive_kod_from_bank_and_index(bank: Datafile, index: Datafile, args: argpar
 
     Most records of both are compressed and start with a uint16 size, 0x08 and 0x00, so the fourth byte of each
     decodes to zero, which gives the KOD entry for that byte at the record's shift. Prints the KOD when it is
-    resolved; returns None, printing why on stderr unless --silent, when it is not.
+    resolved; returns None, printing why on stderr unless --silent, when it is not, and when CroBank's v4 header
+    rejects it, printing the rejected KOD on stderr too.
     """
     KOD, KOD_CONFIDENCE = kod_from_xref(bank_and_index_xref(bank, index))
 
@@ -385,6 +406,11 @@ def derive_kod_from_bank_and_index(bank: Datafile, index: Datafile, args: argpar
                 f"Ambiguous result when cracking. {unset_count:d} entries unsolved: too few CroBank/CroIndex records",
                 file=sys.stderr,
             )
+        return None
+
+    if header_rejects(bank, KOD):
+        if not args.silent:
+            print_rejected(bank, KOD)
         return None
 
     print(tohex(bytes(KOD)))

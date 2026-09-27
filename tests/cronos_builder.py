@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from cronos_extract._diagnostic import Diagnostic
+from cronos_extract._format.header import KOD_CHECK_SIZE
 from cronos_extract.Database import Database
 from cronos_extract.Datamodel import TableDefinition
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
@@ -106,6 +107,7 @@ def write_raw_datafile(
     encoding: int = 0,
     version: bytes = ENCRYPTED_V3_VERSION,
     deleted_count: int | None = None,
+    kod: Sequence[int] | None = None,
 ) -> None:
     """Write Cro<name>.dat holding `body` after the file header, and Cro<name>.tad with one entry per record.
 
@@ -114,11 +116,17 @@ def write_raw_datafile(
     lets tests lay out inline, extended or corrupt records byte by byte.
     The .tad header gives `deleted_count` deleted records; by default, the number of entries marked deleted, as
     real files have it.
+    The padding after the file header is zeros, except that a v4 file's starts with KOD_CHECK_SIZE zeros encoded
+    with `kod` (the default table when None) at shift 0, as real v4 files hold them encoded with their database's
+    own KOD.
     """
     if deleted_count is None:
         deleted_count = sum(is_deleted_entry(version, offset, length) for offset, length in tad_entries)
     tad_header, tad_entry = tad_layout(version, deleted_count)
-    dat = DAT_HEADER.pack(b"CroFile\x00", 0, version, encoding, BLOCKSIZE) + bytes(DAT_HEADER_PADDING)
+    padding = bytearray(DAT_HEADER_PADDING)
+    if version in V4_VERSIONS:
+        padding[:KOD_CHECK_SIZE] = KODcoding(list(kod or INITIAL_KOD)).encode(0, bytes(KOD_CHECK_SIZE))
+    dat = DAT_HEADER.pack(b"CroFile\x00", 0, version, encoding, BLOCKSIZE) + bytes(padding)
     tad = tad_header + b"".join(tad_entry.pack(offset, length, 0) for offset, length in tad_entries)
     directory.mkdir(parents=True, exist_ok=True)
     (directory / f"Cro{name}.dat").write_bytes(dat + body)
@@ -178,6 +186,7 @@ def write_datafile(
     version: bytes = ENCRYPTED_V3_VERSION,
     encoded: bool = False,
     extended: bool = False,
+    extended_flags: int = 0x00,
 ) -> None:
     """Write Cro<name>.dat and Cro<name>.tad of `version` holding `records`.
 
@@ -189,7 +198,8 @@ def write_datafile(
     with the default table and the encoding bit is set, as CronosPro stores them in many files of every version.
     With `extended`, every record is stored as an extended record spread over extension blocks instead of inline;
     KOD encoding, when it applies, encodes the whole record before it is split into blocks, matching how the
-    reader decodes the whole reassembled record after read_extended puts it back together.
+    reader decodes the whole reassembled record after read_extended puts it back together. `extended_flags` is the
+    flag byte a v4 extended entry is written with, other than the deleted bit, to test flags other than 00.
     """
     tad_layout(version)
     if kod is not None and version not in OWN_KOD_VERSIONS:
@@ -221,7 +231,8 @@ def write_datafile(
         offset = DAT_PREFIX_SIZE + len(body)
         if extended:
             record_bytes, entry_length = extended_record(stored, offset, use64bit)
-            tad_entries.append((offset | deleted_flag, entry_length))
+            flag_bits = (extended_flags << V4_FLAG_SHIFT) if version in V4_VERSIONS else 0
+            tad_entries.append((offset | flag_bits | deleted_flag, entry_length))
             body += record_bytes
         else:
             if version in V4_VERSIONS:
@@ -229,7 +240,7 @@ def write_datafile(
             else:
                 tad_entries.append((offset, len(stored) | V3_INLINE_BIT))
             body += stored
-    write_raw_datafile(directory, name, bytes(body), tad_entries, encoding=1 if coder else 0, version=version)
+    write_raw_datafile(directory, name, bytes(body), tad_entries, encoding=1 if coder else 0, version=version, kod=kod)
 
 
 def stru_records_from_test_db() -> list[bytes | None]:
@@ -538,8 +549,10 @@ def database_with_own_kod_v4_bank(
     return str(directory)
 
 
-def crackable_database(directory: Path, bank_records: Sequence[bytes | None], kod: Sequence[int]) -> str:
-    """Write a database encrypted with `kod` that holds enough known zero bytes for strucrack and dbcrack.
+def crackable_database(
+    directory: Path, bank_records: Sequence[bytes | None], kod: Sequence[int], *, version: bytes = ENCRYPTED_V3_VERSION
+) -> str:
+    """Write a database of `version` encrypted with `kod` that holds enough known zero bytes for strucrack and dbcrack.
 
     strucrack counts, for every shift, which encrypted byte is most common in CroStru, so all-zero records give
     every shift the right answer. dbcrack reads the fourth byte of CroBank and CroIndex records longer than
@@ -552,4 +565,16 @@ def crackable_database(directory: Path, bank_records: Sequence[bytes | None], ko
         kod,
         extra_stru_records=[bytes(256)] * 8,
         index_records=zero_byte_records,
+        version=version,
     )
+
+
+def write_kod_check(directory: Path, name: str, kod: Sequence[int]) -> None:
+    """Overwrite the KOD check bytes of the v4 file Cro<name>.dat with KOD_CHECK_SIZE zeros encoded with `kod`.
+
+    Its records stay as they were, so the header can tell a KOD other than the one the records were written with.
+    """
+    path = directory / f"Cro{name}.dat"
+    data = bytearray(path.read_bytes())
+    data[DAT_HEADER.size : DAT_HEADER.size + KOD_CHECK_SIZE] = KODcoding(list(kod)).encode(0, bytes(KOD_CHECK_SIZE))
+    path.write_bytes(bytes(data))
