@@ -238,6 +238,13 @@ def test_v4_record_flags_are_in_the_top_byte_of_the_offset(tmp_path: Path) -> No
     assert (offset >> 56, offset & ((1 << 56) - 1), length) == (0x04, DAT_PREFIX_SIZE, 4)
 
 
+def test_v4_extended_flags_are_in_the_top_byte_of_the_offset(tmp_path: Path) -> None:
+    write_datafile(tmp_path, "Bank", [b"\x01abc"], version=b"01.11", extended=True, extended_flags=0x08)
+
+    offset, _, _ = struct.unpack("<QLL", (tmp_path / "CroBank.tad").read_bytes()[16:])
+    assert offset >> 56 == 0x08
+
+
 def test_v3_record_flags_are_in_the_top_byte_of_the_length(tmp_path: Path) -> None:
     write_datafile(tmp_path, "Bank", [b"\x01abc"], version=b"01.03")
 
