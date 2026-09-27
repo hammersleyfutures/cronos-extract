@@ -224,3 +224,53 @@ the xfail reason from the run, and records counts only.
   database`.
 
 The controller appends this plan's Outcome after the whole-branch review, with the realdata run's length.
+
+## Outcome
+
+Implemented on branch `phase3d-v4-fixes` in 15 commits after the plan (`03a53c2`..`ff300b1`, plus this record),
+subagent-driven: an implementer and a task review per task, then a whole-branch review by Fable and one fix wave.
+
+- **Tests:** 898 passed on `main` (`9b960e6`), 944 on the branch (11 realdata tests deselected); ruff, format and ty
+  clean. **Golden files:** the two `01.11` files under `tests/golden/api/` (the deleted record is now written, so the
+  later record numbers shift by one); `export-csv.stderr`, `export-jsonl.stderr` and `export-postgres.stderr` gain the
+  note for `test_data`'s 85 deleted records; `export-jsonl.stdout` gains the `deleted_records` line.
+- **Realdata (counts only):** the full run at `2770fef` took 9,028 s (2 h 30 min): 222 passed, 55 skipped, 5 xfailed,
+  2 failed. Both failures were the spec's, not the code's, and the fix wave settled them (below). The tests the fix
+  wave changed (`-k "v4_tad or live_records or dbcrack or fingerprint"`) then gave 36 passed, 33 skipped, 5 xfailed,
+  none failed. The mixed database's fingerprint was removed from `local/realdata-fingerprints.json` (24 entries to 23;
+  the rest unchanged); it now raises `OwnKodRequired` with the default KOD.
+- **The mixed database with its own KOD:** `crack_kod(path, "dbcrack")` recovers it in 2 s; read with it, the database
+  holds 22,870,294 records of its one table and 1 file, with no `invalid_value` or `undecodable_field` (the default KOD
+  had given 28,191 records and 61,133 files, with 17,296 `invalid_value` and 244 `undecodable_field`). The full read
+  took 5,582 s on a shared machine.
+- **The locked v4 databases:** dbcrack returns None for the four small ones (their CroBank and CroIndex are not
+  KOD-encoded); the 128-million-entry one was not re-run. `V4_CRACK_XFAIL` says so.
+
+### Divergences from the plan and their rulings
+
+- Task 1: the golden API test lives in `tests/test_api_golden.py`. The extended cases of the new API and export tests
+  first passed without the fix (under the old rule the record fell into no table by accident); a fix round made them
+  fail at the old rule, and the CSV export test showed that the old rule wrote a deleted extended v4 record out as a
+  garbage stored file.
+- Task 2: the mixed database the plan described cannot open with `kod=None` (its CroStru is KOD-encoded), so a variant
+  with an unencoded CroStru shows D2's "opens with a warning"; the builder test's `01.11` default-encoded extended case
+  was dropped, since D2 refuses that combination by design.
+- Task 3: `--strict` cannot exit 0 on a built database (every one reports two `unexpected_structure` diagnostics), so
+  the test compares the exit status and summary with and without a deleted record; the singular note reads "which is
+  not exported … what remains of it".
+- **After the realdata run:** the first evidence summed only flags `02` and `06` and missed that flag `07` has bit
+  `0x02`; one real CroIndex has 2 such entries, which its header does not count. D1 is narrowed to bit `0x02` set and
+  bit `0x01` clear, and flag `07` is live. The garbage test failed on a database with no tables, a CroBank that is not
+  KOD-encoded and one live record; it now applies only to KOD-encoded CroBanks with at least 100 live records sampled.
+
+### Final review
+
+Fable, `9b960e6..e9fe3db`: ready to merge with fixes; hostile probes (broken extension chains on deleted v4 records, a
+header claiming 4,294,967,295 deleted records, a v4 CroBank whose encoding bit is set over plain records, `--kod` with
+the default table's hex) were all contained. The Important findings were the post-run items above and `CLAUDE.md`'s
+placeholder for the run's length; the fix wave (`68c0c1d`..`ff300b1`) also made `--crack`'s failure hint name the
+method used. A scoped re-review found all five addressed. Minors left: after the cap, the note can say "1 deleted
+record" when the header's count was hostile (a consequence of D3, for 3e's brief); the builder can still write a
+default-encoded `01.11` file that no reader accepts; a test helper re-decodes the definition. For 3e's brief as well:
+`docs/cronos-research.md` calls flag `03` deleted, which the evidence-based rule reads as live; no real file has shown
+flag `03`.
