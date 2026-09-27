@@ -20,7 +20,7 @@ Every decision below was made with Ben on 2026-09-15.
 6. **Field values:** three views per field — `value` (typed), `text` (display string) and `raw` (bytes). Numeric fields stay `str` in 1.0 until real databases show how CronosPro formats numbers.
 7. **Format support in 1.0:** tables with ids above 255 and CRC checking of compressed chunks. CronosPro v7 (`01.19`) comes after 1.0 (decision 13). Link fields (7, 8, 9, 17), dictionary fields (3), external files (29) and multi-valued fields come after 1.0.
 8. **Exports in 1.0:** CSV, PostgreSQL and JSON Lines. The HTML export and its template are removed.
-9. **Release:** nothing is published to PyPI before 1.0, and the repository stays private until then. 1.0 does not read v7 (decision 13).
+9. **Release:** nothing is published to PyPI before 1.0. 1.0 does not read v7 (decision 13). **Corrected 2026-09-27:** this decision also said that the repository stays private until 1.0, but the repository was already public, and it stays public.
 10. **Specs and plans** are committed to the repository.
 11. **v7 test files (decided 2026-09-16):** the Phase 0 survey of Ben's databases found no v7 — only `01.02` and `01.03` (v3) and `01.11` (v4). v7 samples will come from a file found online or one made with the CronosPro 7 trial software. No v7 file had been found by 2026-09-25, so v7 moved after 1.0 (decision 13).
 12. **`compact=False` stays the default (decided 2026-09-17):** `cronos_extract.open()` keeps `compact=False`, even
@@ -49,7 +49,7 @@ Every decision below was made with Ben on 2026-09-15.
 
 Each phase is a separate spec, plan and pull request, in this order. Phase 4 (v7) comes after 1.0 (decision 13).
 
-**Status (2026-09-27):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is complete: it is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below, and was merged as PR #9. Phase 2 is designed in `2026-09-17-phase2-command-line-design.md` and was merged as PR #11. Phase 3a is designed in `2026-09-25-phase3a-datafile-core-design.md` and was merged as PR #12. Phase 3b is designed in `2026-09-26-phase3b-definitions-diagnostics-design.md` and was merged as PR #13. Phase 3c is designed in `2026-09-26-phase3c-bank-reading-design.md` and was merged as PR #14. Phase 3d is designed in `2026-09-26-phase3d-v4-fixes-design.md` and was merged as PR #15. Phase 3e is designed in `2026-09-27-phase3e-v4-header-kod-design.md` and was merged as PR #16. Phase 3f's research spike moved the known-plaintext KOD solver after 1.0 (decision 14). Phase 5, the 1.0 release, is next.
+**Status (2026-09-27):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is complete: it is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below, and was merged as PR #9. Phase 2 is designed in `2026-09-17-phase2-command-line-design.md` and was merged as PR #11. Phase 3a is designed in `2026-09-25-phase3a-datafile-core-design.md` and was merged as PR #12. Phase 3b is designed in `2026-09-26-phase3b-definitions-diagnostics-design.md` and was merged as PR #13. Phase 3c is designed in `2026-09-26-phase3c-bank-reading-design.md` and was merged as PR #14. Phase 3d is designed in `2026-09-26-phase3d-v4-fixes-design.md` and was merged as PR #15. Phase 3e is designed in `2026-09-27-phase3e-v4-header-kod-design.md` and was merged as PR #16. Phase 3f's research spike moved the known-plaintext KOD solver after 1.0 (decision 14). Phase 5, the 1.0 release, is designed in `2026-09-27-phase5-release-design.md` and is on branch `phase5-release`, with its pull request pending.
 
 ### Phase 0 — version survey
 
@@ -65,7 +65,7 @@ The `cronos-extract` subcommands (`survey`, `export`, `inspect`, `crack`), globa
 
 ### Phase 3 — restructure behind the façade
 
-Type annotations throughout; one record-decoding path in place of the copies in `Datafile.readrec` and `Datafile.dump`; a reader interface per format version; one CP-1251 decoding policy; one KOD-selection function; diagnostics in place of `print`. Fixes: tables with ids above 255, CRC checking, a diagnostic when a supplied KOD is not used, warnings printed once per problem instead of once per table pass, and the Files table header. The Phase 1 and Phase 2 tests guard every step. Delivered as 3a–3e (decision 14): 3e researched what 3d could not settle, and checks a KOD against a v4 file's header. Phase 3f, a known-plaintext KOD solver for the v4 databases whose own-KOD CroStru is locked, follows before Phase 5, with `2026-09-27-phase3e-v4-header-kod-design.md`'s Evidence as its brief.
+Type annotations throughout; one record-decoding path in place of the copies in `Datafile.readrec` and `Datafile.dump`; a reader interface per format version; one CP-1251 decoding policy; one KOD-selection function; diagnostics in place of `print`. Fixes: tables with ids above 255, CRC checking, a diagnostic when a supplied KOD is not used, warnings printed once per problem instead of once per table pass, and the Files table header. The Phase 1 and Phase 2 tests guard every step. Delivered as 3a–3e (decision 14): 3e researched what 3d could not settle, and checks a KOD against a v4 file's header. Phase 3f, a known-plaintext KOD solver for the v4 databases whose own-KOD CroStru is locked, with `2026-09-27-phase3e-v4-header-kod-design.md`'s Evidence as its brief, moved after 1.0 (decision 14).
 
 ### Phase 4 — v7 reader (after 1.0)
 
@@ -73,7 +73,7 @@ A goal for after 1.0 (decision 13). A `01.19` reader behind the façade, from th
 
 ### Phase 5 — 1.0 release
 
-Version 1.0, API documentation, PyPI publishing, making the repository public, detaching the fork from alephdata's network, and removing the duplicate CodeQL "Code Quality" analysis. Ben posts the courtesy issue on alephdata/cronodump afterwards.
+Version 1.0, API documentation, PyPI publishing, detaching the fork from alephdata's network, and removing the duplicate CodeQL "Code Quality" analysis. (Corrected 2026-09-27: this text also named making the repository public, but the repository was already public.) Ben posts the courtesy issue on alephdata/cronodump afterwards.
 
 ### After 1.0
 
@@ -116,9 +116,10 @@ Found during Phase 0 and its reviews and not fixed there, each with the phase th
     KOD and holds too few records for strucrack (3d). Phase 3e found that its header gives away 8 KOD entries and that
     known plaintext in its record 1 (`Base000`) recovered 78 correct entries of 256 in one database; Phase 3f's spike
     found no such plaintext in the five locked databases, so the solver waits until after 1.0 (decision 14). `tests/test_realdata.py` marks this as a strict xfail.
-  - Decoding KOD faster: `koddecoder.KODcoding.decode` decodes one byte at a time in Python, about 120 µs a record,
-    so about 45 minutes for the 22.87 million records of the slowest real database. `bytes.translate` for the table
-    lookup, then a position ramp, could do this faster.
+  - **(done, Phase 5 R2)** Decoding KOD faster: `koddecoder.KODcoding.decode` decoded one byte at a time in Python,
+    about 120 µs a record, so about 45 minutes for the 22.87 million records of the slowest real database. It now
+    translates through the KOD and subtracts the position ramp in byte lanes (strided slices from 16 KiB), about 13x
+    faster at 1 KiB; a built database of 100,000 KOD-encoded records of about 1 KiB reads 1.85x faster.
   - **(done, Phase 3c)** KOD selection: `koddecoder.select_kod` chooses and reports the KOD for every reader, so an
     own-KOD file read with `Kod.default()` and a KOD-encoded file read with `kod=None` are now each reported as
     `mismatched_kod`.
@@ -149,7 +150,7 @@ Found during Phase 0 and its reviews and not fixed there, each with the phase th
     there.
 - **Phase 3b, from Phase 3a (done):** a CroStru checksum mismatch (the database definition or a table definition) is
   now reported as its own kind, `checksum_mismatch`, instead of `unexpected_structure` through the `warn` hook.
-- **Before 1.0, from Phase 1:** `FileInfo` does not enforce that either `problem` or the header fields are set; `Generation` is a PEP 695 alias, so `typing.get_args(Generation)` is empty; `bank.diagnostic_counts[kind]` reads 0 for a kind that never occurred (documented).
+- **Before 1.0, from Phase 1 (settled, Phase 5 R1):** `FileInfo` does not enforce that either `problem` or the header fields are set; `Generation` is a PEP 695 alias, so `typing.get_args(Generation)` is empty; `bank.diagnostic_counts[kind]` reads 0 for a kind that never occurred (documented). Phase 5 R1 settled all three: `FileInfo.__post_init__` enforces the invariant, `Generation` is a public `Literal` alias, and `docs/api.md` documents the zero count.
 - **Cosmetic, no phase:** an unreadable directory reachable from two overlapping roots is warned about twice. A directory named `Cro*.dat` that itself holds databases is reported as a problem under its parent and as its own database, so `--counts` also scores it as one unreadable file. `--jsonl` writes undecodable path bytes as `\udcXX` escapes, which strict JSON parsers may reject. The README's sentence about unreadable directories sits in the `--list` paragraph, though the warning applies to any root.
 - **Decided, not open:** `survey_file` follows symlinks (`stat`, not `lstat`) on purpose, and each plan keeps its pre-implementation wording as the record of what was planned.
 
