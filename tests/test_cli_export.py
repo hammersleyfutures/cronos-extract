@@ -21,6 +21,7 @@ from cronos_builder import (
     complex_field,
     compressed_record,
     corrupt_compressed_record,
+    crackable_database,
     database_with_extra_definition_key,
     database_with_files_abbreviation,
     database_with_missing_definition,
@@ -39,6 +40,7 @@ from cronos_builder import (
     stru_records_from_test_db,
     write_database,
     write_datafile,
+    write_kod_check,
 )
 
 from cronos_extract import DatabaseDefinitionError, FieldDefinition
@@ -778,6 +780,21 @@ def test_a_crack_that_recovers_nothing_exits_1(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert f"cronos-extract crack dbcrack {dbdir}" in last_line(result.stderr)
+
+
+def test_a_crack_whose_kod_the_v4_header_rejects_exits_1_naming_the_crack_command(tmp_path: Path) -> None:
+    dbdir = crackable_database(tmp_path / "db", [table_record({0: b"x"})], random_kod(seed=7), version=b"01.11")
+    write_kod_check(Path(dbdir), "Bank", random_kod(seed=8))
+
+    result = run_command("cli", ["export", "--jsonl", "--crack", "dbcrack", dbdir])
+
+    assert result.returncode == 1
+    assert (result.stdout, result.stderr) == (
+        "",
+        "no diagnostics\n"
+        f"Error: dbcrack cannot recover the KOD of {dbdir}; recover it with cronos-extract crack dbcrack {dbdir} "
+        "and pass it with --kod\n",
+    )
 
 
 def test_strict_exits_1_after_writing_the_output(tmp_path: Path) -> None:

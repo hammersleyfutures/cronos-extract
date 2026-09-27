@@ -13,6 +13,7 @@ from cronos_builder import (
     crackable_database,
     random_kod,
     write_database,
+    write_kod_check,
 )
 
 from cronos_extract import Kod, NotACronosFile, crack_kod
@@ -21,6 +22,8 @@ from cronos_extract.koddecoder import KODcoding
 KOD = random_kod(seed=7)
 PERSON_FIELDS = [b"42", b"Hammersley", b"", b"1240315", b"0930", b"", b"", b"", b"", b"", b""]
 METHODS = ["strucrack", "dbcrack"]
+# The file whose header each method checks its KOD against.
+CHECKED_FILE = {"strucrack": "Stru", "dbcrack": "Bank"}
 
 pytestmark = pytest.mark.usefixtures("prints_nothing")
 
@@ -45,6 +48,30 @@ def test_crack_kod_agrees_with_the_crack_command(encrypted_db: str, method: str)
     assert result.returncode == 0
     assert kod is not None
     assert result.stdout == kod.hex() + "\n"
+
+
+@pytest.fixture
+def encrypted_v4_db(tmp_path: Path) -> str:
+    return crackable_database(tmp_path / "db", [bank_record(TEST_TABLE_ID, PERSON_FIELDS)], KOD, version=b"01.11")
+
+
+@pytest.mark.parametrize("method", METHODS)
+def test_crack_kod_recovers_the_kod_of_a_v4_database_whose_header_it_fits(encrypted_v4_db: str, method: str) -> None:
+    assert crack_kod(encrypted_v4_db, cast(Any, method)) == Kod.from_table(KOD)
+
+
+@pytest.mark.parametrize("method", METHODS)
+def test_crack_kod_returns_none_when_the_v4_header_rejects_the_kod(encrypted_v4_db: str, method: str) -> None:
+    write_kod_check(Path(encrypted_v4_db), CHECKED_FILE[method], random_kod(seed=8))
+
+    assert crack_kod(encrypted_v4_db, cast(Any, method)) is None
+
+
+@pytest.mark.parametrize(("method", "other_file"), [("strucrack", "Bank"), ("dbcrack", "Stru")])
+def test_crack_kod_checks_only_the_file_it_read(encrypted_v4_db: str, method: str, other_file: str) -> None:
+    write_kod_check(Path(encrypted_v4_db), other_file, random_kod(seed=8))
+
+    assert crack_kod(encrypted_v4_db, cast(Any, method)) == Kod.from_table(KOD)
 
 
 @pytest.mark.parametrize("method", METHODS)

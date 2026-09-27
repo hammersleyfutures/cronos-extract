@@ -43,6 +43,7 @@ from cronos_builder import (
     write_database,
     write_datafile,
     write_header_only_datafile,
+    write_kod_check,
     write_raw_datafile,
 )
 
@@ -552,6 +553,18 @@ def test_a_v4_raw_datafile_encodes_its_check_bytes_with_the_kod_given(tmp_path: 
 
     assert data[19:27] == KODcoding(kod).encode(0, bytes(8))
     assert len(data) == DAT_PREFIX_SIZE
+
+
+def test_write_kod_check_rewrites_only_the_check_bytes(tmp_path: Path) -> None:
+    write_datafile(tmp_path, "Bank", [b"record"], kod=random_kod(seed=1), version=b"01.11")
+    before = (tmp_path / "CroBank.dat").read_bytes()
+    other = random_kod(seed=2)
+
+    write_kod_check(tmp_path, "Bank", other)
+
+    after = (tmp_path / "CroBank.dat").read_bytes()
+    assert after[19:27] == KODcoding(other).encode(0, bytes(8))
+    assert (after[:19], after[27:]) == (before[:19], before[27:])
 
 
 @pytest.mark.parametrize("version", [b"01.02", b"01.03", b"01.04", b"01.05"])

@@ -546,8 +546,10 @@ def database_with_own_kod_v4_bank(
     return str(directory)
 
 
-def crackable_database(directory: Path, bank_records: Sequence[bytes | None], kod: Sequence[int]) -> str:
-    """Write a database encrypted with `kod` that holds enough known zero bytes for strucrack and dbcrack.
+def crackable_database(
+    directory: Path, bank_records: Sequence[bytes | None], kod: Sequence[int], *, version: bytes = ENCRYPTED_V3_VERSION
+) -> str:
+    """Write a database of `version` encrypted with `kod` that holds enough known zero bytes for strucrack and dbcrack.
 
     strucrack counts, for every shift, which encrypted byte is most common in CroStru, so all-zero records give
     every shift the right answer. dbcrack reads the fourth byte of CroBank and CroIndex records longer than
@@ -560,4 +562,16 @@ def crackable_database(directory: Path, bank_records: Sequence[bytes | None], ko
         kod,
         extra_stru_records=[bytes(256)] * 8,
         index_records=zero_byte_records,
+        version=version,
     )
+
+
+def write_kod_check(directory: Path, name: str, kod: Sequence[int]) -> None:
+    """Overwrite the KOD check bytes of the v4 file Cro<name>.dat with KOD_CHECK_SIZE zeros encoded with `kod`.
+
+    Its records stay as they were, so the header can tell a KOD other than the one the records were written with.
+    """
+    path = directory / f"Cro{name}.dat"
+    data = bytearray(path.read_bytes())
+    data[DAT_HEADER.size : DAT_HEADER.size + KOD_CHECK_SIZE] = KODcoding(list(kod)).encode(0, bytes(KOD_CHECK_SIZE))
+    path.write_bytes(bytes(data))
