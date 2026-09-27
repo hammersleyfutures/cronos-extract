@@ -12,14 +12,27 @@ DELETED_LENGTH = 0xFFFFFFFF
 V3_INLINE_BIT = 1 << 31
 # The flag byte of an inline v3 entry: the top byte of its length field, which holds only bit 31.
 V3_INLINE_FLAGS = 0x80
-# A v4 entry keeps its flags in the top byte of the offset field. The research notes say 04 marks data (compressed
-# v3-style), 02 and 03 a deleted record and 00 an extended record; 3d checks 02 and 03 against real databases.
+# A v4 entry keeps its flags in the top byte of the offset field. 00 marks an extended record and 04 (most live
+# entries) an inline one. Bit 02 with bit 01 clear marks a deleted record whose data stays in the .dat file: in every
+# real v4 .tad holding such entries, the header's deleted count equals the entries with flags 02 and 06, and flag 07,
+# which has bit 01 set as well, is not counted. What 04, 08, 0c and 07 mean is unexplained (Phase 3e); any flag
+# other than the deleted bit is read as inline.
 V4_FLAG_SHIFT = 56
+V4_DELETED_FLAG = 0x02
+# The flag bits the deleted rule looks at: the deleted bit and bit 01.
+V4_DELETED_MASK = 0x03
 V3_HEADER = struct.Struct("<2L")
 V4_HEADER = struct.Struct("<4L")
-# 01.03, 01.05 and 01.11 have 64-bit file offsets; 01.02 and 01.04 have 32-bit ones.
+# v3's 01.03 and 01.05 have 64-bit file offsets and 01.02 and 01.04 32-bit ones. Every v4 entry has a 64-bit offset
+# whose top byte holds the flags: the research notes describe v4 .tad entries as 16 bytes without telling the v4
+# versions apart, and a 32-bit offset has no top byte for the flags. 01.13 and 01.14 have not been seen.
 ENTRY_64BIT = struct.Struct("<QLL")
 ENTRY_32BIT = struct.Struct("<LLL")
+
+
+def is_v4_deleted(flags: int) -> bool:
+    """Whether a v4 entry's flag byte `flags` marks a deleted record: bit 02 set and bit 01 clear."""
+    return (flags & V4_DELETED_MASK) == V4_DELETED_FLAG
 
 
 @dataclass(frozen=True)
@@ -66,14 +79,20 @@ class TadLayout:
             return TadEntry(offset, length & ~V3_INLINE_BIT, flags, checksum, inline=inline, deleted=False)
         flags = offset >> V4_FLAG_SHIFT
         offset &= (1 << V4_FLAG_SHIFT) - 1
-        return TadEntry(offset, length, flags, checksum, inline=flags != 0, deleted=False)
+        return TadEntry(
+            offset,
+            length,
+            flags,
+            checksum,
+            inline=bool(flags & ~V4_DELETED_FLAG),
+            deleted=is_v4_deleted(flags),
+        )
 
 
 def tad_layout(version: bytes) -> TadLayout | None:
     """The .tad layout of files of `version`, or None for a version whose .tad this release cannot read."""
-    entry = ENTRY_64BIT if version in VERSIONS_64BIT else ENTRY_32BIT
     if version in V3_VERSIONS:
-        return TadLayout(V3_HEADER, entry, "v3")
+        return TadLayout(V3_HEADER, ENTRY_64BIT if version in VERSIONS_64BIT else ENTRY_32BIT, "v3")
     if version in V4_VERSIONS:
-        return TadLayout(V4_HEADER, entry, "v4")
+        return TadLayout(V4_HEADER, ENTRY_64BIT, "v4")
     return None

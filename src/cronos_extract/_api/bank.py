@@ -14,7 +14,7 @@ from ..Datafile import Datafile
 from ..Datamodel import TableDefinition, describe_error, is_table_key, undecodable_table
 from .datafiles import database_directory, list_directory, open_datafile, optional_file_info
 from .diagnostics import Diagnostic, DiagnosticKind, DiagnosticLog, RecordNumbers
-from .errors import DatabaseDefinitionError
+from .errors import DatabaseDefinitionError, OwnKodRequired
 from .info import FileInfo
 from .kod import Kod, kod_coder
 from .values import EmbeddedFile, FieldDefinition, FileReference, Record, decode_record
@@ -28,6 +28,7 @@ DEFINITION_HINT = (
     "If the KOD used to read this database is not its own, the definition decodes as garbage; "
     "cronos_extract.crack_kod can recover the database's KOD."
 )
+OWN_KOD_HINT = 'cronos_extract.crack_kod(path, "dbcrack") can recover the database\'s KOD.'
 
 
 class Table:
@@ -87,12 +88,14 @@ class Bank:
         bank_file: Datafile,
         info: tuple[FileInfo, ...],
         log: DiagnosticLog,
+        deleted_records: int,
     ) -> None:
         self._directory = directory
         self._database = database
         self._bank_file = bank_file
         self._info = info
         self._log = log
+        self._deleted_records = deleted_records
         self._closed = False
         self._tables: tuple[Table, ...] = ()
         self._files_table_id: int | None = None
@@ -116,6 +119,13 @@ class Bank:
     def info(self) -> tuple[FileInfo, ...]:
         """The Cro files found, in the order Stru, Bank, Index, Sys."""
         return self._info
+
+    @property
+    def deleted_records(self) -> int:
+        """
+        The number of deleted records CroBank's .tad header lists, at most its number of entries; they are not read.
+        """
+        return self._deleted_records
 
     @property
     def diagnostics(self) -> Sequence[Diagnostic]:
@@ -372,11 +382,14 @@ def open(
     `kod` is the KOD table to decode records with, or None to read them without KOD decoding. `compact` reads the
     CroStru and CroBank indexes from disk instead of memory; the table index of CroBank holds about 4 bytes per live
     CroBank record (8 where 4 cannot hold its record numbers), whether or not `compact` is set. `on_diagnostic` is
-    called with each diagnostic as it is recorded.
+    called with each diagnostic as it is recorded. The bank's `deleted_records` is the number of deleted records
+    CroBank's .tad header lists, which are not read; a header listing more than the .tad has entries is reported as
+    unexpected_structure, and `deleted_records` is then the number of entries.
 
     Raises OSError when `path` does not exist, is not a directory or cannot be listed; TypeError for a bytes path;
-    NotACronosFile or UnsupportedVersion when CroStru or CroBank cannot be read; DatabaseDefinitionError when the
-    database definition cannot be decoded.
+    NotACronosFile or UnsupportedVersion when CroStru or CroBank cannot be read; OwnKodRequired when CroBank is a v4
+    file encrypted with the database's own KOD and `kod` is the default one, which would decode its records as
+    garbage; DatabaseDefinitionError when the database definition cannot be decoded.
     """
     directory = database_directory(path)
     names = list_directory(directory)
@@ -386,6 +399,22 @@ def open(
         stack.callback(stru.close)
         bank_file, bank_info = open_datafile(directory, names, "Bank", compact=compact, kod=kod, log=log)
         stack.callback(bank_file.close)
+        if bank_info.generation == "v4" and bank_info.kod_encoded and kod == DEFAULT_KOD:
+            raise OwnKodRequired(
+                f"{BANK_FILE} in {directory} is encrypted with the database's own KOD, which the default KOD would "
+                f"decode as garbage. {OWN_KOD_HINT}"
+            )
+        deleted_records = bank_file.nrdeleted
+        if deleted_records > bank_file.nrofrecords:
+            log.record(
+                Diagnostic(
+                    DiagnosticKind.UNEXPECTED_STRUCTURE,
+                    f"the .tad header lists {deleted_records} deleted records, more than its "
+                    f"{bank_file.nrofrecords} entries",
+                    file=BANK_FILE,
+                )
+            )
+            deleted_records = bank_file.nrofrecords
         optional = [optional_file_info(directory, names, base, log) for base in ("Index", "Sys")]
         database = Database.from_datafiles(str(directory), compact, kod_coder(kod), stru, bank_file, log.record)
         bank = Bank(
@@ -394,6 +423,7 @@ def open(
             bank_file,
             (stru_info, bank_info, *(info for info in optional if info is not None)),
             log,
+            deleted_records,
         )
         bank._load_tables()
         stack.pop_all()

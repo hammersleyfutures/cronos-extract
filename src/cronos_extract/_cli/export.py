@@ -1,5 +1,5 @@
 # ABOUTME: The export subcommand: opens a database through the cronos_extract API and walks its tables once.
-# ABOUTME: It checks and creates the -o target, skips a repeated table, routes diagnostics and prints the summary.
+# ABOUTME: It creates the -o target, skips repeated tables, routes diagnostics, notes deleted records and sums up.
 import argparse
 import csv
 import io
@@ -30,7 +30,8 @@ INTERRUPTED_STATUS = 130
 class Writer(Protocol):
     """
     An output format. The export calls table() before each table's records, record() for each record, diagnostic()
-    for each problem, finish() once every table is written, and close() at the end, finished or not.
+    for each problem, deleted_records() once after the problems found while opening and before the first table when
+    CroBank lists deleted records, finish() once every table is written, and close() at the end, finished or not.
     """
 
     def table(self, table: Table) -> bool:
@@ -41,6 +42,9 @@ class Writer(Protocol):
 
     def diagnostic(self, problem: Problem) -> None:
         """Write one diagnostic found while exporting."""
+
+    def deleted_records(self, count: int) -> None:
+        """Note that CroBank lists `count` deleted records, which the export does not write."""
 
     def finish(self) -> None:
         """Finish the output once every table is written."""
@@ -241,10 +245,25 @@ def write(bank: Bank, writer: Writer, problems: Problems) -> None:
     """Give `writer` every table of `bank` and finish it, closing it whether or not the export finished."""
     try:
         problems.start(writer)
+        if bank.deleted_records:
+            print(deleted_records_note(bank.deleted_records), file=sys.stderr)
+            writer.deleted_records(bank.deleted_records)
         walk(bank, writer, problems.problem)
         writer.finish()
     finally:
         writer.close()
+
+
+def deleted_records_note(count: int) -> str:
+    """The note export prints on stderr when CroBank lists `count` deleted records; it is not a diagnostic."""
+    if count == 1:
+        return (
+            "note: CroBank.tad lists 1 deleted record, which is not exported; inspect crodump shows what remains of it"
+        )
+    return (
+        f"note: CroBank.tad lists {count} deleted records, which are not exported; "
+        "inspect crodump shows what remains of them"
+    )
 
 
 def walk(bank: Bank, writer: Writer, on_problem: Callable[[Problem], None]) -> None:

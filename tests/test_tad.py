@@ -4,7 +4,14 @@ import struct
 
 import pytest
 
-from cronos_extract._format.tad import DELETED_LENGTH, V3_INLINE_BIT, TadEntry, tad_layout
+from cronos_extract._format.tad import (
+    DELETED_LENGTH,
+    V3_INLINE_BIT,
+    V4_DELETED_FLAG,
+    TadEntry,
+    is_v4_deleted,
+    tad_layout,
+)
 
 V3_32 = struct.Struct("<LLL")
 ENTRY_64 = struct.Struct("<QLL")
@@ -12,7 +19,15 @@ ENTRY_64 = struct.Struct("<QLL")
 
 @pytest.mark.parametrize(
     ("version", "header_size", "entry_size"),
-    [(b"01.02", 8, 12), (b"01.03", 8, 16), (b"01.04", 8, 12), (b"01.05", 8, 16), (b"01.11", 16, 16)],
+    [
+        (b"01.02", 8, 12),
+        (b"01.03", 8, 16),
+        (b"01.04", 8, 12),
+        (b"01.05", 8, 16),
+        (b"01.11", 16, 16),
+        (b"01.13", 16, 16),
+        (b"01.14", 16, 16),
+    ],
 )
 def test_each_version_has_its_header_and_entry_size(version: bytes, header_size: int, entry_size: int) -> None:
     layout = tad_layout(version)
@@ -73,3 +88,18 @@ def test_the_header_gives_the_deleted_record_counts() -> None:
 
     assert v3.deleted_counts(struct.pack("<2L", 3, 40)) == (3, 40)
     assert v4.deleted_counts(struct.pack("<4L", 0xFFFFFFFE, 3, 40, 0)) == (3, 40)
+
+
+@pytest.mark.parametrize(
+    ("flags", "deleted"),
+    [(0x02, True), (0x06, True), (0x07, False), (0x00, False), (0x04, False), (0x08, False), (0x0C, False)],
+)
+def test_a_v4_entry_with_the_deleted_bit_and_not_bit_0x01_is_deleted(flags: int, deleted: bool) -> None:
+    layout = tad_layout(b"01.11")
+    assert layout is not None
+
+    parsed = layout.parse(ENTRY_64.pack(flags << 56 | 0x100, 9, 3))
+
+    assert parsed == TadEntry(0x100, 9, flags, 3, inline=(flags & ~0x02) != 0, deleted=deleted)
+    assert is_v4_deleted(flags) == deleted
+    assert V4_DELETED_FLAG == 0x02

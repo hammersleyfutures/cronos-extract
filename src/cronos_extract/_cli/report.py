@@ -6,13 +6,15 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Self, TextIO, override
 
-from .._api.bank import DEFINITION_HINT
+from .._api.bank import DEFINITION_HINT, OWN_KOD_HINT
 from .._api.diagnostics import Diagnostic, DiagnosticKind
 from ..Database import KOD_HINT
 
 # The canonical name of CroBank, one of the two files a Problem can name, as the API names it; the other is
 # _diagnostic.STRU_FILE.
 BANK_FILE = "CroBank.dat"
+# The command's hint in place of OWN_KOD_HINT, naming how the command line recovers the database's own KOD.
+OWN_KOD_COMMAND_HINT = "export --crack dbcrack uses the KOD that cronos-extract crack dbcrack derives."
 # Kinds the command reports itself, for problems of writing the output rather than of reading the database.
 DUPLICATE_TABLE = "duplicate_table"
 REPLACED_NUL = "replaced_nul"
@@ -183,8 +185,8 @@ class Failure(Exception):
 
 
 def error_message(error: BaseException) -> str:
-    """The text of the Error line for `error`, with the API's hint about recovering a KOD replaced by the command's."""
-    return str(error).replace(DEFINITION_HINT, KOD_HINT)
+    """The text of the Error line for `error`, with the API's hints about recovering a KOD replaced by the command's."""
+    return str(error).replace(DEFINITION_HINT, KOD_HINT).replace(OWN_KOD_HINT, OWN_KOD_COMMAND_HINT)
 
 
 def print_error(message: str) -> None:

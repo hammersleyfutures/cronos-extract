@@ -8,7 +8,7 @@ from typing import BinaryIO
 from ._diagnostic import Diagnostic, DiagnosticKind, Reporter
 from ._format.header import read_dat_header
 from ._format.record import RecordParts, RecordSource, decode_record, decompress, is_compressed, read_stored
-from ._format.tad import TadEntry, tad_layout
+from ._format.tad import DELETED_LENGTH, TadEntry, tad_layout
 from .hexdump import tohex, toout
 from .koddecoder import KODcoding, select_kod
 
@@ -207,10 +207,12 @@ class Datafile:
             idx = i + 1
             if args.maxrecs and i == args.maxrecs:
                 break
-            if entry.deleted:
+            if entry.length == DELETED_LENGTH:
                 print(f"{idx:5d}: {entry.offset:08x} {entry.length:08x} {entry.checksum:08x}")
                 continue
 
+            # A deleted v4 entry keeps its data, so it is dumped like a live one and marked.
+            deleted = " <deleted>" if entry.deleted else ""
             ofs, ln, flags, chk = entry.offset, entry.length, entry.flags, entry.checksum
             ranges.append((ofs, ofs + ln, f"item #{i:d}"))
             decflags = [" ", " "]
@@ -219,7 +221,7 @@ class Datafile:
             try:
                 parts = read_stored(self.source, idx, entry, require_whole=False)
             except ValueError as e:
-                print(f"{idx:5d}: {ofs:08x}-{ofs + ln:08x}: ({flags:02x}:{chk:08x}) <{e}>")
+                print(f"{idx:5d}: {ofs:08x}-{ofs + ln:08x}: ({flags:02x}:{chk:08x}) <{e}>{deleted}")
                 continue
             if parts.extended:
                 infostr = ";".join(f"{value:08x}" for value in [parts.chain[0], parts.length, *parts.chain[1:]])
@@ -238,7 +240,7 @@ class Datafile:
                 try:
                     data, mismatched = decompress(data, f"record {idx} in Cro{self.name}.dat")
                 except ValueError as e:
-                    print(f"{idx:5d}: {ofs:08x}-{ofs + ln:08x}: ({flags:02x}:{chk:08x}) <{e}>")
+                    print(f"{idx:5d}: {ofs:08x}-{ofs + ln:08x}: ({flags:02x}:{chk:08x}) <{e}>{deleted}")
                     continue
                 decflags[1] = "@"
                 if mismatched:
@@ -247,7 +249,7 @@ class Datafile:
             # TODO: separate handling for v4
             print(
                 f"{i + 1:5d}: {ofs:08x}-{ofs + ln:08x}: ({flags:02x}:{chk:08x}) "
-                f"{infostr} {''.join(decflags)}{toout(args, data)} {tohex(parts.tail)}{mismatch}"
+                f"{infostr} {''.join(decflags)}{toout(args, data)} {tohex(parts.tail)}{mismatch}{deleted}"
             )
 
         if args.verbose:

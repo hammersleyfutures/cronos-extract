@@ -16,6 +16,7 @@ from cronos_builder import (
     TEST_TABLE_FIELD_COUNT,
     TEST_TABLE_FILE_FIELD_INDEX,
     TEST_TABLE_ID,
+    DeletedRecord,
     bank_record,
     complex_field,
     compressed_record,
@@ -23,6 +24,7 @@ from cronos_builder import (
     database_with_extra_definition_key,
     database_with_files_abbreviation,
     database_with_missing_definition,
+    database_with_own_kod_v4_bank,
     database_with_wrong_kod_record_out_of_range,
     duplicate_table_name_database,
     erdgeist_table_definition,
@@ -177,6 +179,22 @@ def test_csv_export_writes_the_stored_and_the_referenced_files(tmp_path: Path) -
 
     assert (tmp_path / "out" / "Files-FL" / "1").read_bytes() == b"DATA"
     assert (tmp_path / "out" / "Files-Referenced" / "report.pdf").read_bytes() == b"DATA"
+
+
+@pytest.mark.parametrize("extended", [False, True], ids=["inline", "extended"])
+def test_csv_export_leaves_out_a_deleted_v4_record(tmp_path: Path, extended: bool) -> None:
+    """A deleted extended record (flag 02) read as inline would land in the Files table as stored file 2."""
+    dbdir = write_database(
+        tmp_path / "db",
+        [table_record({0: b"one"}), DeletedRecord(table_record({0: b"gone"})), table_record({0: b"three"})],
+        version=b"01.11",
+        extended=extended,
+    )
+
+    assert export_csv(dbdir, tmp_path / "out") == 0
+
+    assert [row[:2] for row in csv_rows(tmp_path / "out" / "erdgeist.csv")[1:]] == [["1", "one"], ["3", "three"]]
+    assert names_in(tmp_path / "out" / "Files-FL") == []
 
 
 def test_files_referenced_is_created_for_a_record_whose_file_field_is_empty(tmp_path: Path) -> None:
@@ -495,6 +513,8 @@ SECTION_2_DIAGNOSTICS = [
     }
     for key in ("Base000", "Base001")
 ]
+# TEST_DB's CroBank.tad header lists 85 deleted records.
+TEST_DB_DELETED_LINE = {"type": "deleted_records", "count": 85}
 TEST_TABLE_LINE = {
     "type": "table",
     "table": "erdgeist",
@@ -521,7 +541,7 @@ def record_line(number: int, values: dict[str, object]) -> dict[str, object]:
 def test_jsonl_writes_the_table_line_for_a_table_without_records(capsys: pytest.CaptureFixture[str]) -> None:
     assert export_to_stdout(TEST_DB, "--jsonl") == 0
 
-    assert jsonl_lines(capsys.readouterr().out) == [*SECTION_2_DIAGNOSTICS, TEST_TABLE_LINE]
+    assert jsonl_lines(capsys.readouterr().out) == [*SECTION_2_DIAGNOSTICS, TEST_DB_DELETED_LINE, TEST_TABLE_LINE]
 
 
 def test_jsonl_writes_each_value_as_d4_describes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -622,7 +642,11 @@ def test_jsonl_writes_to_the_file_o_names(tmp_path: Path, capsys: pytest.Capture
 
     assert export_to_stdout(TEST_DB, "--jsonl", "-o", str(output)) == 0
 
-    assert jsonl_lines(output.read_text(encoding="utf-8")) == [*SECTION_2_DIAGNOSTICS, TEST_TABLE_LINE]
+    assert jsonl_lines(output.read_text(encoding="utf-8")) == [
+        *SECTION_2_DIAGNOSTICS,
+        TEST_DB_DELETED_LINE,
+        TEST_TABLE_LINE,
+    ]
     assert capsys.readouterr().out == ""
 
 
@@ -647,6 +671,23 @@ def test_export_of_an_undecodable_definition_exits_1_naming_the_crack_command() 
     assert lines[-1].startswith("Error: the database definition in CroStru.dat of ")
     assert lines[-1].endswith(KOD_HINT)
     assert "cronos_extract.crack_kod" not in result.stderr
+
+
+def test_export_of_an_own_kod_v4_bank_with_the_default_kod_exits_1_naming_dbcrack(tmp_path: Path) -> None:
+    dbdir = database_with_own_kod_v4_bank(tmp_path / "db", [table_record({0: b"42"})])
+
+    result = run_command("cli", ["export", "--jsonl", dbdir])
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.splitlines() == [
+        "warning: mismatched_kod: CroBank.dat: the file is encrypted with its own KOD, but is read with the default "
+        + "one; if its records do not decode, recover its KOD by cracking it",
+        "",
+        "1 diagnostic: 1 mismatched_kod",
+        f"Error: CroBank.dat in {dbdir} is encrypted with the database's own KOD, which the default KOD would decode "
+        + "as garbage. export --crack dbcrack uses the KOD that cronos-extract crack dbcrack derives.",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -721,7 +762,7 @@ def test_a_crack_that_recovers_nothing_exits_1(tmp_path: Path) -> None:
     result = run_command("cli", ["export", "--jsonl", "--crack", "dbcrack", dbdir])
 
     assert result.returncode == 1
-    assert "cronos-extract crack strucrack" in last_line(result.stderr)
+    assert f"cronos-extract crack dbcrack {dbdir}" in last_line(result.stderr)
 
 
 def test_strict_exits_1_after_writing_the_output(tmp_path: Path) -> None:
@@ -733,6 +774,55 @@ def test_strict_exits_1_after_writing_the_output(tmp_path: Path) -> None:
     assert result.returncode == 1
     assert (outdir / "erdgeist.csv").is_file()
     assert last_line(result.stderr) == TEST_DB_SUMMARY
+
+
+DELETED_NOTE = (
+    "note: CroBank.tad lists 1 deleted record, which is not exported; inspect crodump shows what remains of it"
+)
+SECTION_2_WARNINGS = [
+    f"warning: unexpected_structure: CroStru.dat: {key}: FieldDefinition Section 2 not marked with a 2"
+    for key in ("Base000", "Base001")
+]
+
+
+def test_export_notes_the_deleted_records_on_stderr_and_in_json_lines_before_the_first_table(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [table_record({0: b"42"}), None])
+
+    result = run_command("cli", ["export", "--jsonl", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.splitlines() == [*SECTION_2_WARNINGS, DELETED_NOTE, "", TEST_DB_SUMMARY]
+    assert jsonl_lines(result.stdout) == [
+        *SECTION_2_DIAGNOSTICS,
+        {"type": "deleted_records", "count": 1},
+        TEST_TABLE_LINE,
+        record_line(1, {"Entry #1": "42"}),
+    ]
+
+
+@pytest.mark.parametrize("records", [[None], []], ids=["one-deleted", "none-deleted"])
+def test_the_deleted_records_note_is_not_a_diagnostic_and_strict_ignores_it(
+    tmp_path: Path, records: list[bytes | None]
+) -> None:
+    # Every crafted database reports unexpected_structure for its table definitions (D17), so --strict exits 1
+    # either way; the note leaves the summary, and so the exit status, as they are without deleted records.
+    dbdir = write_database(tmp_path / "db", [table_record({0: b"42"}), *records])
+
+    result = run_command("cli", ["export", "--postgres", "--strict", dbdir])
+
+    assert result.returncode == 1
+    note = [DELETED_NOTE] if records else []
+    assert result.stderr.splitlines() == [*SECTION_2_WARNINGS, *note, "", TEST_DB_SUMMARY]
+
+
+def test_jsonl_has_no_deleted_records_line_without_deleted_records(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [table_record({0: b"42"})])
+
+    result = run_command("cli", ["export", "--jsonl", dbdir])
+
+    assert result.returncode == 0, result.stderr
+    assert "note:" not in result.stderr
+    assert [line["type"] for line in jsonl_lines(result.stdout)] == ["diagnostic", "diagnostic", "table", "record"]
 
 
 def test_strict_does_not_lower_a_usage_error(tmp_path: Path) -> None:

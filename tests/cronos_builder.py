@@ -1,9 +1,10 @@
-# ABOUTME: Builds CronosPro v3 database directories for tests, optionally encrypted with a chosen KOD table.
+# ABOUTME: Builds CronosPro v3 and v4 database directories for tests, optionally encrypted with a chosen KOD table.
 # ABOUTME: Record layouts follow docs/cronos-research.md as the reader parses them, so tests can craft any database.
 import random
 import struct
 import zlib
 from collections.abc import Collection, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from cronos_extract._diagnostic import Diagnostic
@@ -45,6 +46,11 @@ OWN_KOD_VERSIONS = (b"01.04", b"01.05", b"01.11")
 V3_INLINE_BIT = 1 << 31
 # A v4 .tad keeps the flag byte in the top of the offset; 0x04 marks a record stored inline.
 V4_INLINE_RECORD_FLAGS = 0x04
+# The v4 flag bit that marks a deleted record, whose data stays in the .dat file, when bit 0x01 is clear.
+V4_DELETED_FLAG = 0x02
+# The v4 flag bits the deleted rule looks at: the deleted bit and bit 0x01.
+V4_DELETED_MASK = 0x03
+V4_FLAG_SHIFT = 56
 DELETED_RECORD_LENGTH = 0xFFFFFFFF
 FIELD_SEPARATOR = b"\x1e"
 COMPLEX_FIELD_MARKER = b"\x1b"
@@ -59,6 +65,13 @@ def ignore_problems(diagnostic: Diagnostic) -> None:
     """A report callback for readers whose problems a test does not look at."""
 
 
+@dataclass(frozen=True)
+class DeletedRecord:
+    """A deleted v4 record: its data is written as a live record's, and its .tad entry has the deleted bit set."""
+
+    data: bytes
+
+
 def random_kod(seed: int) -> list[int]:
     """Return a reproducible random permutation of 0..255 to use as a database's KOD table."""
     kod = list(range(256))
@@ -66,13 +79,23 @@ def random_kod(seed: int) -> list[int]:
     return kod
 
 
-def tad_layout(version: bytes) -> tuple[bytes, struct.Struct]:
-    """Return the .tad header bytes and the .tad entry format that `version` uses."""
+def tad_layout(version: bytes, deleted_count: int = 0) -> tuple[bytes, struct.Struct]:
+    """Return the .tad header bytes, giving `deleted_count` deleted records, and the .tad entry format of `version`.
+
+    The header's first-deleted field is always 0.
+    """
     if version not in BUILDER_VERSIONS:
         raise ValueError(f"the builder cannot write version {version!r}; it writes {BUILDER_VERSIONS!r}")
     if version in V4_VERSIONS:
-        return TAD_V4_HEADER.pack(TAD_V4_MARKER, 0, 0, 0), TAD_64BIT_ENTRY
-    return TAD_V3_HEADER.pack(0, 0), TAD_64BIT_ENTRY if version in VERSIONS_64BIT else TAD_V3_ENTRY
+        return TAD_V4_HEADER.pack(TAD_V4_MARKER, deleted_count, 0, 0), TAD_64BIT_ENTRY
+    return TAD_V3_HEADER.pack(deleted_count, 0), TAD_64BIT_ENTRY if version in VERSIONS_64BIT else TAD_V3_ENTRY
+
+
+def is_deleted_entry(version: bytes, offset: int, length: int) -> bool:
+    """Whether the .tad entry (`offset` field, `length` field) of `version` marks a deleted record."""
+    if length == DELETED_RECORD_LENGTH:
+        return True
+    return version in V4_VERSIONS and (offset >> V4_FLAG_SHIFT & V4_DELETED_MASK) == V4_DELETED_FLAG
 
 
 def write_raw_datafile(
@@ -82,14 +105,19 @@ def write_raw_datafile(
     tad_entries: Sequence[tuple[int, int]],
     encoding: int = 0,
     version: bytes = ENCRYPTED_V3_VERSION,
+    deleted_count: int | None = None,
 ) -> None:
     """Write Cro<name>.dat holding `body` after the file header, and Cro<name>.tad with one entry per record.
 
     Each entry is (offset field, length field), packed as `version` stores them: v3 keeps a record's flags in the
     top byte of the length field, v4 in the top byte of the offset field. The body starts at DAT_PREFIX_SIZE. This
     lets tests lay out inline, extended or corrupt records byte by byte.
+    The .tad header gives `deleted_count` deleted records; by default, the number of entries marked deleted, as
+    real files have it.
     """
-    tad_header, tad_entry = tad_layout(version)
+    if deleted_count is None:
+        deleted_count = sum(is_deleted_entry(version, offset, length) for offset, length in tad_entries)
+    tad_header, tad_entry = tad_layout(version, deleted_count)
     dat = DAT_HEADER.pack(b"CroFile\x00", 0, version, encoding, BLOCKSIZE) + bytes(DAT_HEADER_PADDING)
     tad = tad_header + b"".join(tad_entry.pack(offset, length, 0) for offset, length in tad_entries)
     directory.mkdir(parents=True, exist_ok=True)
@@ -145,13 +173,16 @@ def extended_record(content: bytes, offset: int, use64bit: bool) -> tuple[bytes,
 def write_datafile(
     directory: Path,
     name: str,
-    records: Sequence[bytes | None],
+    records: Sequence[bytes | DeletedRecord | None],
     kod: Sequence[int] | None = None,
     version: bytes = ENCRYPTED_V3_VERSION,
     encoded: bool = False,
     extended: bool = False,
 ) -> None:
-    """Write Cro<name>.dat and Cro<name>.tad of `version` holding `records`, where None marks a deleted record.
+    """Write Cro<name>.dat and Cro<name>.tad of `version` holding `records`.
+
+    None marks a deleted v3 record, whose entry keeps no length; a DeletedRecord marks a deleted v4 record, whose
+    data is written as a live record's and whose entry has the deleted flag bit set.
 
     With `kod`, each record is KOD-encoded using its record number as the shift and the encoding bit is set; only
     versions encrypted with their own KOD table take one. With `encoded` and no `kod`, the records are KOD-encoded
@@ -159,7 +190,6 @@ def write_datafile(
     With `extended`, every record is stored as an extended record spread over extension blocks instead of inline;
     KOD encoding, when it applies, encodes the whole record before it is split into blocks, matching how the
     reader decodes the whole reassembled record after read_extended puts it back together.
-    Deleted records cannot be written for v4, because how v4 marks them is unsettled.
     """
     tad_layout(version)
     if kod is not None and version not in OWN_KOD_VERSIONS:
@@ -175,21 +205,27 @@ def write_datafile(
     use64bit = version in VERSIONS_64BIT
     body = bytearray()
     tad_entries = []
-    for recno, plain in enumerate(records, start=1):
-        if plain is None:
+    for recno, record in enumerate(records, start=1):
+        if record is None:
             if version in V4_VERSIONS:
-                raise ValueError("the builder does not write a deleted v4 record: how v4 marks one is unsettled")
+                raise ValueError("a deleted v4 record keeps its data: write it as DeletedRecord, not None")
             tad_entries.append((0, DELETED_RECORD_LENGTH))
             continue
-        stored = coder.encode(recno, plain) if coder else plain
+        deleted_flag = 0
+        if isinstance(record, DeletedRecord):
+            if version not in V4_VERSIONS:
+                raise ValueError("a deleted v3 record keeps no length: write it as None, not DeletedRecord")
+            deleted_flag = V4_DELETED_FLAG << V4_FLAG_SHIFT
+            record = record.data
+        stored = coder.encode(recno, record) if coder else record
         offset = DAT_PREFIX_SIZE + len(body)
         if extended:
             record_bytes, entry_length = extended_record(stored, offset, use64bit)
-            tad_entries.append((offset, entry_length))
+            tad_entries.append((offset | deleted_flag, entry_length))
             body += record_bytes
         else:
             if version in V4_VERSIONS:
-                tad_entries.append((offset | V4_INLINE_RECORD_FLAGS << 56, len(stored)))
+                tad_entries.append((offset | (V4_INLINE_RECORD_FLAGS << V4_FLAG_SHIFT) | deleted_flag, len(stored)))
             else:
                 tad_entries.append((offset, len(stored) | V3_INLINE_BIT))
             body += stored
@@ -441,11 +477,11 @@ def database_without_files_table(directory: Path, bank_records: Sequence[bytes |
 
 def write_database(
     directory: Path,
-    bank_records: Sequence[bytes | None],
+    bank_records: Sequence[bytes | DeletedRecord | None],
     kod: Sequence[int] | None = None,
     *,
     extra_stru_records: Sequence[bytes] = (),
-    index_records: Sequence[bytes | None] | None = None,
+    index_records: Sequence[bytes | DeletedRecord | None] | None = None,
     version: bytes = ENCRYPTED_V3_VERSION,
     encoded: bool = False,
     extended: bool = False,
@@ -486,6 +522,20 @@ def database_with_wrong_kod_record_out_of_range(directory: Path) -> tuple[str, s
     dbdir = write_database(directory, [], kod=random_kod(seed=1))
     wrong_kod_hex = bytes(random_kod(seed=2622)).hex()
     return dbdir, wrong_kod_hex
+
+
+def database_with_own_kod_v4_bank(
+    directory: Path, bank_records: Sequence[bytes | DeletedRecord | None], *, stru_encoded: bool = True
+) -> str:
+    """Write a database whose CroStru is 01.02, encoded with the default KOD, and whose CroBank is 01.11, encoded
+    with its own KOD, `random_kod(seed=1)`, holding `bank_records`; return its directory path.
+
+    Real databases mix versions this way; read with the default KOD, its CroStru decodes and its CroBank does not.
+    With `stru_encoded` false, CroStru is not KOD-encoded, so it decodes without KOD decoding too.
+    """
+    write_datafile(directory, "Stru", stru_records_from_test_db(), version=b"01.02", encoded=stru_encoded)
+    write_datafile(directory, "Bank", bank_records, kod=random_kod(seed=1), version=b"01.11")
+    return str(directory)
 
 
 def crackable_database(directory: Path, bank_records: Sequence[bytes | None], kod: Sequence[int]) -> str:

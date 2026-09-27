@@ -8,16 +8,19 @@ from cronos_builder import (
     DAT_PREFIX_SIZE,
     TEST_TABLE_FIELD_COUNT,
     TEST_TABLE_ID,
+    UNUSED_TABLE_ID,
     V3_INLINE_BIT,
     bank_record,
     database_with_extra_definition_key,
     database_with_missing_definition,
+    database_with_own_kod_v4_bank,
     database_with_wrong_kod_record_out_of_range,
     patched_table_definition,
     random_kod,
     stru_records_from_test_db,
     table_definition_without_fields,
     write_database,
+    write_datafile,
     write_raw_datafile,
 )
 
@@ -290,6 +293,88 @@ def test_each_file_reports_a_kod_that_does_not_fit_it(
             pass
 
     assert [(diagnostic.kind, diagnostic.file) for diagnostic in seen if diagnostic.kind in KOD_KINDS] == reported
+
+
+def a_record() -> bytes:
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[0] = b"42"
+    return bank_record(TEST_TABLE_ID, fields)
+
+
+@pytest.mark.parametrize("compact", [False, True], ids=["in-memory", "compact"])
+@pytest.mark.parametrize("given", [False, True], ids=["left-out", "given"])
+def test_an_own_kod_v4_bank_is_refused_with_the_default_kod(tmp_path: Path, given: bool, compact: bool) -> None:
+    dbdir = database_with_own_kod_v4_bank(tmp_path / "db", [a_record(), a_record()])
+    seen: list[cronos_extract.Diagnostic] = []
+    kod = {"kod": cronos_extract.Kod.default()} if given else {}
+
+    with pytest.raises(cronos_extract.OwnKodRequired) as refused:
+        cronos_extract.open(dbdir, compact=compact, on_diagnostic=seen.append, **kod)
+
+    assert str(refused.value) == (
+        f"CroBank.dat in {dbdir} is encrypted with the database's own KOD, which the default KOD would decode as "
+        'garbage. cronos_extract.crack_kod(path, "dbcrack") can recover the database\'s KOD.'
+    )
+    # The warning comes while CroBank is opened, so before the refusal; the definition is never decoded.
+    assert [(diagnostic.kind, diagnostic.file) for diagnostic in seen] == [
+        (cronos_extract.DiagnosticKind.MISMATCHED_KOD, "CroBank.dat")
+    ]
+
+
+def test_an_own_kod_v4_bank_opens_with_its_own_kod(tmp_path: Path) -> None:
+    dbdir = database_with_own_kod_v4_bank(tmp_path / "db", [a_record(), a_record()])
+
+    with cronos_extract.open(dbdir, kod=OTHER_KOD) as bank:
+        assert [record["Entry #1"].text for table in bank.tables for record in table.records()] == ["42", "42"]
+
+
+def test_an_own_kod_v4_bank_opens_without_kod_decoding_with_a_warning(tmp_path: Path) -> None:
+    dbdir = database_with_own_kod_v4_bank(tmp_path / "db", [a_record(), a_record()], stru_encoded=False)
+    seen: list[cronos_extract.Diagnostic] = []
+
+    with cronos_extract.open(dbdir, kod=None, on_diagnostic=seen.append) as bank:
+        assert [table.name for table in bank.tables] == ["erdgeist"]
+
+    assert [(diagnostic.kind, diagnostic.file) for diagnostic in seen if diagnostic.kind in KOD_KINDS] == [
+        (cronos_extract.DiagnosticKind.MISMATCHED_KOD, "CroBank.dat")
+    ]
+
+
+def test_an_own_kod_v4_bank_with_an_encoded_stru_read_without_kod_decoding_is_not_refused(tmp_path: Path) -> None:
+    dbdir = database_with_own_kod_v4_bank(tmp_path / "db", [a_record(), a_record()])
+    seen: list[cronos_extract.Diagnostic] = []
+
+    # CroStru is KOD-encoded too, so without KOD decoding the database definition does not decode either.
+    with pytest.raises(cronos_extract.DatabaseDefinitionError):
+        cronos_extract.open(dbdir, kod=None, on_diagnostic=seen.append)
+
+    assert [(diagnostic.kind, diagnostic.file) for diagnostic in seen if diagnostic.kind in KOD_KINDS] == [
+        (cronos_extract.DiagnosticKind.MISMATCHED_KOD, "CroStru.dat"),
+        (cronos_extract.DiagnosticKind.MISMATCHED_KOD, "CroBank.dat"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("version", "encoded"),
+    [(b"01.04", True), (b"01.11", False)],
+    ids=["v3-own-kod-version-encoded-with-the-default", "unencoded-v4"],
+)
+def test_a_bank_that_is_not_an_encoded_v4_bank_is_not_refused_with_the_default_kod(
+    tmp_path: Path, version: bytes, encoded: bool
+) -> None:
+    dbdir = write_database(tmp_path / "db", [a_record()], version=version, encoded=encoded)
+
+    with cronos_extract.open(dbdir) as bank:
+        assert [record["Entry #1"].text for table in bank.tables for record in table.records()] == ["42"]
+
+
+def test_crack_kod_recovers_the_kod_of_an_own_kod_v4_bank_that_open_refuses(tmp_path: Path) -> None:
+    # dbcrack reads the fourth byte of CroBank and CroIndex records longer than 11 bytes, which decodes to zero.
+    zero_byte_records = [bytes([UNUSED_TABLE_ID]) + bytes(11)] * 300
+    dbdir = database_with_own_kod_v4_bank(tmp_path / "db", zero_byte_records)
+    write_datafile(tmp_path / "db", "Index", zero_byte_records, kod=random_kod(seed=1), version=b"01.11")
+
+    assert cronos_extract.crack_kod(dbdir, "dbcrack") == OTHER_KOD
 
 
 def test_an_exception_from_on_diagnostic_during_open_reaches_the_caller(tmp_path: Path) -> None:

@@ -4,17 +4,19 @@ import functools
 import hashlib
 import itertools
 import json
-import struct
 import subprocess
 from pathlib import Path
 
 import pytest
 from cli import run_command
-from cronos_builder import tad_layout
+from cronos_builder import ignore_problems, tad_layout
 
 import cronos_extract
 from cronos_extract._api.info import read_file_info
 from cronos_extract._cli.sql_out import unique_sql_table_name
+from cronos_extract._format.tad import DELETED_LENGTH, V4_FLAG_SHIFT, is_v4_deleted
+from cronos_extract._format.tad import tad_layout as production_tad_layout
+from cronos_extract.Datamodel import TableDefinition, is_table_key
 from cronos_extract.survey import SurveyedDatabase, read_path_list, survey_databases
 
 pytestmark = pytest.mark.realdata
@@ -26,8 +28,14 @@ LIST_FILE = Path(__file__).resolve().parent.parent / "local" / "mash_datasets_wi
 FINGERPRINTS = LIST_FILE.parent / "realdata-fingerprints.json"
 # The number of records compared per table.
 RECORDS_COMPARED = 500
-# The number of .tad entries checked per file in the v4 deleted-length check.
+# The number of .tad entries read per chunk in the v4 deleted-length check, which reads every entry.
 TAD_ENTRIES_CHECKED = 1_000_000
+# The number of the first live CroBank records the garbage check samples, and the fraction of them that must carry
+# a table id the definition names.
+LIVE_RECORDS_SAMPLED = 10_000
+LIVE_RECORDS_MATCH_FRACTION = 0.9
+# The garbage check skips a database with fewer live CroBank records than this, too few to judge a fraction by.
+MIN_LIVE_RECORDS_SAMPLED = 100
 DBCRACK_TEST = "test_dbcrack_recovers_a_kod_that_opens_a_v4_database"
 # The tests that run on the 01.11 databases only.
 V4_TESTS = ("test_v4_tad_entries_never_use_the_v3_deleted_length", DBCRACK_TEST)
@@ -35,8 +43,9 @@ V4_TESTS = ("test_v4_tad_entries_never_use_the_v3_deleted_length", DBCRACK_TEST)
 # recovers it for the others.
 V4_CRACK_XFAIL = pytest.mark.xfail(
     strict=True,
-    reason="neither crack method recovers the KOD of a real 01.11 database whose CroBank header is not "
-    "KOD-encoded; how v4 encodes records is an open item",
+    reason="dbcrack returns None: this database's CroBank and CroIndex are not KOD-encoded, so there are no encoded "
+    "records to learn from; its CroStru is encoded with its own KOD and holds too few records for strucrack, which "
+    "is Phase 3e's question",
 )
 
 
@@ -61,8 +70,9 @@ def named(directory: Path, filename: str) -> Path | None:
 
 
 def is_v4(directory: Path) -> bool:
-    dat = named(directory, "CroStru.dat")
-    return dat is not None and read_file_info("Stru", dat).version == "01.11"
+    """Whether CroBank's own header says v4; a database's CroBank can be v4 while its CroStru is v3."""
+    dat = named(directory, "CroBank.dat")
+    return dat is not None and read_file_info("Bank", dat).generation == "v4"
 
 
 def bank_header_is_kod_encoded(directory: Path) -> bool:
@@ -186,16 +196,32 @@ def test_tad_layout_matches_what_the_builder_writes(dbdir: Path) -> None:
 
 
 def test_v4_tad_entries_never_use_the_v3_deleted_length(dbdir: Path) -> None:
-    for base in ("Stru", "Bank", "Index"):
-        tad = named(dbdir, f"Cro{base}.tad")
-        if tad is None:
+    """
+    Every v4 .tad file's entries never use the v3 deleted length, and the header's deleted count equals the
+    entries whose flags mark them deleted (bit 0x02 set, bit 0x01 clear); this runs on every Cro file whose own
+    header is v4, since a database's CroBank can be v4 while its CroStru is v3.
+    """
+    checked = 0
+    for info in survey_of(dbdir).files:
+        if info.generation != "v4":
             continue
+        tad = named(dbdir, f"Cro{info.name}.tad")
+        if tad is None or info.version is None:
+            continue
+        layout = production_tad_layout(info.version.encode())
+        assert layout is not None, f"Cro{info.name}.tad"
         with tad.open("rb") as file:
-            file.seek(16)
-            data = file.read(16 * TAD_ENTRIES_CHECKED)
-        usable = len(data) - len(data) % 16
-        lengths = {length for _, length, _ in struct.iter_unpack("<QLL", data[:usable])}
-        assert 0xFFFFFFFF not in lengths, f"Cro{base}.tad"
+            header_deleted, _ = layout.deleted_counts(file.read(layout.header.size))
+            deleted_by_flag = 0
+            while chunk := file.read(layout.entry.size * TAD_ENTRIES_CHECKED):
+                usable = len(chunk) - len(chunk) % layout.entry.size
+                for offset, length, _checksum in layout.entry.iter_unpack(chunk[:usable]):
+                    assert length != DELETED_LENGTH, f"Cro{info.name}.tad"
+                    if is_v4_deleted(offset >> V4_FLAG_SHIFT):
+                        deleted_by_flag += 1
+        assert deleted_by_flag == header_deleted, f"Cro{info.name}.tad"
+        checked += 1
+    assert checked > 0
 
 
 def test_dbcrack_recovers_a_kod_that_opens_a_v4_database(dbdir: Path) -> None:
@@ -205,6 +231,66 @@ def test_dbcrack_recovers_a_kod_that_opens_a_v4_database(dbdir: Path) -> None:
     # compact=True reads .tad entries on demand, so a multi-GB CroBank.tad is not loaded into memory.
     with cronos_extract.open(dbdir, kod=kod, compact=True) as bank:
         assert bank.tables
+
+
+def defined_table_ids(bank: cronos_extract.Bank) -> set[int]:
+    """Every table id the database definition names under a Base### key, table definitions that fail to decode aside."""
+    definition = bank._database.read_db_definition()
+    ids = set()
+    for key, value in definition.items():
+        if not is_table_key(key):
+            continue
+        image = definition.get("BaseImage" + key[4:], b"")
+        try:
+            table_definition = TableDefinition(value, image, report=ignore_problems)
+        except Exception:
+            continue
+        ids.add(table_definition.tableid)
+    return ids
+
+
+def test_live_records_belong_to_the_tables_the_definition_names(dbdir: Path) -> None:
+    """
+    At least 90% of the first 10,000 live CroBank records carry the table id of a table in bank.tables or of the
+    Files table, catching records decoded with the wrong KOD. A record whose id instead belongs to a table the
+    definition names but bank.tables left out is counted separately, so a wrong KOD and a left-out table are told
+    apart. Only a KOD-encoded CroBank can be decoded with the wrong KOD, and a fraction of fewer than 100 records
+    says little, so any other database is skipped.
+    """
+    with open_or_skip(dbdir, compact=True) as bank:
+        if not bank._bank_file.header.kod_encoded:
+            pytest.skip("CroBank's header says its records are not KOD-encoded, so no KOD can decode them wrongly")
+        known_ids = {table.id for table in bank.tables}
+        if bank._files_table_id is not None:
+            known_ids.add(bank._files_table_id)
+        left_out_ids: set[int] | None = None
+        sampled = 0
+        matched = 0
+        left_out = 0
+        for number in range(1, bank._bank_file.nrofrecords + 1):
+            if sampled >= LIVE_RECORDS_SAMPLED:
+                break
+            try:
+                parts = bank._bank_file.read_record(number)
+            except Exception:
+                continue
+            if parts is None or not parts.data:
+                continue
+            sampled += 1
+            table_id = parts.data[0]
+            if table_id in known_ids:
+                matched += 1
+                continue
+            if left_out_ids is None:
+                left_out_ids = defined_table_ids(bank) - known_ids
+            if table_id in left_out_ids:
+                left_out += 1
+        if sampled < MIN_LIVE_RECORDS_SAMPLED:
+            pytest.skip(f"{sampled} live CroBank records, fewer than the {MIN_LIVE_RECORDS_SAMPLED} the check needs")
+        assert matched >= sampled * LIVE_RECORDS_MATCH_FRACTION, (
+            f"{sampled - matched} of {sampled} sampled live records carry a table id bank.tables does not have "
+            f"({left_out} of those are ids of tables the definition names but bank.tables left out)"
+        )
 
 
 # A command run over one real database is killed after this many seconds.

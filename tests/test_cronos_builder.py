@@ -10,17 +10,21 @@ from cronos_builder import (
     BLOCKSIZE,
     BUILDER_VERSIONS,
     DAT_PREFIX_SIZE,
+    DELETED_RECORD_LENGTH,
     OWN_KOD_VERSIONS,
     TEST_DB,
     TEST_TABLE_FIELD_COUNT,
     TEST_TABLE_FILE_FIELD_INDEX,
     TEST_TABLE_ID,
     V3_INLINE_BIT,
+    V4_VERSIONS,
+    DeletedRecord,
     bank_record,
     compressed_record,
     database_with_extra_definition_key,
     database_with_files_abbreviation,
     database_with_missing_definition,
+    database_with_own_kod_v4_bank,
     database_without_files_table,
     duplicate_table_name_database,
     erdgeist_table_definition,
@@ -40,6 +44,7 @@ from cronos_builder import (
     write_database,
     write_datafile,
     write_header_only_datafile,
+    write_raw_datafile,
 )
 
 import cronos_extract
@@ -156,6 +161,17 @@ def test_encrypted_database_decodes_only_with_its_kod(tmp_path: Path, capsys: py
     assert (captured.out, captured.err) == ("", "")
 
 
+def test_an_own_kod_v4_bank_database_has_a_default_kod_v3_stru(tmp_path: Path) -> None:
+    dbdir = database_with_own_kod_v4_bank(tmp_path / "db", [person_record(b"")])
+
+    with cronos_extract.open(dbdir, kod=cronos_extract.Kod.from_table(random_kod(seed=1))) as bank:
+        assert [(info.name, info.version, info.kod_encoded, info.own_kod) for info in bank.info] == [
+            ("Stru", "01.02", True, False),
+            ("Bank", "01.11", True, True),
+        ]
+        assert [record["Entry #1"].text for table in bank.tables for record in table.records()] == ["42"]
+
+
 def test_write_header_only_datafile_writes_just_the_header(tmp_path: Path) -> None:
     write_header_only_datafile(tmp_path, "Bank", version=b"01.19", encoding=3)
 
@@ -235,9 +251,75 @@ def test_the_builder_refuses_a_kod_for_a_version_read_with_the_default_kod(tmp_p
         write_datafile(tmp_path, "Bank", [b"\x01abc"], kod=random_kod(seed=3), version=version)
 
 
-def test_the_builder_refuses_a_deleted_v4_record(tmp_path: Path) -> None:
+def test_the_builder_refuses_none_for_a_deleted_v4_record(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="deleted v4 record"):
         write_datafile(tmp_path, "Bank", [None], version=b"01.11")
+
+
+@pytest.mark.parametrize(("extended", "flags"), [(False, 0x06), (True, 0x02)], ids=["inline", "extended"])
+def test_a_deleted_v4_record_keeps_its_data_and_has_the_deleted_bit(tmp_path: Path, extended: bool, flags: int) -> None:
+    record = b"\x01abc"
+    write_datafile(tmp_path / "live", "Bank", [record], version=b"01.11", extended=extended)
+    write_datafile(tmp_path / "deleted", "Bank", [DeletedRecord(record)], version=b"01.11", extended=extended)
+
+    live_offset, live_length, _ = struct.unpack("<QLL", (tmp_path / "live" / "CroBank.tad").read_bytes()[16:])
+    offset, length, _ = struct.unpack("<QLL", (tmp_path / "deleted" / "CroBank.tad").read_bytes()[16:])
+    assert (offset >> 56, offset & ((1 << 56) - 1), length) == (flags, live_offset & ((1 << 56) - 1), live_length)
+    assert (tmp_path / "deleted" / "CroBank.dat").read_bytes() == (tmp_path / "live" / "CroBank.dat").read_bytes()
+
+
+def test_the_builder_refuses_a_deleted_record_with_data_for_v3(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="v3"):
+        write_datafile(tmp_path, "Bank", [DeletedRecord(b"\x01abc")], version=b"01.02")
+
+
+@pytest.mark.parametrize(
+    ("version", "deleted", "header"),
+    [
+        (b"01.02", None, struct.Struct("<2L")),
+        (b"01.11", DeletedRecord(b"\x01de"), struct.Struct("<4L")),
+    ],
+    ids=["v3", "v4"],
+)
+def test_the_tad_header_counts_the_deleted_records(
+    tmp_path: Path, version: bytes, deleted: DeletedRecord | None, header: struct.Struct
+) -> None:
+    write_datafile(tmp_path, "Bank", [deleted, b"\x01abc", deleted, deleted], version=version)
+
+    fields = header.unpack((tmp_path / "CroBank.tad").read_bytes()[: header.size])
+    assert fields == ((3, 0) if version == b"01.02" else (0xFFFFFFFE, 3, 0, 0))
+
+
+@pytest.mark.parametrize(
+    ("version", "header", "entries", "deleted"),
+    [
+        (b"01.02", struct.Struct("<2L"), [(0, DELETED_RECORD_LENGTH), (DAT_PREFIX_SIZE, 1)], (1, 0)),
+        (
+            b"01.11",
+            struct.Struct("<4L"),
+            [
+                (0, DELETED_RECORD_LENGTH),
+                (0x02 << 56 | DAT_PREFIX_SIZE, 1),
+                (0x06 << 56 | DAT_PREFIX_SIZE, 1),
+                (0x07 << 56 | DAT_PREFIX_SIZE, 1),
+                (0x04 << 56 | DAT_PREFIX_SIZE, 1),
+            ],
+            (0xFFFFFFFE, 3, 0, 0),
+        ),
+    ],
+    ids=["v3", "v4"],
+)
+def test_a_raw_datafile_counts_its_deleted_entries_unless_given_a_count(
+    tmp_path: Path, version: bytes, header: struct.Struct, entries: list[tuple[int, int]], deleted: tuple[int, ...]
+) -> None:
+    write_raw_datafile(tmp_path / "counted", "Bank", b"\x01", entries, version=version)
+    write_raw_datafile(tmp_path / "given", "Bank", b"\x01", entries, version=version, deleted_count=1000)
+
+    counted = header.unpack((tmp_path / "counted" / "CroBank.tad").read_bytes()[: header.size])
+    given = header.unpack((tmp_path / "given" / "CroBank.tad").read_bytes()[: header.size])
+    count_index = 0 if version == b"01.02" else 1
+    assert counted == deleted
+    assert given == (*deleted[:count_index], 1000, *deleted[count_index + 1 :])
 
 
 def test_the_builder_refuses_a_version_it_cannot_write(tmp_path: Path) -> None:
@@ -408,7 +490,9 @@ def test_a_database_of_extended_records_reads_back_the_same_as_inline(tmp_path: 
     assert extended_texts == inline_texts
 
 
-@pytest.mark.parametrize("version", BUILDER_VERSIONS)
+# open() refuses a v4 CroBank that is KOD-encoded when read with the default KOD, so v4 is left out here; the test
+# below reads v4 extended records encoded with the database's own KOD.
+@pytest.mark.parametrize("version", [version for version in BUILDER_VERSIONS if version not in V4_VERSIONS])
 def test_a_database_of_extended_kod_encoded_records_reads_back_the_same_as_inline(
     tmp_path: Path, version: bytes
 ) -> None:

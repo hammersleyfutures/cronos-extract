@@ -92,7 +92,7 @@ def test_crack_selects_the_kod_it_recovers(tmp_path: Path, method: str) -> None:
     assert selected_kod(parser_with().parse_args(["--crack", method, dbdir])) == Kod.from_table(KOD)
 
 
-def test_crack_that_recovers_nothing_fails_naming_the_crack_command(tmp_path: Path) -> None:
+def test_crack_that_recovers_nothing_fails_naming_the_crack_method_used(tmp_path: Path) -> None:
     dbdir = write_database(
         tmp_path / "db", [bank_record(TEST_TABLE_ID, PERSON_FIELDS)], KOD, index_records=[bytes(12)] * 3
     )
@@ -101,4 +101,4 @@ def test_crack_that_recovers_nothing_fails_naming_the_crack_command(tmp_path: Pa
         selected_kod(parser_with().parse_args(["--crack", "dbcrack", dbdir]))
 
     assert failed.value.status == 1
-    assert f"cronos-extract crack strucrack {dbdir}" in str(failed.value)
+    assert f"recover it with cronos-extract crack dbcrack {dbdir} and pass it with --kod" in str(failed.value)
