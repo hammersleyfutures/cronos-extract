@@ -186,6 +186,7 @@ def write_datafile(
     version: bytes = ENCRYPTED_V3_VERSION,
     encoded: bool = False,
     extended: bool = False,
+    extended_flags: int = 0x00,
 ) -> None:
     """Write Cro<name>.dat and Cro<name>.tad of `version` holding `records`.
 
@@ -197,7 +198,8 @@ def write_datafile(
     with the default table and the encoding bit is set, as CronosPro stores them in many files of every version.
     With `extended`, every record is stored as an extended record spread over extension blocks instead of inline;
     KOD encoding, when it applies, encodes the whole record before it is split into blocks, matching how the
-    reader decodes the whole reassembled record after read_extended puts it back together.
+    reader decodes the whole reassembled record after read_extended puts it back together. `extended_flags` is the
+    flag byte a v4 extended entry is written with, other than the deleted bit, to test flags other than 00.
     """
     tad_layout(version)
     if kod is not None and version not in OWN_KOD_VERSIONS:
@@ -229,7 +231,8 @@ def write_datafile(
         offset = DAT_PREFIX_SIZE + len(body)
         if extended:
             record_bytes, entry_length = extended_record(stored, offset, use64bit)
-            tad_entries.append((offset | deleted_flag, entry_length))
+            flag_bits = (extended_flags << V4_FLAG_SHIFT) if version in V4_VERSIONS else 0
+            tad_entries.append((offset | flag_bits | deleted_flag, entry_length))
             body += record_bytes
         else:
             if version in V4_VERSIONS:

@@ -82,6 +82,20 @@ def test_open_reads_a_record_spread_over_many_extension_blocks(tmp_path: Path) -
         assert record["Entry #2"].text == fields[1].decode()
 
 
+def test_open_reads_a_v4_record_flagged_08_as_extended(tmp_path: Path) -> None:
+    version = b"01.11"
+    fields = [b""] * TEST_TABLE_FIELD_COUNT
+    fields[1] = b"x" * (2 * 1024 * 1024)
+    record = bank_record(TEST_TABLE_ID, fields)
+    dbdir = write_database(tmp_path / "db", [record], version=version)
+    write_datafile(tmp_path / "db", "Bank", [record], version=version, extended=True, extended_flags=0x08)
+
+    with cronos_extract.open(dbdir) as bank:
+        (table,) = bank.tables
+        (record_read,) = list(table.records())
+        assert record_read["Entry #2"].text == fields[1].decode()
+
+
 def test_open_with_compact_reads_the_indexes_from_disk(tmp_path: Path) -> None:
     fields = [b""] * TEST_TABLE_FIELD_COUNT
     fields[1] = b"one"
