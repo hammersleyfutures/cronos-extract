@@ -682,11 +682,11 @@ def test_export_of_an_own_kod_v4_bank_with_the_default_kod_exits_1_naming_dbcrac
     assert result.stdout == ""
     assert result.stderr.splitlines() == [
         "warning: mismatched_kod: CroBank.dat: the file is encrypted with its own KOD, but is read with the default "
-        "one; if its records do not decode, recover its KOD by cracking it",
+        + "one; if its records do not decode, recover its KOD by cracking it",
         "",
         "1 diagnostic: 1 mismatched_kod",
         f"Error: CroBank.dat in {dbdir} is encrypted with the database's own KOD, which the default KOD would decode "
-        "as garbage. export --crack dbcrack uses the KOD that cronos-extract crack dbcrack derives.",
+        + "as garbage. export --crack dbcrack uses the KOD that cronos-extract crack dbcrack derives.",
     ]
 
 
