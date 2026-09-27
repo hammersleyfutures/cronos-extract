@@ -137,7 +137,7 @@ The controller runs the realdata suite in the background afterwards and appends 
 
 ## Outcome
 
-Implemented on branch `phase3e-v4-header-kod` in 11 commits after the plan (`6978ed1`..`bacd62f`, plus this record),
+Implemented on branch `phase3e-v4-header-kod` in 9 commits after the plan (`6978ed1`..`bacd62f`, plus this record),
 subagent-driven: an implementer and a task review per task, then a whole-branch review by Fable and one fix.
 
 - **Tests:** 946 passed on `main` (`359e94d`), 1,021 on the branch (14 realdata tests deselected); ruff, format and ty
