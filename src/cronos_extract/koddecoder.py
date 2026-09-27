@@ -1,5 +1,6 @@
 # ABOUTME: KOD substitution cipher that CronosPro uses to obfuscate records.
-# ABOUTME: Provides the default KOD table, shifted decode/encode, choosing a file's KOD, and fuzzy string matching.
+# ABOUTME: Provides the default KOD table, shifted decode/encode, choosing a file's KOD, checking a KOD against a v4
+# ABOUTME: file's header, and fuzzy string matching.
 """
 Decode CroStru KOD encoding.
 """
@@ -7,7 +8,7 @@ Decode CroStru KOD encoding.
 from collections.abc import Sequence
 
 from ._diagnostic import Diagnostic, DiagnosticKind
-from ._format.header import DatHeader
+from ._format.header import KOD_CHECK_SIZE, DatHeader
 
 INITIAL_KOD = [
     0x08,
@@ -352,6 +353,19 @@ def select_kod(header: DatHeader, kod: KODcoding | None, filename: str) -> tuple
             "recover its KOD by cracking it",
         )
     return kod, None
+
+
+def kod_fits_header(header: DatHeader, kod: KODcoding) -> bool | None:
+    """
+    Whether `kod` is the KOD of the v4 file whose header is `header`, or None when the header cannot tell.
+
+    A v4 file's header block starts with KOD_CHECK_SIZE zero bytes encoded like record 0 with the database's own KOD,
+    so only that KOD decodes them to zeros. The header cannot tell for other generations, or when the file ended
+    before the check bytes.
+    """
+    if header.generation != "v4" or len(header.kod_check) < KOD_CHECK_SIZE:
+        return None
+    return kod.decode(0, header.kod_check) == bytes(KOD_CHECK_SIZE)
 
 
 def match_with_mismatches(

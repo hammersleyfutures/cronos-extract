@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from cronos_extract._diagnostic import Diagnostic
+from cronos_extract._format.header import KOD_CHECK_SIZE
 from cronos_extract.Database import Database
 from cronos_extract.Datamodel import TableDefinition
 from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
@@ -106,6 +107,7 @@ def write_raw_datafile(
     encoding: int = 0,
     version: bytes = ENCRYPTED_V3_VERSION,
     deleted_count: int | None = None,
+    kod: Sequence[int] | None = None,
 ) -> None:
     """Write Cro<name>.dat holding `body` after the file header, and Cro<name>.tad with one entry per record.
 
@@ -114,11 +116,17 @@ def write_raw_datafile(
     lets tests lay out inline, extended or corrupt records byte by byte.
     The .tad header gives `deleted_count` deleted records; by default, the number of entries marked deleted, as
     real files have it.
+    The padding after the file header is zeros, except that a v4 file's starts with KOD_CHECK_SIZE zeros encoded
+    with `kod` (the default table when None) at shift 0, as real v4 files hold them encoded with their database's
+    own KOD.
     """
     if deleted_count is None:
         deleted_count = sum(is_deleted_entry(version, offset, length) for offset, length in tad_entries)
     tad_header, tad_entry = tad_layout(version, deleted_count)
-    dat = DAT_HEADER.pack(b"CroFile\x00", 0, version, encoding, BLOCKSIZE) + bytes(DAT_HEADER_PADDING)
+    padding = bytearray(DAT_HEADER_PADDING)
+    if version in V4_VERSIONS:
+        padding[:KOD_CHECK_SIZE] = KODcoding(list(kod or INITIAL_KOD)).encode(0, bytes(KOD_CHECK_SIZE))
+    dat = DAT_HEADER.pack(b"CroFile\x00", 0, version, encoding, BLOCKSIZE) + bytes(padding)
     tad = tad_header + b"".join(tad_entry.pack(offset, length, 0) for offset, length in tad_entries)
     directory.mkdir(parents=True, exist_ok=True)
     (directory / f"Cro{name}.dat").write_bytes(dat + body)
@@ -229,7 +237,7 @@ def write_datafile(
             else:
                 tad_entries.append((offset, len(stored) | V3_INLINE_BIT))
             body += stored
-    write_raw_datafile(directory, name, bytes(body), tad_entries, encoding=1 if coder else 0, version=version)
+    write_raw_datafile(directory, name, bytes(body), tad_entries, encoding=1 if coder else 0, version=version, kod=kod)
 
 
 def stru_records_from_test_db() -> list[bytes | None]:

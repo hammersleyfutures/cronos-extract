@@ -5,7 +5,7 @@ import struct
 
 import pytest
 
-from cronos_extract._format.header import DatHeader, read_dat_header
+from cronos_extract._format.header import DatHeader, read_dat_header, read_kod_check
 
 DAT_HEADER = struct.Struct("<8sH5sHH")
 
@@ -63,3 +63,25 @@ def test_version_text_replaces_bytes_that_are_not_ascii() -> None:
 
     assert header.version_text == "��.04"
     assert header.generation == "unknown"
+
+
+def test_a_header_built_by_hand_has_no_kod_check_bytes() -> None:
+    assert DatHeader(version=b"01.11", unknown=0, encoding=1, blocksize=0x40).kod_check == b""
+
+
+def test_read_dat_header_reads_only_the_19_byte_header() -> None:
+    file = io.BytesIO(header_bytes(version=b"01.11") + bytes(range(1, 30)))
+
+    assert read_dat_header(file, where="CroBank.dat").kod_check == b""
+    assert file.tell() == DAT_HEADER.size
+
+
+def test_read_kod_check_reads_the_8_bytes_after_the_header() -> None:
+    file = io.BytesIO(header_bytes(version=b"01.11") + bytes(range(1, 30)))
+
+    assert read_kod_check(file) == bytes(range(1, 9))
+
+
+def test_read_kod_check_reads_fewer_bytes_from_a_short_file() -> None:
+    assert read_kod_check(io.BytesIO(header_bytes(version=b"01.11") + b"\x01\x02\x03")) == b"\x01\x02\x03"
+    assert read_kod_check(io.BytesIO(header_bytes(version=b"01.11"))) == b""

@@ -1,11 +1,14 @@
 # ABOUTME: Tests for the KOD coder helpers in cronos_extract.koddecoder.
 # ABOUTME: Covers the fuzzy known-string matching that strucrack uses to suggest KOD fixes, and choosing a file's KOD.
+import dataclasses
+from pathlib import Path
+
 import pytest
-from cronos_builder import random_kod
+from cronos_builder import random_kod, write_datafile, write_header_only_datafile
 
 from cronos_extract._diagnostic import Diagnostic, DiagnosticKind
-from cronos_extract._format.header import DatHeader
-from cronos_extract.koddecoder import INITIAL_KOD, KODcoding, match_with_mismatches, select_kod
+from cronos_extract._format.header import DatHeader, read_dat_header, read_kod_check
+from cronos_extract.koddecoder import INITIAL_KOD, KODcoding, kod_fits_header, match_with_mismatches, select_kod
 
 UNRESOLVED = -1
 
@@ -131,3 +134,48 @@ def test_select_kod_chooses_and_reports(
 
     assert (None if coder is None else coder.kod) == decoded_with
     assert diagnostic == (None if expected is None else Diagnostic(*expected, file="CroStru.dat"))
+
+
+def built_header(path: Path) -> DatHeader:
+    """Read the header of the built file at `path` with its KOD check bytes."""
+    with path.open("rb") as file:
+        header = read_dat_header(file, where=path.name)
+        return dataclasses.replace(header, kod_check=read_kod_check(file))
+
+
+@pytest.mark.parametrize("kod", [random_kod(seed=1), INITIAL_KOD], ids=["own", "default"])
+def test_kod_fits_header_accepts_the_kod_a_v4_file_was_written_with(tmp_path: Path, kod: list[int]) -> None:
+    write_datafile(tmp_path, "Bank", [b"record"], kod=kod, version=b"01.11")
+
+    assert kod_fits_header(built_header(tmp_path / "CroBank.dat"), KODcoding(kod)) is True
+
+
+@pytest.mark.parametrize("kod", [random_kod(seed=1), INITIAL_KOD], ids=["own", "default"])
+def test_kod_fits_header_rejects_another_kod_for_a_v4_file(tmp_path: Path, kod: list[int]) -> None:
+    write_datafile(tmp_path, "Bank", [b"record"], kod=kod, version=b"01.11")
+    other = random_kod(seed=2) if kod == INITIAL_KOD else INITIAL_KOD
+
+    assert kod_fits_header(built_header(tmp_path / "CroBank.dat"), KODcoding(other)) is False
+
+
+def test_kod_fits_header_says_nothing_about_a_v3_file(tmp_path: Path) -> None:
+    kod = random_kod(seed=1)
+    write_datafile(tmp_path, "Bank", [b"record"], kod=kod, version=b"01.04")
+
+    header = built_header(tmp_path / "CroBank.dat")
+
+    assert len(header.kod_check) == 8
+    assert kod_fits_header(header, KODcoding(kod)) is None
+    assert kod_fits_header(header, KODcoding(INITIAL_KOD)) is None
+
+
+def test_kod_fits_header_says_nothing_about_a_v4_file_too_short_for_the_check(tmp_path: Path) -> None:
+    write_header_only_datafile(tmp_path, "Bank", version=b"01.11", encoding=1)
+    header = built_header(tmp_path / "CroBank.dat")
+    with (tmp_path / "CroBank.dat").open("ab") as file:
+        file.write(bytes(7))
+    seven_bytes = built_header(tmp_path / "CroBank.dat")
+
+    assert (header.kod_check, len(seven_bytes.kod_check)) == (b"", 7)
+    assert kod_fits_header(header, KODcoding(INITIAL_KOD)) is None
+    assert kod_fits_header(seven_bytes, KODcoding(INITIAL_KOD)) is None

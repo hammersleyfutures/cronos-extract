@@ -529,3 +529,39 @@ def test_a_database_of_extended_records_kod_encoded_with_its_own_table_reads_bac
         extended_texts = [[field.text for field in record.fields] for record in bank.tables[0].records()]
 
     assert extended_texts == inline_texts
+
+
+@pytest.mark.parametrize(
+    ("kod", "encoded"),
+    [(random_kod(seed=1), False), (None, True), (None, False)],
+    ids=["own-kod", "default-kod", "not-encoded"],
+)
+def test_a_v4_file_holds_zeros_encoded_with_its_kod_after_the_header(
+    tmp_path: Path, kod: list[int] | None, encoded: bool
+) -> None:
+    write_datafile(tmp_path, "Bank", [b"record"], kod=kod, version=b"01.11", encoded=encoded)
+
+    data = (tmp_path / "CroBank.dat").read_bytes()
+
+    assert KODcoding(kod or INITIAL_KOD).decode(0, data[19:27]) == bytes(8)
+    assert data[27:DAT_PREFIX_SIZE] == bytes(DAT_PREFIX_SIZE - 27)
+
+
+def test_a_v4_raw_datafile_encodes_its_check_bytes_with_the_kod_given(tmp_path: Path) -> None:
+    kod = random_kod(seed=4)
+    write_raw_datafile(tmp_path, "Bank", b"", [], version=b"01.11", kod=kod)
+
+    data = (tmp_path / "CroBank.dat").read_bytes()
+
+    assert data[19:27] == KODcoding(kod).encode(0, bytes(8))
+    assert len(data) == DAT_PREFIX_SIZE
+
+
+@pytest.mark.parametrize("version", [b"01.02", b"01.03", b"01.04", b"01.05"])
+def test_a_v3_file_keeps_zero_padding_after_the_header(tmp_path: Path, version: bytes) -> None:
+    kod = random_kod(seed=1) if version in OWN_KOD_VERSIONS else None
+    write_datafile(tmp_path, "Bank", [b"record"], kod=kod, version=version)
+
+    data = (tmp_path / "CroBank.dat").read_bytes()
+
+    assert data[19:DAT_PREFIX_SIZE] == bytes(DAT_PREFIX_SIZE - 19)
