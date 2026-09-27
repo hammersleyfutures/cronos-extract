@@ -1,6 +1,7 @@
 # ABOUTME: Tests for the KOD coder helpers in cronos_extract.koddecoder.
 # ABOUTME: Covers the fuzzy known-string matching that strucrack uses to suggest KOD fixes, and choosing a file's KOD.
 import dataclasses
+import random
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,14 @@ from cronos_builder import random_kod, write_datafile, write_header_only_datafil
 
 from cronos_extract._diagnostic import Diagnostic, DiagnosticKind
 from cronos_extract._format.header import DatHeader, read_dat_header, read_kod_check
-from cronos_extract.koddecoder import INITIAL_KOD, KODcoding, kod_fits_header, match_with_mismatches, select_kod
+from cronos_extract.koddecoder import (
+    INITIAL_KOD,
+    STRIDED_MIN_LENGTH,
+    KODcoding,
+    kod_fits_header,
+    match_with_mismatches,
+    select_kod,
+)
 
 UNRESOLVED = -1
 
@@ -249,3 +257,33 @@ def test_select_kod_keeps_3c_rows_for_a_v4_file_too_short_for_the_check(
     assert coder is not None
     assert coder.kod == given
     assert diagnostic == (None if expected is None else Diagnostic(*expected, file="CroBank.dat"))
+
+
+# short lengths go through byte lanes, the last two through per-shift tables on strided slices.
+CODER_LENGTHS = [0, 1, 7, 8, 9, 255, 256, 257, 4096, 12288, STRIDED_MIN_LENGTH - 1, STRIDED_MIN_LENGTH, 40000]
+CODER_SHIFTS = [0, 1, 255, 256, 1000]
+
+
+def reference_decode(kod: list[int], o: int, data: bytes) -> bytes:
+    """Decode byte by byte with the KOD formula b[i] = KOD[a[i]] - (i + o)."""
+    return bytes((kod[b] - i - o) % 256 for i, b in enumerate(data))
+
+
+def reference_encode(kod: list[int], o: int, data: bytes) -> bytes:
+    """Encode byte by byte with the KOD formula a[i] = INV[b[i] + (i + o)]."""
+    inverse = [0] * 256
+    for i, x in enumerate(kod):
+        inverse[x] = i
+    return bytes(inverse[(b + i + o) % 256] for i, b in enumerate(data))
+
+
+@pytest.mark.parametrize("o", CODER_SHIFTS)
+@pytest.mark.parametrize("length", CODER_LENGTHS)
+def test_decode_and_encode_equal_the_per_byte_formulas(length: int, o: int) -> None:
+    kod = random_kod(seed=1)
+    coder = KODcoding(kod)
+    data = random.Random(length * 7919 + o).randbytes(length)
+
+    assert coder.decode(o, data) == reference_decode(kod, o, data)
+    assert coder.encode(o, data) == reference_encode(kod, o, data)
+    assert coder.decode(o, coder.encode(o, data)) == data
