@@ -49,7 +49,7 @@ Every decision below was made with Ben on 2026-09-15.
 
 Each phase is a separate spec, plan and pull request, in this order. Phase 4 (v7) comes after 1.0 (decision 13).
 
-**Status (2026-09-27):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is complete: it is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below, and was merged as PR #9. Phase 2 is designed in `2026-09-17-phase2-command-line-design.md` and was merged as PR #11. Phase 3a is designed in `2026-09-25-phase3a-datafile-core-design.md` and was merged as PR #12. Phase 3b is designed in `2026-09-26-phase3b-definitions-diagnostics-design.md` and was merged as PR #13. Phase 3c is designed in `2026-09-26-phase3c-bank-reading-design.md` and was merged as PR #14. Phase 3d is designed in `2026-09-26-phase3d-v4-fixes-design.md` and was merged as PR #15. Phase 3e is designed in `2026-09-27-phase3e-v4-header-kod-design.md` and was merged as PR #16. Phase 3f's research spike moved the known-plaintext KOD solver after 1.0 (decision 14). Phase 5, the 1.0 release, is designed in `2026-09-27-phase5-release-design.md` and is on branch `phase5-release`, with its pull request pending.
+**Status (2026-09-27):** Phase 0 is complete — `cronos-extract survey` merged as PR #6 — and the survey of Ben's databases found no v7 (decision 11). Phase 1 is complete: it is designed in `2026-09-16-phase1-public-api-design.md`, which refines the API contract below, and was merged as PR #9. Phase 2 is designed in `2026-09-17-phase2-command-line-design.md` and was merged as PR #11. Phase 3a is designed in `2026-09-25-phase3a-datafile-core-design.md` and was merged as PR #12. Phase 3b is designed in `2026-09-26-phase3b-definitions-diagnostics-design.md` and was merged as PR #13. Phase 3c is designed in `2026-09-26-phase3c-bank-reading-design.md` and was merged as PR #14. Phase 3d is designed in `2026-09-26-phase3d-v4-fixes-design.md` and was merged as PR #15. Phase 3e is designed in `2026-09-27-phase3e-v4-header-kod-design.md` and was merged as PR #16. Phase 3f's research spike moved the known-plaintext KOD solver after 1.0 (decision 14). Phase 5, the 1.0 release, is designed in `2026-09-27-phase5-release-design.md`, was merged as PR #17 and released on 2026-09-27: tag `v1.0.0` (the 2021 cronodump tag renamed `cronodump-v1.0.0`), `cronos-extract 1.0.0` on PyPI through trusted publishing, and a GitHub Release. The fork is detached from alephdata's network and the duplicate CodeQL default setup is off. Ben posts the courtesy issue on alephdata/cronodump.
 
 ### Phase 0 — version survey
 
@@ -73,7 +73,7 @@ A goal for after 1.0 (decision 13). A `01.19` reader behind the façade, from th
 
 ### Phase 5 — 1.0 release
 
-Version 1.0, API documentation, PyPI publishing, detaching the fork from alephdata's network, and removing the duplicate CodeQL "Code Quality" analysis. (Corrected 2026-09-27: this text also named making the repository public, but the repository was already public.) Ben posts the courtesy issue on alephdata/cronodump afterwards.
+**(done, 2026-09-27)** Version 1.0, API documentation, PyPI publishing, detaching the fork from alephdata's network, and removing the duplicate CodeQL "Code Quality" analysis. (Corrected 2026-09-27: this text also named making the repository public, but the repository was already public.) Ben posts the courtesy issue on alephdata/cronodump afterwards.
 
 ### After 1.0
 
