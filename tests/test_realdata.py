@@ -276,10 +276,11 @@ def test_a_whole_dbcrack_permutation_fits_crobanks_header(dbdir: Path) -> None:
         stack.callback(bank.close)
         try:
             index, _ = open_datafile(dbdir, names, "Index", compact=True, kod=None, log=log)
-        except (cronos_extract.NotACronosFile, cronos_extract.UnsupportedVersion):
-            pytest.skip("CroIndex cannot be read, so dbcrack has nothing to learn from")
-        stack.callback(index.close)
-        kod, confidence = kod_from_xref(bank_and_index_xref(bank, index))
+        except (cronos_extract.NotACronosFile, cronos_extract.UnsupportedVersion) as error:
+            raise pytest.skip.Exception("CroIndex cannot be read, so dbcrack has nothing to learn from") from error
+        else:
+            stack.callback(index.close)
+            kod, confidence = kod_from_xref(bank_and_index_xref(bank, index))
     if not kod_is_resolved(kod, confidence):
         pytest.skip("dbcrack's statistics do not give a whole permutation for this database")
     assert kod_fits_header(bank.header, KODcoding(kod)) is True
