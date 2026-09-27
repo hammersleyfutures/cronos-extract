@@ -174,8 +174,9 @@ def decode_record(
     Decode CroBank record `number` of the table named `table` from `data`, the record after its table id byte.
 
     `fielddefs` are the table's Datamodel field definitions, which `definitions` describe one for one; the first
-    is the system number. A field that cannot be decoded is left empty, as are the fields after it, and reported
-    as undecodable_field; a date or time that does not parse is reported as invalid_value.
+    is the system number. A field that cannot be decoded is left empty and reported as undecodable_field; when its
+    length cannot be read, the fields after it are left empty too. A date or time that does not parse is reported as
+    invalid_value.
     """
     decoded = DecodedRecord(number, list(fielddefs), data)
     diagnostics = [

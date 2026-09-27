@@ -61,7 +61,7 @@ class Table:
 
     def records(self) -> Iterator[Record]:
         """
-        The table's records in CroBank order, read lazily, one CroBank record per step.
+        The table's records in CroBank order, read lazily: each step reads CroBank only up to the table's next record.
 
         The first generator of any table to reach a CroBank record indexes it for every table, so a table read after
         another reads only its own records.
@@ -172,7 +172,8 @@ class Bank:
 
     def files(self) -> Iterator[EmbeddedFile]:
         """
-        The files stored in the Files table, in CroBank order, read lazily, one CroBank record per step, without names.
+        The files stored in the Files table, in CroBank order, without names, read lazily: each step reads CroBank
+        only up to the Files table's next record.
 
         The first generator of any table to reach a CroBank record indexes it for every table, so files read after
         a table read only the Files table's records.

@@ -7,6 +7,9 @@ A CronosPro database is a directory of Cro files. Each Cro file is a pair of a `
 holds the table definitions. CroBank holds the records of all tables. The Files table in CroBank stores embedded
 files. CroIndex and CroSys are optional.
 
+A KOD-encoded Cro file stores its records encrypted with a KOD. This KOD is the default KOD or the own KOD of the
+database. A Cro file "encrypted with its own KOD" is a KOD-encoded file that uses the own KOD of the database.
+
 ## Read a database
 
 To read the records of a database and the problems in it, do these steps:
@@ -50,9 +53,9 @@ private. A later version can change them without notice.
 **Imports.** `from cronos_extract import *` replaces the built-in `open`. For this reason, the examples use
 `import cronos_extract`.
 
-**Lazy reading.** `Table.records()` and `Bank.files()` are generators. Each step reads one CroBank record. The library
-reads CroBank one time for all tables together. The first generator that reaches a CroBank record adds it to an index
-of the records of each table. After that, a table reads only its own records.
+**Lazy reading.** `Table.records()` and `Bank.files()` are generators. Each step reads CroBank records only up to the
+next record of its table. The library reads CroBank one time for all tables together. The first generator that reaches a
+CroBank record adds it to an index of the records of each table. After that, a table reads only its own records.
 
 **Memory.** The index of CroBank holds about 4 bytes for each live CroBank record. If 4 bytes cannot hold the record
 numbers, the index holds 8 bytes for each record. The `compact` parameter of `open()` does not change the size of this
@@ -75,8 +78,9 @@ read a table two times, its field diagnostics occur two times.
 **Values.** `Field.value` is `str`, `datetime.date`, `datetime.time`, `FileReference` or `None`. A later version can
 add value types. Numbers are `str`. A date that holds only its year is `str`, for example `"1985-00-00"`.
 
-**Errors.** If `open()` cannot read a database at all, it raises a `CronosError`. The subclasses are `NotACronosFile`,
-`UnsupportedVersion`, `WrongKod` and `DatabaseDefinitionError`.
+**Errors.** If `open()` cannot read a database, it raises a `CronosError`, an `OSError` or a `TypeError`. The
+subclasses of `CronosError` are `NotACronosFile`, `UnsupportedVersion`, `WrongKod` and `DatabaseDefinitionError`.
+`OSError` is for a directory that cannot be read, and `TypeError` is for a `bytes` path.
 
 ## open()
 
@@ -141,9 +145,9 @@ If the `.tad` header of CroBank lists more deleted records than the `.tad` file 
 `bank.diagnostic_counts[kind]` is 0 for a kind that did not occur. But that kind is not `in` the mapping, and it is not
 one of its keys.
 
-`files()` is a generator of the files in the Files table, as `EmbeddedFile` objects. It gives them in CroBank order and
-reads one CroBank record for each step. Each `EmbeddedFile` from `files()` has the name `None`, because the Files table
-stores no names. If the database has no Files table, `files()` gives nothing.
+`files()` is a generator of the files in the Files table, as `EmbeddedFile` objects. It gives them in CroBank order.
+Each step reads CroBank records only up to the next record of the Files table. Each `EmbeddedFile` from `files()` has
+the name `None`, because the Files table stores no names. If the database has no Files table, `files()` gives nothing.
 
 `read_file(reference)` returns the `EmbeddedFile` that a `FileReference` refers to. The name of the file is
 `"name.extension"` from the reference, or only the name without an extension. If the record of the reference is not a
@@ -163,8 +167,8 @@ A `Table` is one table of the database. `bank.tables` holds them.
 | `abbreviation` | The abbreviation of the table. |
 | `fields` | A tuple of `FieldDefinition`. The first is the system number. Each describes the field of a `Record` at the same index. |
 
-`records()` is a generator of the records of the table, as `Record` objects. It gives them in CroBank order and reads
-one CroBank record for each step.
+`records()` is a generator of the records of the table, as `Record` objects. It gives them in CroBank order. Each step
+reads CroBank records only up to the next record of the table.
 
 `records()` does not give deleted records. It also does not give a record that it cannot read. It records
 `corrupt_record` for that record instead.
@@ -212,8 +216,8 @@ If a date or time does not parse, the record gets the diagnostic `invalid_value`
 
 The first field is the system number. Its `value` and `text` are the system number as `str`. Its `raw` is `b""`.
 
-If a field cannot be decoded, the record gets the diagnostic `undecodable_field`. That field and all fields after it are
-empty.
+If a field cannot be decoded, the record gets the diagnostic `undecodable_field`, and the field is empty. If the length
+of the field cannot be read, all fields after it are also empty.
 
 ## FieldDefinition
 
@@ -237,7 +241,7 @@ returns the file.
 | `referrer` | The CroBank record number of the record that holds the reference. |
 | `field` | The name of the field that holds the reference. |
 
-`table`, `referrer` and `field` are `None` in a `FileReference` that you make yourself. The diagnostic
+If you make a `FileReference` without `table`, `referrer` and `field`, they are `None`. The diagnostic
 `unresolved_file_reference` uses them as its location.
 
 ## EmbeddedFile
@@ -294,8 +298,13 @@ To open a database that is encrypted with its own KOD, do these steps:
 
 1. Call `crack_kod(path, "strucrack")`.
 2. If the result is `None`, call `crack_kod(path, "dbcrack")`.
-3. Give the result to `open()` as `kod`.
-4. If `open()` raises `DatabaseDefinitionError`, call `crack_kod()` with the other method.
+3. If this result is also `None`, stop. `crack_kod()` cannot recover the KOD of this database.
+4. Give the KOD to `open()` as `kod`.
+5. If the KOD came from `"strucrack"` and `open()` raises `DatabaseDefinitionError`, call `crack_kod(path, "dbcrack")`.
+6. If this result is not `None`, do step 4 again with it.
+
+Step 5 is for v3 files that are encrypted with their own KOD. For a v4 file, `crack_kod()` does not return a KOD that
+the header of the file rejects.
 
 ## FileInfo
 
@@ -361,7 +370,7 @@ value, for example `DiagnosticKind.CORRUPT_RECORD == "corrupt_record"`.
 |---|---|
 | `corrupt_record` | A CroBank record cannot be read or decoded. The library skips it. It records this diagnostic one time for each record. |
 | `checksum_mismatch` | The CRC-32 of compressed data in a record does not match. The library keeps the record as it decompressed. In CroBank, it records this diagnostic one time for each record. |
-| `undecodable_field` | A field of a CroBank record cannot be decoded. That field and all fields after it are empty. |
+| `undecodable_field` | A field of a CroBank record cannot be decoded. The field is empty. If the length of the field cannot be read, all fields after it are also empty. |
 | `invalid_value` | A date or time field holds text that is not a valid date or time. The value of the field is its text. |
 | `undecodable_table` | A table definition in CroStru cannot be decoded, or does not start with the system number field. The table is not in `bank.tables`. |
 | `unsupported_table` | A table has an id of more than 255. `records()` gives nothing for it. The library records this diagnostic one time for each table. |
