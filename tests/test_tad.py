@@ -19,7 +19,15 @@ ENTRY_64 = struct.Struct("<QLL")
 
 @pytest.mark.parametrize(
     ("version", "header_size", "entry_size"),
-    [(b"01.02", 8, 12), (b"01.03", 8, 16), (b"01.04", 8, 12), (b"01.05", 8, 16), (b"01.11", 16, 16)],
+    [
+        (b"01.02", 8, 12),
+        (b"01.03", 8, 16),
+        (b"01.04", 8, 12),
+        (b"01.05", 8, 16),
+        (b"01.11", 16, 16),
+        (b"01.13", 16, 16),
+        (b"01.14", 16, 16),
+    ],
 )
 def test_each_version_has_its_header_and_entry_size(version: bytes, header_size: int, entry_size: int) -> None:
     layout = tad_layout(version)

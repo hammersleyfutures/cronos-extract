@@ -23,7 +23,9 @@ V4_DELETED_FLAG = 0x02
 V4_DELETED_MASK = 0x03
 V3_HEADER = struct.Struct("<2L")
 V4_HEADER = struct.Struct("<4L")
-# 01.03, 01.05 and 01.11 have 64-bit file offsets; 01.02 and 01.04 have 32-bit ones.
+# v3's 01.03 and 01.05 have 64-bit file offsets and 01.02 and 01.04 32-bit ones. Every v4 entry has a 64-bit offset
+# whose top byte holds the flags: the research notes describe v4 .tad entries as 16 bytes without telling the v4
+# versions apart, and a 32-bit offset has no top byte for the flags. 01.13 and 01.14 have not been seen.
 ENTRY_64BIT = struct.Struct("<QLL")
 ENTRY_32BIT = struct.Struct("<LLL")
 
@@ -89,9 +91,8 @@ class TadLayout:
 
 def tad_layout(version: bytes) -> TadLayout | None:
     """The .tad layout of files of `version`, or None for a version whose .tad this release cannot read."""
-    entry = ENTRY_64BIT if version in VERSIONS_64BIT else ENTRY_32BIT
     if version in V3_VERSIONS:
-        return TadLayout(V3_HEADER, entry, "v3")
+        return TadLayout(V3_HEADER, ENTRY_64BIT if version in VERSIONS_64BIT else ENTRY_32BIT, "v3")
     if version in V4_VERSIONS:
-        return TadLayout(V4_HEADER, entry, "v4")
+        return TadLayout(V4_HEADER, ENTRY_64BIT, "v4")
     return None
