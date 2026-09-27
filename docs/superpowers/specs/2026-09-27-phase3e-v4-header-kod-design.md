@@ -87,11 +87,12 @@ default for them, which the check never looks at.)
 
 `crack_kod` returns a recovered KOD only if it passes the header check of the file it read (CroStru for strucrack,
 CroBank for dbcrack; each `Datafile` keeps its header) whenever that check is not None, and None otherwise. The
-command-line `crack strucrack` (CroStru, or CroSys with `--sys`) and `crack dbcrack` (CroBank) print one line on stderr
-when the KOD they derived fails the check of the file they read: `the recovered KOD does not fit Cro<name>.dat's
-header, so it is not the database's KOD`, unless `--silent`, which prints only the KOD. `strucrack --noninteractive`
-then exits 1, as for an unresolved KOD; an interactive strucrack still prints its dump and KOD and exits 0; `dbcrack`
-exits 1, as it does when it recovers nothing.
+command-line `crack strucrack` (CroStru, or CroSys with `--sys`) and `crack dbcrack` (CroBank) treat a KOD that fails
+the check of the file they read like an unresolved one: they print one line on stderr, `the recovered KOD does not fit
+Cro<name>.dat's header, so it is not the database's KOD`, then the rejected KOD on stderr, as an unresolved crack
+prints its estimate, and nothing on stdout but an interactive strucrack's dump; `--silent` prints nothing, as it
+suppresses the unresolved messages. `strucrack --noninteractive` then exits 1, as for an unresolved KOD; an
+interactive strucrack still prints its dump and exits 0; `dbcrack` exits 1, as it does when it recovers nothing.
 
 ### E4. A v4 entry is inline when bit `0x04` is set
 
@@ -126,7 +127,7 @@ Fable reviewed this spec against the code; each finding was checked and adopted,
 - **E4 flips unseen flags** `01`, `03`, `05`, `09`: the rule is stated in full, and realdata fails on an unseen flag
   (E4, E5).
 - **The realdata test tested the gate**, not the Evidence; it now asserts the Evidence (E5).
-- **Crack reads CroSys with `--sys`**, `dbcrack` has no `--noninteractive`, and `--silent` prints only the KOD (E3).
+- **Crack reads CroSys with `--sys`**, `dbcrack` has no `--noninteractive`, and `--silent` prints only a KOD the header accepts (E3).
 - **Two hints need two command-line replacements**, and the diagnostic still precedes the error (E2).
 - **The header block's size** is stated as the bytes from 19 to 255 (Evidence).
 

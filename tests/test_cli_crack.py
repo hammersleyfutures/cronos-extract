@@ -551,7 +551,8 @@ OTHER_KOD = random_kod(seed=8)
 
 
 def rejected_message(filename: str) -> str:
-    return f"the recovered KOD does not fit {filename}'s header, so it is not the database's KOD\n"
+    """What a crack prints on stderr when `filename`'s v4 header rejects the KOD it recovered: a line, then the KOD."""
+    return f"the recovered KOD does not fit {filename}'s header, so it is not the database's KOD\n" + KOD_LINE
 
 
 @pytest.fixture
@@ -594,7 +595,7 @@ def test_an_interactive_strucrack_whose_kod_the_header_rejects_says_so_and_exits
 
     captured = capsys.readouterr()
     assert "Processing record number" in captured.out
-    assert captured.out.endswith(KOD_LINE)
+    assert bytes(KOD).hex() not in captured.out
     assert captured.err == rejected_message(filename)
 
 
@@ -607,7 +608,8 @@ def test_a_noninteractive_strucrack_whose_kod_the_header_rejects_says_so_and_exi
     assert run_crack("strucrack", "--noninteractive", *sys_args, rejecting_v4_db) == 1
 
     captured = capsys.readouterr()
-    assert captured.out.endswith(KOD_LINE)
+    assert "Processing record number" in captured.out
+    assert bytes(KOD).hex() not in captured.out
     assert captured.err == rejected_message(filename)
 
 
@@ -622,16 +624,16 @@ def test_a_noninteractive_strucrack_whose_kod_the_header_rejects_says_so_and_exi
     ],
     ids=["strucrack", "sys", "noninteractive", "noninteractive-sys", "dbcrack"],
 )
-def test_a_silent_crack_whose_kod_the_header_rejects_prints_only_the_kod(
+def test_a_silent_crack_whose_kod_the_header_rejects_prints_nothing(
     rejecting_v4_db: str, args: list[str], status: int, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert run_crack(*args, "--silent", rejecting_v4_db) == status
 
-    assert capsys.readouterr() == (KOD_LINE, "")
+    assert capsys.readouterr() == ("", "")
 
 
 def test_a_dbcrack_whose_kod_the_header_rejects_says_so_and_exits_1(rejecting_v4_db: str) -> None:
     result = run_command("cli", ["crack", "dbcrack", rejecting_v4_db])
 
     assert result.returncode == 1
-    assert (result.stdout, result.stderr) == (KOD_LINE, rejected_message("CroBank.dat"))
+    assert (result.stdout, result.stderr) == ("", rejected_message("CroBank.dat"))

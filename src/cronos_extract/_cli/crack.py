@@ -26,9 +26,16 @@ from .report import Report
 KEY_MESSAGE = "Pass the following database key to cronos-extract export --kod or inspect --kod to decrypt the database:"
 
 
-def rejected_message(table: Datafile) -> str:
-    """Why a KOD recovered from `table` is not printed with KEY_MESSAGE: its v4 header rejects it."""
-    return f"the recovered KOD does not fit Cro{table.name}.dat's header, so it is not the database's KOD"
+def print_rejected(table: Datafile, kod: list[int]) -> None:
+    """
+    Print on stderr that the v4 header of `table` rejects the recovered `kod`, then `kod`, as an unresolved crack
+    prints its estimate: a KOD the header rejects never goes to stdout.
+    """
+    print(
+        f"the recovered KOD does not fit Cro{table.name}.dat's header, so it is not the database's KOD\n"
+        + tohex(bytes(kod)),
+        file=sys.stderr,
+    )
 
 
 def color_code(c: str, confidence: int, forced: bool, force: bool) -> str:
@@ -227,7 +234,8 @@ def derive_kod_from_stru(table: Datafile, args: argparse.Namespace) -> list[int]
     Derive the KOD table from the encrypted records of `table`, CroStru or CroSys, as strucrack's help describes.
     Prints the record dump for finding known text in it, and the KOD when it is resolved; --silent prints only the
     KOD. Returns None when entries stay unresolved, and when the v4 header of `table` rejects the KOD, which is then
-    printed with a line on stderr saying so. Raises CrackInputError for a --text that does not fit `table`.
+    printed on stderr, not stdout, with a line saying so, unless --silent. Raises CrackInputError for a --text that
+    does not fit `table`.
     """
     xref = stru_xref(table)
 
@@ -367,12 +375,16 @@ def derive_kod_from_stru(table: Datafile, args: argparse.Namespace) -> list[int]
             print_unresolved(KOD, KOD_CONFIDENCE, unset_count)
         return None
 
-    rejected = header_rejects(table, KOD)
+    if header_rejects(table, KOD):
+        if not args.silent:
+            print_rejected(table, KOD)
+        return None
+
     if not args.silent:
-        print(rejected_message(table) if rejected else KEY_MESSAGE, file=sys.stderr)
+        print(KEY_MESSAGE, file=sys.stderr)
     print(tohex(bytes(KOD)))
 
-    return None if rejected else KOD
+    return KOD
 
 
 def derive_kod_from_bank_and_index(bank: Datafile, index: Datafile, args: argparse.Namespace) -> list[int] | None:
@@ -382,7 +394,7 @@ def derive_kod_from_bank_and_index(bank: Datafile, index: Datafile, args: argpar
     Most records of both are compressed and start with a uint16 size, 0x08 and 0x00, so the fourth byte of each
     decodes to zero, which gives the KOD entry for that byte at the record's shift. Prints the KOD when it is
     resolved; returns None, printing why on stderr unless --silent, when it is not, and when CroBank's v4 header
-    rejects it, printing the KOD too.
+    rejects it, printing the rejected KOD on stderr too.
     """
     KOD, KOD_CONFIDENCE = kod_from_xref(bank_and_index_xref(bank, index))
 
@@ -396,8 +408,10 @@ def derive_kod_from_bank_and_index(bank: Datafile, index: Datafile, args: argpar
             )
         return None
 
-    rejected = header_rejects(bank, KOD)
-    if rejected and not args.silent:
-        print(rejected_message(bank), file=sys.stderr)
+    if header_rejects(bank, KOD):
+        if not args.silent:
+            print_rejected(bank, KOD)
+        return None
+
     print(tohex(bytes(KOD)))
-    return None if rejected else KOD
+    return KOD
