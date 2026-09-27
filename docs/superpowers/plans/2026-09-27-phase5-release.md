@@ -135,3 +135,50 @@ tests in `tests/test_api_info.py`, `tests/test_api_public.py`.
 - [ ] `uv run ruff format --check`; commit `Add the changelog and record Phase 5`.
 
 The controller appends the Outcome; the release steps (R5) follow the pull request, with Ben.
+
+## Outcome
+
+Implemented on branch `phase5-release` in 13 commits after the plan (`02622a0`..`b4a2acf`, plus this record),
+subagent-driven: an implementer and a task review per task, then a whole-branch review by Fable and one fix wave. The
+branch also holds the Phase 3f spike's record (`0c9fb2e`), made before this plan.
+
+- **Tests:** 1,021 passed on `main` (`d04c03c`), 1,113 on the branch (14 realdata tests deselected); ruff, format, ty
+  and actionlint clean; `tests/golden/` unchanged. `uv build` gives an sdist of `src/`, `LICENSE`, `README.md` and
+  `pyproject.toml` and a wheel with `py.typed`, the licence and the `cronos-extract` entry point; `twine check` passes
+  both (Fable).
+- **KOD decoding (R2):** decode now takes 1.7 µs at 100 bytes (was 9.6, 5.7x), 7.9 µs at 1 KB (was 101, 12.8x), 69 µs
+  at 12 KB (was 1,231, 17.8x) and 0.24 ms at 64 KB (was 6.6, 27.8x); encode is about the same. Big-integer lanes are
+  used below 16 KiB and strided `bytes.translate` from 16 KiB. Reading every table of a built `01.04` database of
+  100,000 KOD-encoded records of about 1 KB took 19.6 s before and 10.6 s after (196 and 106 µs a record, 1.85x): the
+  rest of a record's cost is decoding its fields. A `KODcoding` now takes about 200 µs and 150 KB to build, once per
+  file. The spec's first plan, per-shift translation alone, was slower than the old code at 100 bytes (Fable's
+  measurement), which is why R2 chooses by length.
+- **Documentation (R3):** `docs/api.md`, the README and `CHANGELOG.md` are written to the simple-english skill's rules
+  in pragmatic mode, each self-checked and reviewed against them. Tests check that `docs/api.md` names every public name
+  and diagnostic kind and that its example runs, that every `cronos-extract` command in the README runs, that no README
+  link is relative, and that `CHANGELOG.md` has a section for the package version.
+
+### Divergences from the plan and their rulings
+
+- Task 3: the `--version` test compares with the installed version, not a literal, and every workflow pins the same
+  current `setup-uv` (fix round).
+- Task 4: the review found four statements the code contradicts (which fields `undecodable_field` empties; a crack
+  procedure that could pass `None` to `open()`; a circular "other method" step; "each step reads one CroBank record").
+  The last was also in `__init__.py`'s and `bank.py`'s docstrings, which were corrected with it. The library
+  "examines" a header; "make sure that" is kept for instructions to the reader.
+- Task 5: the README's crack examples run against a built database encrypted with its own KOD, since `test_data` is
+  not; anchor links were removed, because PyPI renders the README.
+- Task 6: "checks" became "examines" in the changelog (fix round); three stale roadmap statements were corrected.
+- Final wave: a test that `CHANGELOG.md` has a `## <version>` section, so a release without one fails in CI before a
+  tag; dated notes on three more "private repository" lines of the PR 2 plan; `Files-<abbreviation>/` in the README;
+  and wording that says the header shows when a KOD is not the database's, since the check can reject a KOD but not
+  prove one.
+
+### Final review
+
+Fable, `d04c03c..834477d`: ready with fixes; the release workflow's permissions, version check and CHANGELOG
+extraction, the package's contents and metadata, and the fast KOD path under hostile shifts, lengths and partial KODs
+all held. The fix wave (`ed4c381`, `b4a2acf`) was found addressed by a scoped re-review. Minors left: `--version` fails
+with `PackageNotFoundError` on an uninstalled checkout run as `PYTHONPATH=src`; `decode` needs `bytes` or `bytearray`,
+not a `memoryview`. On release day the 2021 `v1.0.0` tag must be renamed on origin before `v1.0.0` is pushed, or the
+push is rejected and the workflow never runs.
