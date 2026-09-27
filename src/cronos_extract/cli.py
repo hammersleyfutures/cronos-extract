@@ -4,6 +4,7 @@ import argparse
 import io
 import os
 import sys
+from importlib.metadata import version
 from pathlib import Path
 
 from . import survey
@@ -39,6 +40,7 @@ def add_survey_parser(subcommands: Subcommands) -> None:
 def build_parser() -> argparse.ArgumentParser:
     """Return the cronos-extract argument parser."""
     parser = argparse.ArgumentParser(prog="cronos-extract", description="Read CronosPro databases.")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {version('cronos-extract')}")
     subcommands = parser.add_subparsers(dest="subcommand", required=True)
     add_survey_parser(subcommands)
     export.add_parser(subcommands)

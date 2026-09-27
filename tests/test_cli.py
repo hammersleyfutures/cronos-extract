@@ -28,6 +28,14 @@ def test_survey_usage_errors_name_the_survey_subcommand() -> None:
     assert result.stderr.startswith("usage: cronos-extract survey")
 
 
+def test_version_prints_the_package_version() -> None:
+    result = run_command("cli", ["--version"])
+
+    assert result.returncode == 0
+    assert result.stdout == "cronos-extract 1.0.0\n"
+    assert result.stderr == ""
+
+
 def test_a_closed_stdout_exits_1_without_a_message() -> None:
     process = subprocess.Popen(
         [sys.executable, "-m", "cronos_extract.cli", "inspect", "kodump", str(TEST_DB / "CroStru.dat")],
