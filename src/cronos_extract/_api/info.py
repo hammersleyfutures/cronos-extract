@@ -27,6 +27,14 @@ class FileInfo:
     own_kod: bool | None
     problem: str | None
 
+    def __post_init__(self) -> None:
+        flags = (self.version, self.generation, self.use64bit, self.kod_encoded, self.compressed, self.own_kod)
+        if self.problem is None:
+            if any(flag is None for flag in flags):
+                raise ValueError("a FileInfo with problem None must have every other field set")
+        elif any(flag is not None for flag in flags):
+            raise ValueError("a FileInfo with problem set must have every other field None")
+
 
 def info_from_header(name: str, path: Path, header: DatHeader) -> FileInfo:
     """The FileInfo of the file at `path`, whose header is `header`."""

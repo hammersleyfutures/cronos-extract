@@ -13,8 +13,8 @@ Read CronosPro databases.
 This API promises:
 
 - Only the names in ``__all__`` are public. Other modules and names in the package are private and may change.
-- Iteration is lazy: ``Table.records()`` and ``Bank.files()`` read one CroBank record per step. CroBank
-  is scanned once for all tables together; each table then reads only its own records.
+- Iteration is lazy: each step of ``Table.records()`` and ``Bank.files()`` reads CroBank only up to the table's next
+  record. CroBank is scanned once for all tables together; each table then reads only its own records.
 - A ``Bank`` is not thread-safe. Generators from one bank may be interleaved on one thread.
 - The library never prints. Problems that reading survives are ``Diagnostic``s: ``bank.diagnostics`` keeps the first
   1,000, ``bank.diagnostic_counts`` counts every one, and ``on_diagnostic`` receives every one. Diagnostics from
@@ -40,6 +40,7 @@ from ._api.errors import CronosError, DatabaseDefinitionError, NotACronosFile, U
 from ._api.info import FileInfo
 from ._api.kod import Kod
 from ._api.values import EmbeddedFile, Field, FieldDefinition, FileReference, Record
+from ._format.header import Generation
 
 __all__ = [
     "Bank",
@@ -52,6 +53,7 @@ __all__ = [
     "FieldDefinition",
     "FileInfo",
     "FileReference",
+    "Generation",
     "Kod",
     "NotACronosFile",
     "Record",

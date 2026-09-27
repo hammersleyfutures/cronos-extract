@@ -5,6 +5,7 @@ import signal
 import subprocess
 import sys
 import time
+from importlib.metadata import version
 from pathlib import Path
 
 import pytest
@@ -26,6 +27,20 @@ def test_survey_usage_errors_name_the_survey_subcommand() -> None:
 
     assert result.returncode == 2
     assert result.stderr.startswith("usage: cronos-extract survey")
+
+
+def test_version_prints_the_package_version() -> None:
+    result = run_command("cli", ["--version"])
+
+    assert result.returncode == 0
+    assert result.stdout == f"cronos-extract {version('cronos-extract')}\n"
+    assert result.stderr == ""
+
+
+def test_changelog_has_a_heading_for_the_package_version() -> None:
+    changelog = (Path(__file__).resolve().parent.parent / "CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert f"## {version('cronos-extract')}" in changelog.splitlines()
 
 
 def test_a_closed_stdout_exits_1_without_a_message() -> None:

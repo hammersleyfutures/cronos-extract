@@ -41,6 +41,8 @@
 
 Ben is making `hammersleyfutures/cronos-extract` private until the package is published to PyPI. Check the repository's visibility (`gh repo view hammersleyfutures/cronos-extract --json visibility,isFork`) at the start of the session, and plan around these consequences:
 
+**Note (2026-09-27):** The repository was already public. See the roadmap's decision 9.
+
 - GitHub does not let a public fork be made private. Making it private needs the fork detached from alephdata's network first (GitHub Support), or a new private repository with this history pushed to it. If a new repository is used, update the `origin` remote and every `-R hammersleyfutures/cronos-extract` in this plan.
 - CodeQL code scanning on a private repository needs a GitHub Code Security licence. Without it the `codeql.yml` workflow and the `CodeQL` check fail or don't run (Task 3); ask Ben whether to keep the workflow, disable it, or run the CodeQL CLI locally instead (`codeql database create` + `codeql database analyze ... codeql/python-queries:codeql-suites/python-security-and-quality.qls`; the CLI bundle is at https://github.com/github/codeql-action/releases).
 - Copilot code review on a private repository needs a Copilot plan with code review (Task 4).
@@ -59,6 +61,7 @@ Ben is making `hammersleyfutures/cronos-extract` private until the package is pu
 - The GitHub fork is to be detached from alephdata's fork network — Ben does this via GitHub Support.
 - A courtesy issue on alephdata/cronodump is drafted (Appendix B). Do not post it. Ben will post it once he has developed the package further and published it to PyPI, after approving the final text.
 - Ben is making the GitHub repository private until the PyPI release (decided 2026-09-15). See "Private repository" above.
+  **Note (2026-09-27):** The repository was already public. See the roadmap's decision 9.
 
 ---
 
@@ -291,6 +294,7 @@ Expected: `state=MERGED`; `master` contains the merge; tests pass on `master`.
 - **Task 7:** `CLAUDE.md` merged as PR #4 (`a10d51a`).
 - **Task 8:** the modernisation brainstorm produced `docs/superpowers/specs/2026-09-15-modernisation-roadmap-design.md`, merged with the plans as PR #5 (`c4a4dba`). Phase 0 of that roadmap merged as PR #6 (`d24afe9`); PR #7 (`9a5562b`) recorded the survey result and ignored `local/`.
 - The repository was still public on 2026-09-15; making it private remains intended before the PyPI release.
+  **Note (2026-09-27):** The repository was already public. See the roadmap's decision 9.
 - Appendix A remains the input backlog for the roadmap's later phases; items raised during Phase 0 are carried forward in the spec.
 
 ## Appendix A: Modernisation backlog (not part of PR 2)
@@ -306,7 +310,7 @@ Collected from the reviews, the agents' reports and CodeQL; each needs a decisio
 - **Format support:** tables with table id > 255 can never match records (`data[0]` is compared with a dword). CronosPro v7 (`01.19`) is unsupported; alephdata/cronodump#24 has detailed research (record envelope, plaintext CroBank, per-bank KOD, known-plaintext recovery). `Datafile.readrec` raises `struct.error` for a record number past the end of the `.tad`. alephdata/cronodump#23 and #15 ask for decoding link fields between tables (field types 7, 8, 9 are shown as hex).
 - **From the PR 2 Fable review (maintainability):** CP-1251 decoding uses three error policies (none, `ignore`, `replace`) in different places; pick one and centralise it. `crodump.main`, `dumpdbfields.main` and `croconvert.main` each repeat the `--kod/--nokod/--strucrack/--dbcrack` selection; factor it into one function. `Datafile.decompress` parses but never verifies each chunk's CRC-32; verifying it and warning on a mismatch would catch silently corrupt data.
 - **Test data:** `test_data/all_field_types` has almost no live Bank records. Fork `drey555/cronodump` has a `test_data/test_relation` sample with relations (provenance unknown — check licence before use).
-- **Project:** PyPI publishing as `cronos-extract`, then making the repository public again and posting the courtesy issue (Appendix B); GitHub fork detachment (Ben, via GitHub Support); CodeQL "Code Quality" dynamic analysis runs alongside the `codeql.yml` workflow (duplicate analysis).
+- **Project:** PyPI publishing as `cronos-extract`, then making the repository public again and posting the courtesy issue (Appendix B); GitHub fork detachment (Ben, via GitHub Support); CodeQL "Code Quality" dynamic analysis runs alongside the `codeql.yml` workflow (duplicate analysis). **Note (2026-09-27):** the repository was already public (the Phase 5 design's Evidence), so there is nothing to make public again; Phase 5 publishes to PyPI with the repository public.
 
 ## Appendix B: Draft courtesy issue for alephdata/cronodump (do not post; Ben posts it after further development and the PyPI release)
 

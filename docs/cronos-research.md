@@ -371,5 +371,19 @@ inline in CroStru record 1 and is 92 of 93 bytes identical in two unrelated data
 `Base000` over the other's still-encoded record 1, together with the header's 8 entries, leaves exactly one
 consistent offset (the true one) and 78 correct KOD entries of 256. Record 1's keys are sorted and come from a small
 vocabulary (`Bank`, `BankId`, `BankName`, `Base000`, `Base001`, …, `NS1`, `USERINFO`, `Version`). A known-plaintext
-KOD solver built on these facts is planned before 1.0 (Phase 3f of the roadmap).
+KOD solver was tried in a research spike (Phase 3f of the roadmap, 2026-09-27), treating the one v4 database whose
+CroStru KOD is known as locked:
+
+- A parse of record 1 that guesses each key from the vocabulary, each unknown value length, and keeps only
+  hypotheses whose implied KOD entries never conflict, with `Base000`'s alignment giving an offset the keys before it
+  must reach exactly, found the true key sequence as its best-ranked parse: 188 KOD entries, all correct, covering 185
+  of the 212 byte values in the record. The template's one differing byte must be applied softly, after the keys
+  before it, or its wrong entry blocks the true parse.
+- Crib-dragging with key names taken only from another database (each key plus its length-field pattern slid along
+  the record, accepted when it agrees with known entries and contradicts none) reached 162 entries, 153 correct and 9
+  wrong; accepted cribs need structural validation.
+- The five locked databases' CroStru records hold no near-copy of `Base000` at any offset, with the record number or
+  any other shift, so their solving starts from the header's 8 entries and no crib is confirmed. They were probably
+  written by another CronosPro build, whose Files table definition differs; one has 2023–2024 timestamps and flag
+  `08`. A solver needs a plaintext template from the same program generation.
 

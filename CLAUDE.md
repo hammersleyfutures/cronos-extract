@@ -40,10 +40,12 @@ The code is layered, from bytes up to commands (`src/cronos_extract/`):
   header shows that the KOD used is not its own. It drives `Datafile`, `Database.read_db_definition` and
   `TableDefinition` directly, passing each a `report` callback (`_diagnostic.py`'s `Reporter`) that turns every problem
   reading survives into a `Diagnostic` with its `DiagnosticKind`; no reader prints. Only names in `__all__` are public.
-  `_format/files.py`'s `open_regular_file` is the one way Cro files are opened. `Bank` (`_api/bank.py`) indexes CroBank
-  as it reads it: the first `Table.records()` or `Bank.files()` generator to reach a CroBank record indexes it for every
-  table, so a table read after another reads only its own records. `Bank.deleted_records` is the count of deleted
-  records CroBank's `.tad` header states; those records are not read.
+  `docs/api.md` is the API reference, and `tests/test_api_public.py` fails when a name in `__all__` or a
+  `DiagnosticKind` member is missing from it. `_format/files.py`'s `open_regular_file` is the one way Cro files are
+  opened. `Bank` (`_api/bank.py`) indexes CroBank as it reads it: the first `Table.records()` or `Bank.files()`
+  generator to reach a CroBank record indexes it for every table, so a table read after another reads only its own
+  records. `Bank.deleted_records` is the count of deleted records CroBank's `.tad` header states; those records are
+  not read.
 - **`Datafile`**: one `.dat`/`.tad` pair. The `.tad` is an index of `(offset, length, flags)` entries, where a length of
   `0xFFFFFFFF` means deleted. Record numbers start at 1. Each `.tad` entry is parsed by `_format/tad.py`'s layout for
   its generation: v3 keeps the inline flag in bit 31 of the length, v4 in bit 0x04 of the top byte of the offset, where
@@ -155,6 +157,12 @@ unresolved. `export --crack` and `inspect … --crack` call `crack_kod`.
 - CI (`.github/workflows/ci.yml`) runs lint, ty and pip-audit, and pytest on Python 3.12, 3.13 and 3.14. CodeQL
   (`codeql.yml`) runs security-and-quality queries. CodeQL alert `py/clear-text-logging-sensitive-data` (strudump
   printing the NS1 password) is intended and was dismissed.
+- Releases: `CHANGELOG.md` lists the changes in each release, in the simple technical English of `README.md` and
+  `docs/api.md`. A pull request sets `version` in `pyproject.toml` and adds a `## x.y.z` section, exactly that
+  heading, to `CHANGELOG.md`. After it is merged, and with Ben's go-ahead, tag `main` and push the tag:
+  `git tag v1.x.y && git push origin v1.x.y`. `.github/workflows/release.yml` then checks that the tag matches the
+  package version, runs the tests, builds, publishes to PyPI by trusted publishing through its `pypi` environment, and
+  creates the GitHub Release with that `CHANGELOG.md` section as its notes.
 - Plans and specs are committed under `docs/superpowers/`. The modernisation roadmap, its decisions, the public API
   contract and the open items carried forward between phases are in
   `docs/superpowers/specs/2026-09-15-modernisation-roadmap-design.md`; the older backlog is Appendix A of

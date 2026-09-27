@@ -20,7 +20,7 @@ V7_VERSIONS = (b"01.19",)
 KOD_CHECK_SIZE = 8
 
 # The CronosPro generations a header's version belongs to.
-type Generation = Literal["v3", "v4", "v7", "unknown"]
+Generation = Literal["v3", "v4", "v7", "unknown"]
 
 
 @dataclass(frozen=True)
