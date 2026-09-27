@@ -5,6 +5,8 @@ import hashlib
 import itertools
 import json
 import subprocess
+from contextlib import ExitStack
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -12,11 +14,16 @@ from cli import run_command
 from cronos_builder import ignore_problems, tad_layout
 
 import cronos_extract
+from cronos_extract._api.crack import bank_and_index_xref, kod_from_xref, kod_is_resolved
+from cronos_extract._api.datafiles import list_directory, open_datafile
+from cronos_extract._api.diagnostics import DiagnosticLog
 from cronos_extract._api.info import read_file_info
 from cronos_extract._cli.sql_out import unique_sql_table_name
+from cronos_extract._format.header import read_dat_header, read_kod_check
 from cronos_extract._format.tad import DELETED_LENGTH, V4_FLAG_SHIFT, is_v4_deleted
 from cronos_extract._format.tad import tad_layout as production_tad_layout
 from cronos_extract.Datamodel import TableDefinition, is_table_key
+from cronos_extract.koddecoder import KODcoding, kod_fits_header
 from cronos_extract.survey import SurveyedDatabase, read_path_list, survey_databases
 
 pytestmark = pytest.mark.realdata
@@ -28,7 +35,7 @@ LIST_FILE = Path(__file__).resolve().parent.parent / "local" / "mash_datasets_wi
 FINGERPRINTS = LIST_FILE.parent / "realdata-fingerprints.json"
 # The number of records compared per table.
 RECORDS_COMPARED = 500
-# The number of .tad entries read per chunk in the v4 deleted-length check, which reads every entry.
+# The number of .tad entries read per chunk by the v4 .tad checks, which read every entry.
 TAD_ENTRIES_CHECKED = 1_000_000
 # The number of the first live CroBank records the garbage check samples, and the fraction of them that must carry
 # a table id the definition names.
@@ -38,14 +45,25 @@ LIVE_RECORDS_MATCH_FRACTION = 0.9
 MIN_LIVE_RECORDS_SAMPLED = 100
 DBCRACK_TEST = "test_dbcrack_recovers_a_kod_that_opens_a_v4_database"
 # The tests that run on the 01.11 databases only.
-V4_TESTS = ("test_v4_tad_entries_never_use_the_v3_deleted_length", DBCRACK_TEST)
+V4_TESTS = (
+    "test_v4_tad_entries_never_use_the_v3_deleted_length",
+    DBCRACK_TEST,
+    "test_a_whole_dbcrack_permutation_fits_crobanks_header",
+)
+# The tests that run on the databases holding at least one Cro file whose own header is v4.
+V4_FILE_TESTS = (
+    "test_the_default_kod_fails_every_v4_files_header_check",
+    "test_every_v4_tad_flag_byte_is_one_seen_before",
+)
+# The v4 .tad flag bytes seen in real databases (Phase 3e's research spike, 2026-09-27).
+SEEN_V4_FLAGS = {0x00, 0x02, 0x04, 0x06, 0x07, 0x08, 0x0C}
 # dbcrack recovers the KOD of the v4 databases whose CroBank header says KOD-encoded. Neither crack method
 # recovers it for the others.
 V4_CRACK_XFAIL = pytest.mark.xfail(
     strict=True,
     reason="dbcrack returns None: this database's CroBank and CroIndex are not KOD-encoded, so there are no encoded "
     "records to learn from; its CroStru is encoded with its own KOD and holds too few records for strucrack, which "
-    "is Phase 3e's question",
+    "is the known-plaintext solver's question (Phase 3f)",
 )
 
 
@@ -73,6 +91,11 @@ def is_v4(directory: Path) -> bool:
     """Whether CroBank's own header says v4; a database's CroBank can be v4 while its CroStru is v3."""
     dat = named(directory, "CroBank.dat")
     return dat is not None and read_file_info("Bank", dat).generation == "v4"
+
+
+def has_v4_file(directory: Path) -> bool:
+    """Whether any Cro file in `directory` has a v4 header of its own."""
+    return any(info.generation == "v4" for info in survey_of(directory).files)
 
 
 def bank_header_is_kod_encoded(directory: Path) -> bool:
@@ -109,7 +132,7 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
             marks=V4_CRACK_XFAIL if name == DBCRACK_TEST and not bank_header_is_kod_encoded(database) else (),
         )
         for index, database in enumerate(databases)
-        if name not in V4_TESTS or is_v4(database)
+        if (name not in V4_TESTS or is_v4(database)) and (name not in V4_FILE_TESTS or has_v4_file(database))
     ]
     metafunc.parametrize("dbdir", cases)
 
@@ -220,6 +243,71 @@ def test_v4_tad_entries_never_use_the_v3_deleted_length(dbdir: Path) -> None:
                     if is_v4_deleted(offset >> V4_FLAG_SHIFT):
                         deleted_by_flag += 1
         assert deleted_by_flag == header_deleted, f"Cro{info.name}.tad"
+        checked += 1
+    assert checked > 0
+
+
+def test_the_default_kod_fails_every_v4_files_header_check(dbdir: Path) -> None:
+    """
+    The default KOD fails the header check of every Cro file whose own header is v4, whether its records are
+    KOD-encoded or not: the header block is encoded with the database's own KOD.
+    """
+    checked = 0
+    for info in survey_of(dbdir).files:
+        if info.generation != "v4":
+            continue
+        with info.path.open("rb") as file:
+            header = read_dat_header(file, where=info.path.name)
+            header = replace(header, kod_check=read_kod_check(file))
+        assert kod_fits_header(header, KODcoding()) is False, f"Cro{info.name}.dat"
+        checked += 1
+    assert checked > 0
+
+
+def test_a_whole_dbcrack_permutation_fits_crobanks_header(dbdir: Path) -> None:
+    """
+    When dbcrack's statistics over CroBank and CroIndex give a whole permutation, that permutation passes CroBank's
+    header check; the statistics are computed here from the Datafiles, before crack_kod checks the header.
+    """
+    names = list_directory(dbdir)
+    log = DiagnosticLog(None)
+    with ExitStack() as stack:
+        bank, _ = open_datafile(dbdir, names, "Bank", compact=True, kod=None, log=log)
+        stack.callback(bank.close)
+        try:
+            index, _ = open_datafile(dbdir, names, "Index", compact=True, kod=None, log=log)
+        except (cronos_extract.NotACronosFile, cronos_extract.UnsupportedVersion):
+            pytest.skip("CroIndex cannot be read, so dbcrack has nothing to learn from")
+        stack.callback(index.close)
+        kod, confidence = kod_from_xref(bank_and_index_xref(bank, index))
+    if not kod_is_resolved(kod, confidence):
+        pytest.skip("dbcrack's statistics do not give a whole permutation for this database")
+    assert kod_fits_header(bank.header, KODcoding(kod)) is True
+
+
+def test_every_v4_tad_flag_byte_is_one_seen_before(dbdir: Path) -> None:
+    """
+    Every entry of every .tad file whose .dat header is v4 has one of the flag bytes seen in real databases, so an
+    unseen flag fails here instead of being read by a guessed rule.
+    """
+    flag_position = V4_FLAG_SHIFT // 8
+    checked = 0
+    for info in survey_of(dbdir).files:
+        if info.generation != "v4":
+            continue
+        tad = named(dbdir, f"Cro{info.name}.tad")
+        if tad is None or info.version is None:
+            continue
+        layout = production_tad_layout(info.version.encode())
+        assert layout is not None, f"Cro{info.name}.tad"
+        flags: set[int] = set()
+        with tad.open("rb") as file:
+            file.read(layout.header.size)
+            while chunk := file.read(layout.entry.size * TAD_ENTRIES_CHECKED):
+                usable = len(chunk) - len(chunk) % layout.entry.size
+                flags.update(chunk[flag_position : usable : layout.entry.size])
+        unseen = sorted(flags - SEEN_V4_FLAGS)
+        assert not unseen, f"Cro{info.name}.tad has unseen flag bytes {[f'{flag:02x}' for flag in unseen]}"
         checked += 1
     assert checked > 0
 
