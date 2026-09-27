@@ -134,3 +134,40 @@ KOD given is not its KOD`.
 - [ ] `uv run ruff format --check`; commits `Check the v4 header evidence on real databases` and `Record Phase 3e`.
 
 The controller runs the realdata suite in the background afterwards and appends the Outcome.
+
+## Outcome
+
+Implemented on branch `phase3e-v4-header-kod` in 11 commits after the plan (`6978ed1`..`bacd62f`, plus this record),
+subagent-driven: an implementer and a task review per task, then a whole-branch review by Fable and one fix.
+
+- **Tests:** 946 passed on `main` (`359e94d`), 1,021 on the branch (14 realdata tests deselected); ruff, format and ty
+  clean; `tests/golden/` unchanged.
+- **Realdata (counts only):** the full run at `b45248f` took 9,278 s (2 h 35 min): 221 passed, 79 skipped, 5 xfailed,
+  none failed. The three new evidence tests passed on every database they apply to: the default KOD fails the header
+  check of every v4 file, encoded or not; every whole permutation dbcrack's statistics produce passes CroBank's header
+  check; every v4 `.tad` flag byte is one of `00`, `02`, `04`, `06`, `07`, `08`, `0c`.
+
+### Divergences from the plan and their rulings
+
+- Task 1: the `Datafile` test lives in `tests/test_datafile.py`; `Datafile.readdathdr`'s "random bytes" docstring was
+  corrected for v4 in Task 5.
+- Task 2: both messages say "the KOD used", not "the KOD given", because the default is usually not given (fix round);
+  a `kod=None` test on a KOD-encoded v4 CroStru was added; the builder test's `01.11` case, dropped in 3d, is restored,
+  since a default-table v4 CroBank now opens with the default KOD.
+- Task 3: the test database is a crackable v4 database whose check bytes were rewritten with another KOD (a new builder
+  helper, `write_kod_check`), since a database whose statistics resolve to a wrong permutation could not be built. A
+  KOD the header rejects is handled like an unresolved crack: its table on stderr, nothing on stdout, `--silent` prints
+  nothing (fix round). The `export --crack` test pins a crack that returns None; a crack that succeeds and is then
+  refused by `open()` needs two v4 files with different KODs, which no real database has.
+- Task 5: the known-plaintext solver is named Phase 3f; the 3c spec gained a dated note, and one README sentence names
+  the KOD among the reasons an export stops.
+
+### Final review
+
+Fable, `359e94d..b45248f`: ready to merge. Hostile probes (garbage check bytes, CroBank truncated to 19–28 bytes, an
+unencoded v4 CroStru with an own-KOD CroBank, `--kod` of the default's hex, `--nokod`, flags `01`/`03`/`05`/`09`/`08`,
+`inspect` on a refused database) all ended in `WrongKod`, a `DatabaseDefinitionError` with the crack hint, or a
+`corrupt_record`; no crash and no silent garbage. One fix landed before merge: a test that the builder writes flag
+`08` in a v4 entry (`bacd62f`), since the flag-`08` read test would also pass with flag `00`; a scoped re-review found
+it addressed. Minors left: no subprocess test of a successful `export --crack dbcrack` on a v4 database; the name of
+`open()`'s check helper reads as a sentence.
