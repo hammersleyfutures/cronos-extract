@@ -37,6 +37,12 @@ def test_version_prints_the_package_version() -> None:
     assert result.stderr == ""
 
 
+def test_changelog_has_a_heading_for_the_package_version() -> None:
+    changelog = (Path(__file__).resolve().parent.parent / "CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert f"## {version('cronos-extract')}" in changelog.splitlines()
+
+
 def test_a_closed_stdout_exits_1_without_a_message() -> None:
     process = subprocess.Popen(
         [sys.executable, "-m", "cronos_extract.cli", "inspect", "kodump", str(TEST_DB / "CroStru.dat")],
