@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from cronos_builder import random_kod, write_database, write_header_only_datafile
 
-from cronos_extract import FileInfo
+from cronos_extract import FileInfo, Generation
 from cronos_extract._api.info import read_file_info
 
 
@@ -92,3 +92,96 @@ def test_file_info_is_frozen_and_hashable(tmp_path: Path) -> None:
     assert hash(info) == hash(dataclasses.replace(info))
     with pytest.raises(dataclasses.FrozenInstanceError):
         info.name = "Bank"  # ty: ignore[invalid-assignment]
+
+
+def test_file_info_with_problem_and_all_flags_none_is_valid(tmp_path: Path) -> None:
+    info = FileInfo(
+        name="Stru",
+        path=tmp_path / "CroStru.dat",
+        version=None,
+        generation=None,
+        use64bit=None,
+        kod_encoded=None,
+        compressed=None,
+        own_kod=None,
+        problem="broken",
+    )
+
+    assert info.problem == "broken"
+
+
+@pytest.mark.parametrize("generation", ["v3", "v4", "v7", "unknown"])
+def test_file_info_with_no_problem_and_all_flags_set_is_valid(tmp_path: Path, generation: Generation) -> None:
+    info = FileInfo(
+        name="Stru",
+        path=tmp_path / "CroStru.dat",
+        version="01.19",
+        generation=generation,
+        use64bit=False,
+        kod_encoded=False,
+        compressed=False,
+        own_kod=False,
+        problem=None,
+    )
+
+    assert info.generation == generation
+
+
+def test_file_info_raises_when_problem_and_flags_are_both_set(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="problem"):
+        FileInfo(
+            name="Stru",
+            path=tmp_path / "CroStru.dat",
+            version="01.19",
+            generation="v7",
+            use64bit=False,
+            kod_encoded=False,
+            compressed=False,
+            own_kod=False,
+            problem="broken",
+        )
+
+
+def test_file_info_raises_when_problem_and_flags_are_both_none(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="problem"):
+        FileInfo(
+            name="Stru",
+            path=tmp_path / "CroStru.dat",
+            version=None,
+            generation=None,
+            use64bit=None,
+            kod_encoded=None,
+            compressed=None,
+            own_kod=None,
+            problem=None,
+        )
+
+
+def test_file_info_raises_when_problem_is_set_with_one_flag(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="problem"):
+        FileInfo(
+            name="Stru",
+            path=tmp_path / "CroStru.dat",
+            version="01.19",
+            generation=None,
+            use64bit=None,
+            kod_encoded=None,
+            compressed=None,
+            own_kod=None,
+            problem="broken",
+        )
+
+
+def test_file_info_raises_when_problem_is_none_with_one_flag_missing(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="problem"):
+        FileInfo(
+            name="Stru",
+            path=tmp_path / "CroStru.dat",
+            version="01.19",
+            generation="v7",
+            use64bit=False,
+            kod_encoded=False,
+            compressed=False,
+            own_kod=None,
+            problem=None,
+        )

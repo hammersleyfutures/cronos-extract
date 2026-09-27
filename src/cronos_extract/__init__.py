@@ -40,6 +40,7 @@ from ._api.errors import CronosError, DatabaseDefinitionError, NotACronosFile, U
 from ._api.info import FileInfo
 from ._api.kod import Kod
 from ._api.values import EmbeddedFile, Field, FieldDefinition, FileReference, Record
+from ._format.header import Generation
 
 __all__ = [
     "Bank",
@@ -52,6 +53,7 @@ __all__ = [
     "FieldDefinition",
     "FileInfo",
     "FileReference",
+    "Generation",
     "Kod",
     "NotACronosFile",
     "Record",

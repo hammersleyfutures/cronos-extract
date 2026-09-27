@@ -1,6 +1,7 @@
 # ABOUTME: Tests for the public surface of cronos_extract: the names in __all__, the roadmap's example, and py.typed.
 # ABOUTME: Uses a database from tests/cronos_builder.py through `import cronos_extract` only.
 import datetime
+import typing
 from pathlib import Path
 
 from cronos_builder import TEST_TABLE_ID, bank_record, write_database
@@ -18,6 +19,7 @@ PUBLIC_NAMES = [
     "FieldDefinition",
     "FileInfo",
     "FileReference",
+    "Generation",
     "Kod",
     "NotACronosFile",
     "Record",
@@ -32,12 +34,19 @@ PUBLIC_NAMES = [
 def test_the_public_names_are_exactly_those_in_all() -> None:
     assert cronos_extract.__all__ == PUBLIC_NAMES
     for name in PUBLIC_NAMES:
+        # Generation is a plain Literal alias, not a class, so it has no cronos_extract module of its own.
+        if name == "Generation":
+            continue
         module = getattr(cronos_extract, name).__module__
         # Diagnostic and DiagnosticKind are shared with the internal readers, which report them.
         if name in ("Diagnostic", "DiagnosticKind"):
             assert module == "cronos_extract._diagnostic"
         else:
             assert module.startswith("cronos_extract._api.")
+
+
+def test_generation_lists_the_four_cronospro_generations() -> None:
+    assert typing.get_args(cronos_extract.Generation) == ("v3", "v4", "v7", "unknown")
 
 
 def test_wrong_kod_is_a_cronos_error() -> None:
