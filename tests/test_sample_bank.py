@@ -21,7 +21,7 @@ def test_the_sample_bank_is_what_the_builder_writes(tmp_path: Path, request: pyt
         shutil.copytree(tmp_path / "sample_bank", SAMPLE_BANK)
 
     written = {path.name: path.read_bytes() for path in sorted((tmp_path / "sample_bank").iterdir())}
-    committed = {path.name: path.read_bytes() for path in sorted(SAMPLE_BANK.iterdir()) if path.name != "README.md"}
+    committed = {path.name: path.read_bytes() for path in sorted(SAMPLE_BANK.iterdir())}
     assert committed == written, "run `uv run pytest --update-golden tests/test_sample_bank.py` to rewrite it"
 
 

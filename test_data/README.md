@@ -21,7 +21,7 @@ A database that `tests/cronos_builder.py` writes with `write_sample_bank`. It ha
 | Record | Contents |
 |---|---|
 | 1 | Text in Latin and Cyrillic letters, the date 2024-03-15, the time 09:30, and a reference to the stored file `notes.txt` |
-| 2 | A date with only its year (`1985-00-00`) and a text field. The record is compressed. |
+| 2 | Two text fields and a date with only its year (`1985-00-00`). The record is compressed. |
 | 3 | The time 17:45, and a reference to the file `scan.jpg`, which has no record number: the database does not store this file |
 
 Record 4 is the one record of the Files table. It holds `notes.txt`.
