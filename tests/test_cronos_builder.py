@@ -48,11 +48,11 @@ from cronos_builder import (
 )
 
 import cronos_extract
+from cronos_extract._core.Database import Database
+from cronos_extract._core.Datamodel import TableDefinition
+from cronos_extract._core.koddecoder import INITIAL_KOD, KODcoding
 from cronos_extract._diagnostic import Diagnostic
 from cronos_extract._format.header import DatHeader, read_dat_header
-from cronos_extract.Database import Database
-from cronos_extract.Datamodel import TableDefinition
-from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
 
 FIELD_VALUES = [b"42", b"text", "Привет".encode("cp1251"), b"1240315", b"0930", b"", b"seven", b"", b"", b"", b"eleven"]
 

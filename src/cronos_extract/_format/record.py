@@ -5,7 +5,7 @@ import zlib
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
-from ..koddecoder import KODcoding
+from .._core.koddecoder import KODcoding
 from .tad import TadEntry
 
 # The most bytes a record may decompress to; a crafted record could otherwise exhaust memory.

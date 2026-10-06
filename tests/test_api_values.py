@@ -17,7 +17,7 @@ from cronos_builder import (
 
 from cronos_extract import Diagnostic, DiagnosticKind, FieldDefinition, FileReference, Record
 from cronos_extract._api.values import decode_record
-from cronos_extract.Datamodel import TableDefinition
+from cronos_extract._core.Datamodel import TableDefinition
 
 DATE, TIME, FILE, TEXT, LINK = 3, 4, 5, 0, 7
 

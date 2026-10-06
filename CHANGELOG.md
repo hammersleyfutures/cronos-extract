@@ -14,6 +14,16 @@ This file lists the changes in each release of cronos-extract.
 - `Bank.records()` gives the records of all tables as `(Table, Record)` pairs, in one sequential read of CroBank. It
   reads and decodes each record one time. Before, a program that read all tables read CroBank again for each table
   after the first, in an order that is not sequential.
+- `test_data/sample_bank` is a small test database with live records: dates, times, Cyrillic text, a compressed
+  record, a stored file and a file reference with no record number. The Quick start of the README exports it.
+  `test_data/all_field_types` has no live records, so its export holds no rows.
+
+### Changes
+
+- The internal modules `Database`, `Datafile`, `Datamodel`, `koddecoder`, `readers` and `hexdump` moved from the root
+  of the package to the private package `cronos_extract._core`. `survey` and `kodump` moved to
+  `cronos_extract._cli`. These modules were always private, but their names made them look public. If you imported
+  them, import the public names of `cronos_extract` in their place.
 
 ### Fixes
 
@@ -21,6 +31,8 @@ This file lists the changes in each release of cronos-extract.
   from `crack_kod()`. Before, `"strucrack"` could return the default KOD of a v3 CroStru when CroBank was v4 and
   encrypted with its own KOD.
 - If `export --crack strucrack` cannot recover the KOD, the `Error:` line tells you to try `--crack dbcrack` first.
+- The API reference tells what a `FileReference` without a record number means: the database does not store the
+  file, but the name and the extension of the reference are correct.
 - The library reads each record from the `.dat` file with `os.pread()`, where the system has it. Thus it reads only the
   bytes of the record. Before, each read of a record outside the buffer of the file filled the full buffer. On a
   network file system with a buffer of 128 KiB, this read about 2,600 times more bytes than the records held. On

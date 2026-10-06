@@ -7,9 +7,8 @@ import sys
 from importlib.metadata import version
 from pathlib import Path
 
-from . import survey
 from ._api.errors import CronosError
-from ._cli import crack, export, inspect
+from ._cli import crack, export, inspect, survey
 from ._cli.crack import CrackInputError
 from ._cli.options import Subcommands
 from ._cli.report import EscapingStream, Failure, error_message, print_error

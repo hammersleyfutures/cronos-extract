@@ -7,6 +7,7 @@ import zlib
 import pytest
 from cronos_builder import compressed_record, corrupt_compressed_record, random_kod
 
+from cronos_extract._core.koddecoder import KODcoding
 from cronos_extract._format.record import (
     MAX_DECOMPRESSED_BYTES,
     RecordParts,
@@ -17,7 +18,6 @@ from cronos_extract._format.record import (
     read_stored,
 )
 from cronos_extract._format.tad import TadEntry
-from cronos_extract.koddecoder import KODcoding
 
 
 def source_of(data: bytes, *, blocksize: int = 16, kod: KODcoding | None = None) -> RecordSource:

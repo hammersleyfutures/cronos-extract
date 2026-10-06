@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Self
 
-from ..koddecoder import INITIAL_KOD, KODcoding
+from .._core.koddecoder import INITIAL_KOD, KODcoding
 
 HEX_KOD = re.compile(r"[0-9a-fA-F]{512}")
 

@@ -32,7 +32,10 @@ uv run cronos-extract survey test_data    # report each database's format versio
 
 ## Architecture
 
-The code is layered, from bytes up to commands (`src/cronos_extract/`):
+The code is layered, from bytes up to commands (`src/cronos_extract/`). The readers below the public API, `Datafile`,
+`Database`, `Datamodel`, `koddecoder`, `readers` and `hexdump`, live in the private package `_core/`; `_format/` holds
+the byte layouts they share. Besides `__init__.py`, the package root holds only `cli.py`, the command's entry point,
+and modules and packages whose names start with `_`:
 
 - **Public API** (`cronos_extract/__init__.py`, implemented in `_api/`): `open()` returns a `Bank` of `Table`s whose
   `records()` yield `Record`s of `Field`s with `value`, `text` and `raw`; problems it survives are `Diagnostic`s, and a
@@ -69,7 +72,7 @@ The code is layered, from bytes up to commands (`src/cronos_extract/`):
     that turns an exception into an `Error:` line and an exit status (0 finished, 1 cannot read or failed, 2 usage,
     130 interrupted), and it escapes everything written to stderr.
   - `survey` walks directories for `Cro*.dat` files and reports each file's format version, generation and encoding
-    flags from `survey.py`, reading only the 19-byte `.dat` header. `--counts` and `--jsonl` choose the output
+    flags from `_cli/survey.py`, reading only the 19-byte `.dat` header. `--counts` and `--jsonl` choose the output
     format, and `--list` takes a file naming the directories.
   - `export` (`_cli/export.py`) opens the database through the public API and walks its tables once, handing each
     table and record to one writer: `_cli/csv_out.py`, `_cli/sql_out.py` or `_cli/jsonl_out.py`. `_cli/report.py`
@@ -139,6 +142,10 @@ no table.
 - Before a subcommand is wired into `cli.py`, or to read its output in this process,
   `tests/cli.py::run_in_process(add_parser, args)` parses real arguments and runs the handler.
 - `tests/test_cli_characterisation.py` compares full command output with `tests/golden/`.
+- `test_data/all_field_types` is a real CronosPro database with no live records; `test_data/sample_bank` is written by
+  `cronos_builder.write_sample_bank` and holds live records, a stored file and a file reference with no record number.
+  `tests/test_sample_bank.py` checks it matches the builder; `--update-golden` rewrites it. `test_data/README.md`
+  describes both.
 - `tests/golden/api/*.jsonl` pin the public API's field text per record, one file per builder version, KOD case and
   record layout (`tests/test_api_golden.py`).
 - `local/` is gitignored and holds machine-local test assets. `local/mash_datasets_with_CroIndex_dat.txt` lists

@@ -9,9 +9,9 @@ import io
 import struct
 from typing import cast
 
-from ._format.files import open_regular_file
-from .hexdump import hexdump, toout, unhex
-from .koddecoder import KODcoding
+from .._core.hexdump import hexdump, toout, unhex
+from .._core.koddecoder import KODcoding
+from .._format.files import open_regular_file
 
 
 def decode_kod(kod: KODcoding | None, args: argparse.Namespace, data: bytes) -> None:

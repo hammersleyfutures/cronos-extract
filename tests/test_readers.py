@@ -1,8 +1,8 @@
-# ABOUTME: Tests for cronos_extract.readers.ByteReader, the sequential decoder used by every structure reader.
+# ABOUTME: Tests for cronos_extract._core.readers.ByteReader, the sequential decoder used by every structure reader.
 # ABOUTME: Covers CP-1251 decoding of names and strings, including bytes undefined in that encoding.
 import pytest
 
-from cronos_extract.readers import ByteReader, decode_cp1251
+from cronos_extract._core.readers import ByteReader, decode_cp1251
 
 
 def test_decode_cp1251_replaces_a_byte_undefined_in_cp1251() -> None:

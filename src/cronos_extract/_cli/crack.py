@@ -5,7 +5,6 @@ import sys
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 
-from .. import koddecoder
 from .._api.crack import (
     bank_and_index_xref,
     fill_single_gap,
@@ -17,9 +16,10 @@ from .._api.crack import (
 )
 from .._api.datafiles import database_directory, list_directory, open_datafile
 from .._api.diagnostics import Diagnostic, DiagnosticKind, DiagnosticLog, RecordNumbers
-from ..Datafile import Datafile
-from ..hexdump import as1251, asambigoushex, asasc, tohex, unhex
-from ..koddecoder import match_with_mismatches
+from .._core import koddecoder
+from .._core.Datafile import Datafile
+from .._core.hexdump import as1251, asambigoushex, asasc, tohex, unhex
+from .._core.koddecoder import match_with_mismatches
 from .options import Subcommands
 from .report import Report
 

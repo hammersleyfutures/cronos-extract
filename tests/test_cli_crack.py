@@ -23,7 +23,7 @@ from cronos_builder import (
 
 from cronos_extract import Kod, NotACronosFile, crack_kod
 from cronos_extract._cli import crack
-from cronos_extract.koddecoder import KODcoding
+from cronos_extract._core.koddecoder import KODcoding
 
 KOD = random_kod(seed=7)
 KOD_LINE = bytes(KOD).hex() + "\n"

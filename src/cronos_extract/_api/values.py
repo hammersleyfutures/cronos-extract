@@ -6,9 +6,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import cast
 
-from ..Datamodel import Field as DecodedField
-from ..Datamodel import FieldDefinition as DecodedFieldDefinition
-from ..Datamodel import Record as DecodedRecord
+from .._core.Datamodel import Field as DecodedField
+from .._core.Datamodel import FieldDefinition as DecodedFieldDefinition
+from .._core.Datamodel import Record as DecodedRecord
 from .diagnostics import Diagnostic, DiagnosticKind
 
 FIELD_TYPE_DATE = 4

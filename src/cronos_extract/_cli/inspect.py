@@ -6,12 +6,12 @@ from collections.abc import Collection
 
 from .._api.errors import NotACronosFile
 from .._api.kod import kod_coder
-from ..Database import ALL_FILES, KOD_HINT, Database
-from ..Datafile import Datafile
-from ..Datamodel import TableDefinition, describe_error
-from ..hexdump import unhex
-from ..kodump import kod_hexdump
-from ..readers import ByteReader
+from .._core.Database import ALL_FILES, KOD_HINT, Database
+from .._core.Datafile import Datafile
+from .._core.Datamodel import TableDefinition, describe_error
+from .._core.hexdump import unhex
+from .._core.readers import ByteReader
+from .kodump import kod_hexdump
 from .options import Subcommands, kod_options, selected_kod
 from .report import Failure, Problem, Report
 

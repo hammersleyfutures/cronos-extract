@@ -33,22 +33,24 @@ cronos-extract --version
 The command prints its name and version, for example `cronos-extract 1.0.0`.
 
 In a clone of this repository, you can use `uv run cronos-extract` in place of `cronos-extract`. The examples that
-name `test_data` use the test database of the repository. They work only in a clone.
+name `test_data` use the test databases of the repository. They work only in a clone. `test_data/sample_bank` holds
+three records and one stored file. `test_data/all_field_types` holds a field of each type, but all of its records are
+deleted. `test_data/README.md` tells more about them.
 
 
 ## Quick start
 
-To export each table of the test database to a CSV file, use this command:
+To export each table of the sample database to a CSV file, use this command:
 
 ```bash
-cronos-extract export --csv test_data/all_field_types
+cronos-extract export --csv test_data/sample_bank
 ```
 
 The command creates the directory `cronos-extract-YYYY-mm-dd-HH-MM-SS-ffffff/` in the current directory. This
 directory holds:
 
 - A CSV file for each table.
-- `Files-<abbreviation>/` (the Files table's abbreviation, `Files-FL/` for the test database), with each file that
+- `Files-<abbreviation>/` (the Files table's abbreviation, `Files-FL/` for the sample database), with each file that
   the database stores. This includes the files that no record refers to.
 - `Files-Referenced/`, with the files that the records refer to, under their own names.
 
@@ -178,14 +180,16 @@ line alone. The `value` of a field is one of these:
 - `null` for an empty field.
 - A date as `"1985-04-02"`. A date with only its year is `"1985-00-00"`.
 - A time as `"14:30"`.
-- `{"name": …, "extension": …, "record": …}` for a stored file.
+- `{"name": …, "extension": …, "record": …}` for a file field. The `record` is `null` for a file that the database
+  does not store, for example a file that CronosPro linked from the disk. The `name` and the `extension` are then
+  the only record of that file.
 - The text of the field for all other fields.
 
 The JSON Lines export does not include the stored files. Use `--csv` for them.
 
 ```bash
-cronos-extract export --jsonl -o people.jsonl test_data/all_field_types
-jq -r 'select(.type == "record") | .fields[] | select(.name == "Entry #1") | .value' people.jsonl
+cronos-extract export --jsonl -o people.jsonl test_data/sample_bank
+jq -r 'select(.type == "record") | .fields[] | select(.name == "Entry #2") | .value' people.jsonl
 ```
 
 ### Large databases

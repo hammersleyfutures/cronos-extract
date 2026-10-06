@@ -48,7 +48,7 @@ from cronos_extract import DatabaseDefinitionError, FieldDefinition
 from cronos_extract import open as open_bank
 from cronos_extract._cli import export
 from cronos_extract._cli.sql_out import unique_sql_column_names, unique_sql_table_name
-from cronos_extract.Database import KOD_HINT
+from cronos_extract._core.Database import KOD_HINT
 
 HEADER = ["Системный номер", *(f"Entry #{number}" for number in range(1, 12))]
 # Both of TEST_DB's table definitions report that their Section 2 is not marked with a 2.

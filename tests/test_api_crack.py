@@ -19,7 +19,7 @@ from cronos_builder import (
 
 from cronos_extract import Kod, NotACronosFile, crack_kod
 from cronos_extract import open as open_database
-from cronos_extract.koddecoder import KODcoding
+from cronos_extract._core.koddecoder import KODcoding
 
 KOD = random_kod(seed=7)
 PERSON_FIELDS = [b"42", b"Hammersley", b"", b"1240315", b"0930", b"", b"", b"", b"", b"", b""]

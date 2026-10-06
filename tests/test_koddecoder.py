@@ -1,4 +1,4 @@
-# ABOUTME: Tests for the KOD coder helpers in cronos_extract.koddecoder.
+# ABOUTME: Tests for the KOD coder helpers in cronos_extract._core.koddecoder.
 # ABOUTME: Covers the fuzzy known-string matching that strucrack uses to suggest KOD fixes, and choosing a file's KOD.
 import dataclasses
 import random
@@ -7,9 +7,7 @@ from pathlib import Path
 import pytest
 from cronos_builder import random_kod, write_datafile, write_header_only_datafile
 
-from cronos_extract._diagnostic import Diagnostic, DiagnosticKind
-from cronos_extract._format.header import DatHeader, read_dat_header, read_kod_check
-from cronos_extract.koddecoder import (
+from cronos_extract._core.koddecoder import (
     INITIAL_KOD,
     STRIDED_MIN_LENGTH,
     KODcoding,
@@ -17,6 +15,8 @@ from cronos_extract.koddecoder import (
     match_with_mismatches,
     select_kod,
 )
+from cronos_extract._diagnostic import Diagnostic, DiagnosticKind
+from cronos_extract._format.header import DatHeader, read_dat_header, read_kod_check
 
 UNRESOLVED = -1
 

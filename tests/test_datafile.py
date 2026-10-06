@@ -1,4 +1,4 @@
-# ABOUTME: Tests for cronos_extract.Datafile reading records stored in extension blocks, including corrupt ones.
+# ABOUTME: Tests for cronos_extract._core.Datafile reading records stored in extension blocks, including corrupt ones.
 # ABOUTME: Lays out .dat and .tad files byte by byte with tests/cronos_builder.write_raw_datafile.
 import argparse
 import os
@@ -23,7 +23,7 @@ from cronos_builder import (
 )
 
 from cronos_extract import Diagnostic, DiagnosticKind
-from cronos_extract.Datafile import Datafile
+from cronos_extract._core.Datafile import Datafile
 
 FIRST_BLOCK = DAT_PREFIX_SIZE
 

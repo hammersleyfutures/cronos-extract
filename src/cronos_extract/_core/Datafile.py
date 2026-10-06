@@ -6,11 +6,11 @@ import io
 from collections.abc import Iterator
 from typing import BinaryIO
 
-from ._diagnostic import Diagnostic, DiagnosticKind, Reporter
-from ._format.files import read_at
-from ._format.header import read_dat_header, read_kod_check
-from ._format.record import RecordParts, RecordSource, decode_record, decompress, is_compressed, read_stored
-from ._format.tad import DELETED_LENGTH, TadEntry, tad_layout
+from .._diagnostic import Diagnostic, DiagnosticKind, Reporter
+from .._format.files import read_at
+from .._format.header import read_dat_header, read_kod_check
+from .._format.record import RecordParts, RecordSource, decode_record, decompress, is_compressed, read_stored
+from .._format.tad import DELETED_LENGTH, TadEntry, tad_layout
 from .hexdump import tohex, toout
 from .koddecoder import KODcoding, select_kod
 

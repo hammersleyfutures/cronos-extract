@@ -1,4 +1,4 @@
-# ABOUTME: Tests for cronos_extract.Database: opening and closing a database's files and decoding its definition.
+# ABOUTME: Tests for cronos_extract._core.Database: opening and closing a database's files and decoding its definition.
 # ABOUTME: Uses the sample database in test_data, small hand-written files and databases from tests/cronos_builder.py.
 import argparse
 import os
@@ -20,8 +20,8 @@ from cronos_builder import (
 )
 
 from cronos_extract import Diagnostic, DiagnosticKind
-from cronos_extract.Database import Database
-from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
+from cronos_extract._core.Database import Database
+from cronos_extract._core.koddecoder import INITIAL_KOD, KODcoding
 
 
 def test_database_closes_its_files_on_exit() -> None:

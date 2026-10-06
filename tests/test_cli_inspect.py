@@ -35,10 +35,10 @@ from cronos_builder import (
 from cronos_extract import NotACronosFile
 from cronos_extract._cli import inspect
 from cronos_extract._cli.report import Failure
-from cronos_extract.Database import KOD_HINT, Database
-from cronos_extract.Datafile import Datafile
-from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
-from cronos_extract.koddecoder import new as new_kod
+from cronos_extract._core.Database import KOD_HINT, Database
+from cronos_extract._core.Datafile import Datafile
+from cronos_extract._core.koddecoder import INITIAL_KOD, KODcoding
+from cronos_extract._core.koddecoder import new as new_kod
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 GOLDEN_DIR = Path(__file__).resolve().parent / "golden"

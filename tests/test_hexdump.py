@@ -1,8 +1,8 @@
-# ABOUTME: Tests for the byte and text conversion helpers in cronos_extract.hexdump.
+# ABOUTME: Tests for the byte and text conversion helpers in cronos_extract._core.hexdump.
 # ABOUTME: Covers CP-1251 encoding of user-supplied text used to force KOD entries.
 import pytest
 
-from cronos_extract.hexdump import as1251
+from cronos_extract._core.hexdump import as1251
 
 
 def test_as1251_encodes_cyrillic_text() -> None:

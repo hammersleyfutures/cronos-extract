@@ -9,9 +9,9 @@ from collections.abc import Collection
 from contextlib import ExitStack
 from typing import Self
 
+from .._diagnostic import STRU_FILE, Diagnostic, DiagnosticKind, Reporter, for_table_definition
+from .._format.files import open_regular_file
 from . import koddecoder
-from ._diagnostic import STRU_FILE, Diagnostic, DiagnosticKind, Reporter, for_table_definition
-from ._format.files import open_regular_file
 from .Datafile import Datafile
 from .Datamodel import TableDefinition, is_table_key, undecodable_table
 from .hexdump import strescape, toout

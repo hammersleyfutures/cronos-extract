@@ -20,7 +20,7 @@ from cronos_extract._cli.report import (
     escape,
     format_problem,
 )
-from cronos_extract.Database import KOD_HINT
+from cronos_extract._core.Database import KOD_HINT
 
 
 @pytest.mark.parametrize(

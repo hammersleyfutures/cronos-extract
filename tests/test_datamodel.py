@@ -1,4 +1,4 @@
-# ABOUTME: Unit tests for field decoding in cronos_extract.Datamodel and text helpers in cronos_extract.hexdump.
+# ABOUTME: Unit tests for field decoding in cronos_extract._core.Datamodel and text helpers in _core.hexdump.
 # ABOUTME: They pin how raw field bytes become presentable content, using real definition bytes, not mocks.
 import argparse
 import struct
@@ -6,9 +6,9 @@ import struct
 import pytest
 from cronos_builder import erdgeist_table_definition, table_definition_without_fields
 
+from cronos_extract._core.Datamodel import Field, FieldDefinition, TableDefinition, is_table_key
+from cronos_extract._core.hexdump import aschr, hexdump
 from cronos_extract._diagnostic import Diagnostic, DiagnosticKind, for_table_definition
-from cronos_extract.Datamodel import Field, FieldDefinition, TableDefinition, is_table_key
-from cronos_extract.hexdump import aschr, hexdump
 
 
 def make_fielddef(typ: int, name: str = "Field") -> FieldDefinition:

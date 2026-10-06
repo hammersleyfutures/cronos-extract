@@ -6,8 +6,8 @@ Decode CroStru KOD encoding.
 
 from collections.abc import Sequence
 
-from ._diagnostic import Diagnostic, DiagnosticKind
-from ._format.header import KOD_CHECK_SIZE, DatHeader
+from .._diagnostic import Diagnostic, DiagnosticKind
+from .._format.header import KOD_CHECK_SIZE, DatHeader
 
 INITIAL_KOD = [
     0x08,

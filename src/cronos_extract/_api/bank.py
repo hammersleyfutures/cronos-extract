@@ -10,11 +10,11 @@ from pathlib import Path
 from types import TracebackType
 from typing import Self, override
 
+from .._core.Database import Database
+from .._core.Datafile import Datafile
+from .._core.Datamodel import TableDefinition, describe_error, is_table_key, undecodable_table
+from .._core.koddecoder import kod_fits_header
 from .._diagnostic import STRU_FILE, for_table_definition
-from ..Database import Database
-from ..Datafile import Datafile
-from ..Datamodel import TableDefinition, describe_error, is_table_key, undecodable_table
-from ..koddecoder import kod_fits_header
 from .datafiles import database_directory, list_directory, open_datafile, optional_file_info
 from .diagnostics import Diagnostic, DiagnosticKind, DiagnosticLog, RecordNumbers
 from .errors import DatabaseDefinitionError, WrongKod

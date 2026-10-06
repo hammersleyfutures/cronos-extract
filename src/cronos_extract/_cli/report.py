@@ -8,7 +8,7 @@ from typing import Self, TextIO, override
 
 from .._api.bank import BANK_KOD_HINT, DEFINITION_HINT, STRU_KOD_HINT
 from .._api.diagnostics import Diagnostic, DiagnosticKind
-from ..Database import KOD_HINT
+from .._core.Database import KOD_HINT
 
 # The canonical name of CroBank, one of the two files a Problem can name, as the API names it; the other is
 # _diagnostic.STRU_FILE.
