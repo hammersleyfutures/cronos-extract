@@ -109,9 +109,14 @@ e.g. `write_database(dir, records, kod=random_kod(seed=1))`; the builder encodes
 file's KOD.
 
 `crack strucrack` and `crack dbcrack` derive a KOD statistically and print it; `cronos_extract.crack_kod(path, method)`
-does the same without printing and returns `None` when it can't produce a permutation, or when the v4 header of the
-file it read (CroStru for strucrack, CroBank for dbcrack) rejects it; the crack commands treat such a KOD as
-unresolved. `export --crack` and `inspect … --crack` call `crack_kod`.
+does the same without printing and returns `None` when it can't produce a permutation, or when a v4 header that
+`open()` would check rejects it: the file it read (CroStru for strucrack, CroBank for dbcrack), and the other of the
+two when it is KOD-encoded, so it never returns a KOD `open()` refuses. The crack commands check only the file they
+read and treat a rejected KOD as unresolved. `export --crack` and `inspect … --crack` call `crack_kod`.
+
+`open(..., strict_kod=True)` also raises `WrongKod` for every `mismatched_kod` on CroStru or CroBank (so v3 own-KOD
+files read with the wrong KOD, which no header can check) and `DatabaseDefinitionError` for a definition that yields
+no table.
 
 ### Error-handling conventions
 
