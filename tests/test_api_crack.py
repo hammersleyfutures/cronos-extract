@@ -17,8 +17,8 @@ from cronos_builder import (
     write_kod_check,
 )
 
-import cronos_extract
 from cronos_extract import Kod, NotACronosFile, crack_kod
+from cronos_extract import open as open_database
 from cronos_extract.koddecoder import KODcoding
 
 KOD = random_kod(seed=7)
@@ -86,7 +86,7 @@ def test_strucrack_returns_none_when_a_v4_bank_rejects_the_default_kod_of_a_v3_s
     assert crack_kod(dbdir, "strucrack") is None
     kod = crack_kod(dbdir, "dbcrack")
     assert kod == Kod.from_table(KOD)
-    with cronos_extract.open(dbdir, kod=kod, strict_kod=True) as bank:
+    with open_database(dbdir, kod=kod, strict_kod=True) as bank:
         assert [table.name for table in bank.tables] == ["erdgeist"]
 
 
