@@ -2,6 +2,23 @@
 
 This file lists the changes in each release of cronos-extract.
 
+## 1.1.0
+
+### Additions
+
+- `open(path, strict_kod=True)` raises an exception for the KOD problems that `open()` can find but otherwise survives. If CroStru
+  or CroBank reports `mismatched_kod`, `open()` raises `WrongKod`. An example is a v3 file that is encrypted with its
+  own KOD (`01.04` or `01.05`) and is read with the default KOD. If the database definition gives no table that the
+  library can read, `open()` raises `DatabaseDefinitionError`. Without `strict_kod`, these records decode as garbage,
+  and only a diagnostic tells you.
+
+### Fixes
+
+- `crack_kod()` examines the v4 headers of both CroStru and CroBank. Thus `open()` does not raise `WrongKod` for a KOD
+  from `crack_kod()`. Before, `"strucrack"` could return the default KOD of a v3 CroStru when CroBank was v4 and
+  encrypted with its own KOD.
+- If `export --crack strucrack` cannot recover the KOD, the `Error:` line tells you to try `--crack dbcrack` first.
+
 ## 1.0.0
 
 cronos-extract 1.0 is the first release of cronos-extract. It continues

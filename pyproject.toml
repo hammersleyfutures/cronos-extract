@@ -3,7 +3,7 @@
 
 [project]
 name = "cronos-extract"
-version = "1.0.0"
+version = "1.1.0"
 description = "Extract data from CronosPro databases, including password-protected ones."
 readme = "README.md"
 license = "MIT"

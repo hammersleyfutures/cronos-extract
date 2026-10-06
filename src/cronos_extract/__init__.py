@@ -24,7 +24,8 @@ This API promises:
   number of entries.
 - A database ``open()`` cannot read raises a ``CronosError``: ``NotACronosFile``, ``UnsupportedVersion``,
   ``WrongKod`` (a KOD-encoded v4 CroStru or CroBank whose header shows that the KOD given, or the default, is not
-  its KOD) or ``DatabaseDefinitionError``.
+  its KOD) or ``DatabaseDefinitionError``. With ``strict_kod=True``, ``open()`` also raises ``WrongKod`` when CroStru or
+  CroBank reports ``mismatched_kod``, and ``DatabaseDefinitionError`` when the definition yields no table.
 - ``Field.value`` is ``str``, ``datetime.date``, ``datetime.time``, ``FileReference`` or ``None``; later versions may
   add types. Numbers are ``str``. A date stored with only its year is ``str``, such as ``"1985-00-00"``.
 - ``compact=True`` reads the CroStru and CroBank indexes from disk instead of memory, for very large databases. The

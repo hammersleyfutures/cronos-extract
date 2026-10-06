@@ -1,6 +1,6 @@
 # cronos-extract API reference
 
-This document describes the Python API of cronos-extract 1.0. The API reads CronosPro databases. It does not write
+This document describes the Python API of cronos-extract 1.1. The API reads CronosPro databases. It does not write
 them.
 
 A CronosPro database is a directory of Cro files. Each Cro file is a pair of a `.dat` file and a `.tad` file. CroStru
@@ -90,6 +90,7 @@ def open(
     *,
     kod: Kod | None = Kod.default(),
     compact: bool = False,
+    strict_kod: bool = False,
     on_diagnostic: Callable[[Diagnostic], object] | None = None,
 ) -> Bank: ...
 ```
@@ -102,12 +103,38 @@ and the table definitions. It does not read the records.
 | `path` | The directory of the database, as `str` or `os.PathLike[str]`. The names of the Cro files match without regard to case. |
 | `kod` | The KOD that decodes the records. The default is `Kod.default()`. With `None`, `open()` reads all records without KOD decoding. |
 | `compact` | With `True`, `open()` reads the `.tad` index of CroStru and CroBank from the disk for each record. With `False`, it keeps each `.tad` file in memory. `compact=True` is for very large databases. |
+| `strict_kod` | With `True`, `open()` raises an exception for the KOD problems that it can find but otherwise survives. The section [Strict KOD](#strict-kod) gives the cases. |
 | `on_diagnostic` | A function that receives each diagnostic at the time that the library records it. |
 
 `open()` uses the `kod` only for a Cro file that is encrypted with its own KOD. These files are versions `01.04`,
 `01.05` and all v4 versions. For a Cro file that is encrypted with the default KOD, `open()` uses the default KOD. For a
 Cro file that is not KOD-encoded, `open()` does not decode KOD. The diagnostics `unused_kod` and `mismatched_kod` tell
 you about these decisions.
+
+### Strict KOD
+
+Without `strict_kod`, `open()` refuses a wrong KOD only when the v4 header of CroStru or CroBank shows it. In other
+cases, a wrong KOD gives only a `mismatched_kod` diagnostic, and the records decode as garbage. With
+`strict_kod=True`, `open()` also raises an exception in these cases:
+
+- CroStru or CroBank records `mismatched_kod`. `open()` raises `WrongKod`. An example is a v3 file that is encrypted
+  with its own KOD (version `01.04` or `01.05`), which `open()` reads with the default KOD. Another example is a
+  KOD-encoded file with `kod=None`. The header of a v3 file cannot show which KOD encrypted it. Thus `open()` also
+  raises `WrongKod` for a `01.04` or `01.05` file that is encrypted with the default KOD. Open such a database without
+  `strict_kod`.
+- The database definition gives no table that the library can read. `open()` raises `DatabaseDefinitionError`. A
+  wrong KOD can decode the definition into data that has the correct layout, but that has no table definitions that
+  the library can decode.
+
+Thus, with `strict_kod=True`, one `except` clause for `WrongKod` and `DatabaseDefinitionError` catches each wrong KOD
+that the library can find. Then, you can recover the KOD with `crack_kod()`.
+
+`strict_kod` cannot find all wrong KODs. If you give a KOD for a v3 file that is encrypted with its own KOD, no header
+shows whether this KOD is correct. If the database definition also decodes, `open()` does not raise an exception, and
+the records of this file decode as garbage.
+
+If the KOD is correct but the database has no table, `open()` with `strict_kod=True` raises
+`DatabaseDefinitionError` too. Open such a database without `strict_kod`.
 
 An exception from `on_diagnostic` goes to the code that recorded the diagnostic. This code is `open()`, a generator
 step, or `Bank.read_file()`. Thus, `on_diagnostic` can stop the reading with an exception.
@@ -120,8 +147,8 @@ step, or `Bank.read_file()`. Thus, `on_diagnostic` can stop the reading with an 
 | `TypeError` | `path` is `bytes`. |
 | `NotACronosFile` | CroStru or CroBank is missing, cannot be opened, or is not a Cronos file. |
 | `UnsupportedVersion` | CroStru or CroBank has a version that this release does not read. |
-| `WrongKod` | The header of a KOD-encoded v4 CroStru or CroBank shows that `kod` is not its KOD. `open()` examines CroStru first, then CroBank. |
-| `DatabaseDefinitionError` | The database definition in CroStru cannot be decoded. |
+| `WrongKod` | The header of a KOD-encoded v4 CroStru or CroBank shows that `kod` is not its KOD. `open()` examines CroStru first, then CroBank. With `strict_kod=True`, also CroStru or CroBank records `mismatched_kod`. |
+| `DatabaseDefinitionError` | The database definition in CroStru cannot be decoded. With `strict_kod=True`, also the definition gives no table that the library can read. |
 
 ## Bank
 
@@ -288,8 +315,10 @@ records. It prints nothing.
 
 - The statistics do not give a permutation of 0 to 255.
 - The method is `"dbcrack"`, and the database has no readable CroIndex.
-- The v4 header of the Cro file shows that the permutation is not the KOD of the database. `"strucrack"` examines the
-  header of CroStru, and `"dbcrack"` examines the header of CroBank.
+- The v4 header of CroStru or CroBank shows that the permutation is not the KOD of the database. Thus `open()` does
+  not raise `WrongKod` for a KOD from `crack_kod()`. Both methods examine the headers of both files. A database can mix
+  versions. For example, CroStru can be v3 with the default KOD, and CroBank can be v4 with its own KOD. Then
+  `"strucrack"` gets the default KOD from CroStru, and the header of CroBank rejects it.
 
 If CroStru or CroBank cannot be read, `crack_kod()` raises `NotACronosFile` or `UnsupportedVersion`. For an unknown
 method, it raises `ValueError`.
@@ -300,11 +329,14 @@ To open a database that is encrypted with its own KOD, do these steps:
 2. If the result is `None`, call `crack_kod(path, "dbcrack")`.
 3. If this result is also `None`, stop. `crack_kod()` cannot recover the KOD of this database.
 4. Give the KOD to `open()` as `kod`.
-5. If the KOD came from `"strucrack"` and `open()` raises `DatabaseDefinitionError`, call `crack_kod(path, "dbcrack")`.
+5. If the KOD came from `"strucrack"` and `open()` raises `WrongKod` or `DatabaseDefinitionError`, call
+   `crack_kod(path, "dbcrack")`.
 6. If this result is not `None`, do step 4 again with it.
 
-Step 5 is for v3 files that are encrypted with their own KOD. For a v4 file, `crack_kod()` does not return a KOD that
-the header of the file rejects.
+Step 5 is for v3 files that are encrypted with their own KOD. If you give `strict_kod=True` to `open()` in step 4, more
+wrong KODs raise `WrongKod` or `DatabaseDefinitionError`. But then a `01.04` or `01.05` database that is encrypted with
+the default KOD also raises `WrongKod`, because its header cannot show which KOD encrypted it. If `crack_kod()` gives
+the default KOD for such a database, open it without `strict_kod`.
 
 ## FileInfo
 
@@ -394,6 +426,8 @@ The library records `mismatched_kod` for CroStru and CroBank in these cases:
 - The v4 header of the file shows that the KOD is not its KOD. `open()` then raises `WrongKod`.
 - The file is encrypted with its own KOD, but `open()` reads it with the default KOD.
 
+With `strict_kod=True`, `open()` raises `WrongKod` in each of these cases.
+
 ## Exceptions
 
 ### CronosError
@@ -421,11 +455,14 @@ If the header of a KOD-encoded v4 CroStru or CroBank shows that the KOD is not i
 KOD is the `kod` parameter, or the default KOD. `open()` examines CroStru first, then CroBank. The message names the
 `crack_kod()` method that can recover the KOD.
 
+With `strict_kod=True`, `open()` also raises `WrongKod` when CroStru or CroBank records `mismatched_kod`.
+
 ### DatabaseDefinitionError
 
 If the database definition in CroStru record 1 is missing or cannot be decoded, `open()` raises
 `DatabaseDefinitionError`. A frequent cause is a wrong KOD. In that case, the definition decodes as garbage, and
-`crack_kod()` can recover the correct KOD.
+`crack_kod()` can recover the correct KOD. With `strict_kod=True`, `open()` also raises `DatabaseDefinitionError`
+when the definition gives no table that the library can read.
 
 ### Other exceptions
 

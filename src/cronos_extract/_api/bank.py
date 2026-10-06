@@ -381,11 +381,19 @@ def refuse_a_kod_the_header_rejects(datafile: Datafile, directory: Path, hint: s
         )
 
 
+def refuse_a_mismatched_kod(datafile: Datafile, directory: Path, hint: str) -> None:
+    """Raise WrongKod, ending with `hint`, when `datafile` reported mismatched_kod while choosing its KOD."""
+    problem = datafile.kod_problem
+    if problem is not None and problem.kind == DiagnosticKind.MISMATCHED_KOD:
+        raise WrongKod(f"Cro{datafile.name}.dat in {directory}: {problem.message}. {hint}")
+
+
 def open(
     path: str | os.PathLike[str],
     *,
     kod: Kod | None = DEFAULT_KOD,
     compact: bool = False,
+    strict_kod: bool = False,
     on_diagnostic: Callable[[Diagnostic], object] | None = None,
 ) -> Bank:
     """
@@ -397,6 +405,12 @@ def open(
     called with each diagnostic as it is recorded. The bank's `deleted_records` is the number of deleted records
     CroBank's .tad header lists, which are not read; a header listing more than the .tad has entries is reported as
     unexpected_structure, and `deleted_records` is then the number of entries.
+
+    `strict_kod` refuses the wrong KODs that open() can detect but would otherwise survive: a CroStru or CroBank that
+    reports mismatched_kod raises WrongKod, such as a v3 file encrypted with its own KOD (01.04, 01.05) read with
+    the default, or a KOD-encoded file read with `kod` None; a database definition that yields no tables raises
+    DatabaseDefinitionError. No header can show that a KOD given for a v3 file encrypted with its own KOD is wrong, so
+    such a KOD is not refused.
 
     Raises OSError when `path` does not exist, is not a directory or cannot be listed; TypeError for a bytes path;
     NotACronosFile or UnsupportedVersion when CroStru or CroBank cannot be read; WrongKod when the header of a
@@ -410,9 +424,13 @@ def open(
         stru, stru_info = open_datafile(directory, names, "Stru", compact=compact, kod=kod, log=log)
         stack.callback(stru.close)
         refuse_a_kod_the_header_rejects(stru, directory, STRU_KOD_HINT)
+        if strict_kod:
+            refuse_a_mismatched_kod(stru, directory, STRU_KOD_HINT)
         bank_file, bank_info = open_datafile(directory, names, "Bank", compact=compact, kod=kod, log=log)
         stack.callback(bank_file.close)
         refuse_a_kod_the_header_rejects(bank_file, directory, BANK_KOD_HINT)
+        if strict_kod:
+            refuse_a_mismatched_kod(bank_file, directory, BANK_KOD_HINT)
         deleted_records = bank_file.nrdeleted
         if deleted_records > bank_file.nrofrecords:
             log.record(
@@ -435,5 +453,10 @@ def open(
             deleted_records,
         )
         bank._load_tables()
+        if strict_kod and not bank.tables:
+            raise DatabaseDefinitionError(
+                f"the database definition in {STRU_FILE} of {directory} yields no table that can be read. "
+                f"{DEFINITION_HINT} If the KOD is right, the database has no table; open it without strict_kod."
+            )
         stack.pop_all()
     return bank

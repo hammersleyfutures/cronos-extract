@@ -19,4 +19,7 @@ class DatabaseDefinitionError(CronosError):
 
 
 class WrongKod(CronosError):
-    """The header of a KOD-encoded v4 CroStru or CroBank shows that the KOD given, or the default, is not its KOD."""
+    """
+    The header of a KOD-encoded v4 CroStru or CroBank shows that the KOD given, or the default, is not its KOD; or,
+    with strict_kod, CroStru or CroBank is read with a KOD it reports as mismatched_kod.
+    """

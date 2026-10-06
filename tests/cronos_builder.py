@@ -569,6 +569,21 @@ def crackable_database(
     )
 
 
+def crackable_mixed_version_database(directory: Path, kod: Sequence[int], *, bank_encoded: bool = True) -> str:
+    """
+    Write a database whose CroStru is 01.02, encrypted with the default KOD, and whose CroBank and CroIndex are 01.11,
+    encrypted with `kod`, with enough known zero bytes for strucrack and dbcrack; return its directory path. With
+    `bank_encoded` false, CroBank is not KOD-encoded.
+
+    Real databases mix versions this way: strucrack recovers the default KOD from CroStru, and dbcrack recovers `kod`.
+    """
+    zero_byte_records = [bytes([UNUSED_TABLE_ID]) + bytes(11)] * 300
+    write_datafile(directory, "Stru", [*stru_records_from_test_db(), *[bytes(256)] * 8], version=b"01.02", encoded=True)
+    write_datafile(directory, "Bank", zero_byte_records, kod=kod if bank_encoded else None, version=b"01.11")
+    write_datafile(directory, "Index", zero_byte_records, kod=kod, version=b"01.11")
+    return str(directory)
+
+
 def write_kod_check(directory: Path, name: str, kod: Sequence[int]) -> None:
     """Overwrite the KOD check bytes of the v4 file Cro<name>.dat with KOD_CHECK_SIZE zeros encoded with `kod`.
 

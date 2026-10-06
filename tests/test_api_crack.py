@@ -11,18 +11,20 @@ from cronos_builder import (
     bank_record,
     corrupt_compressed_record,
     crackable_database,
+    crackable_mixed_version_database,
     random_kod,
     write_database,
     write_kod_check,
 )
 
 from cronos_extract import Kod, NotACronosFile, crack_kod
+from cronos_extract import open as open_database
 from cronos_extract.koddecoder import KODcoding
 
 KOD = random_kod(seed=7)
 PERSON_FIELDS = [b"42", b"Hammersley", b"", b"1240315", b"0930", b"", b"", b"", b"", b"", b""]
 METHODS = ["strucrack", "dbcrack"]
-# The file whose header each method checks its KOD against.
+# The file each method reads, whose header checks the KOD it recovers.
 CHECKED_FILE = {"strucrack": "Stru", "dbcrack": "Bank"}
 
 pytestmark = pytest.mark.usefixtures("prints_nothing")
@@ -68,10 +70,31 @@ def test_crack_kod_returns_none_when_the_v4_header_rejects_the_kod(encrypted_v4_
 
 
 @pytest.mark.parametrize(("method", "other_file"), [("strucrack", "Bank"), ("dbcrack", "Stru")])
-def test_crack_kod_checks_only_the_file_it_read(encrypted_v4_db: str, method: str, other_file: str) -> None:
+def test_crack_kod_returns_none_when_the_other_v4_header_rejects_the_kod(
+    encrypted_v4_db: str, method: str, other_file: str
+) -> None:
+    # open() checks both headers, so a KOD the file not read rejects would be refused with WrongKod.
     write_kod_check(Path(encrypted_v4_db), other_file, random_kod(seed=8))
 
-    assert crack_kod(encrypted_v4_db, cast(Any, method)) == Kod.from_table(KOD)
+    assert crack_kod(encrypted_v4_db, cast(Any, method)) is None
+
+
+def test_strucrack_returns_none_when_a_v4_bank_rejects_the_default_kod_of_a_v3_stru(tmp_path: Path) -> None:
+    dbdir = crackable_mixed_version_database(tmp_path / "db", KOD)
+
+    # strucrack recovers CroStru's default KOD, which is not CroBank's own, so open() would refuse it.
+    assert crack_kod(dbdir, "strucrack") is None
+    kod = crack_kod(dbdir, "dbcrack")
+    assert kod == Kod.from_table(KOD)
+    with open_database(dbdir, kod=kod, strict_kod=True) as bank:
+        assert [table.name for table in bank.tables] == ["erdgeist"]
+
+
+def test_strucrack_ignores_the_header_of_a_v4_bank_that_is_not_kod_encoded(tmp_path: Path) -> None:
+    dbdir = crackable_mixed_version_database(tmp_path / "db", KOD, bank_encoded=False)
+
+    # open() reads a CroBank that is not KOD-encoded without KOD decoding, so its header refuses no KOD.
+    assert crack_kod(dbdir, "strucrack") == Kod.default()
 
 
 @pytest.mark.parametrize("method", METHODS)
