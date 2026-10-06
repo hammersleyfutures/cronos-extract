@@ -1,5 +1,7 @@
 # ABOUTME: open() and the Bank and Table classes, the public way to read a CronosPro database.
 # ABOUTME: Drives the internal Database, TableDefinition and Datafile readers and reports problems as diagnostics.
+import bisect
+import heapq
 import os
 from array import array
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -177,7 +179,8 @@ class Bank:
         Each record is read and decoded once, so a full export does not read CroBank again for each table. A record
         whose table id more than one table has is yielded once for each of them, in table order. Files table records
         and records of no table are skipped. The records it reaches are indexed for every table, as Table.records()
-        does, so a table read afterwards reads only its own records.
+        does, so a table read afterwards reads only its own records; records an earlier generator indexed are read
+        only when they belong to a table.
 
         Raises ValueError when the bank is closed, now or at any later step.
         """
@@ -309,25 +312,33 @@ class Bank:
         for table in self._tables:
             if self._supported(table):
                 tables_by_id.setdefault(table.id, []).append(table)
-        for number, data in self._scan():
-            for table in tables_by_id.get(data[0], ()):
+        for number, data in self._scan(set(tables_by_id)):
+            for table in tables_by_id[data[0]]:
                 yield table, self._decode(table, number, data)
 
-    def _scan(self) -> Iterator[tuple[int, bytes]]:
+    def _scan(self, table_ids: set[int]) -> Iterator[tuple[int, bytes]]:
         """
-        Each readable CroBank record number with its data, table-id byte included, in CroBank order.
+        Each readable CroBank record number of the tables `table_ids` with its data, table-id byte included, in
+        CroBank order.
 
-        Records the shared scan has passed are read again; past them, each step advances the shared scan and indexes
-        its record, as _table_records does.
+        Below the shared scan's position when it starts, it reads only the records the index lists under `table_ids`;
+        from there, each step advances the shared scan and indexes its record, as _table_records does.
         """
-        number = 1
+        start = self._scan_position
+        listed = [self._listed(table_id) for table_id in table_ids]
+        # The index only grows past the scan position, so the records below `start` are fixed.
+        for number in heapq.merge(*(numbers[: bisect.bisect_left(numbers, start)] for numbers in listed)):
+            data = self._read(number)
+            if data and data[0] in table_ids:
+                yield number, data
+        number = start
         while number <= self._bank_file.nrofrecords:
             data = self._read(number)
             if number == self._scan_position:
                 if data:
                     self._listed(data[0]).append(number)
                 self._scan_position = number + 1
-            if data:
+            if data and data[0] in table_ids:
                 yield number, data
             number += 1
 

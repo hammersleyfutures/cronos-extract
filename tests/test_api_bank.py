@@ -582,6 +582,22 @@ def test_bank_records_after_the_tables_yields_what_they_did(tmp_path: Path) -> N
 
 
 @pytest.mark.usefixtures("prints_nothing")
+def test_bank_records_after_a_full_scan_reads_only_the_tables_records(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dbdir = mixed_database(tmp_path / "db")
+
+    with cronos_extract.open(dbdir) as bank:
+        list(bank.files())
+        reads = record_reads(bank, monkeypatch)
+        pairs = list(bank.records())
+
+    # The Files table's records, the deleted and the corrupt record are not read again.
+    assert [record.number for _, record in pairs] == sorted(TABLE_1_NUMBERS + TABLE_2_NUMBERS)
+    assert reads == sorted(TABLE_1_NUMBERS + TABLE_2_NUMBERS)
+
+
+@pytest.mark.usefixtures("prints_nothing")
 def test_bank_records_yields_a_record_once_for_each_table_with_its_id(tmp_path: Path) -> None:
     other = renamed_table_definition(patched_table_definition(tableid=TEST_TABLE_ID), name=b"other")
     dbdir = database_with_extra_definition_key(tmp_path / "db", "Base002", other, [person(), person()])
