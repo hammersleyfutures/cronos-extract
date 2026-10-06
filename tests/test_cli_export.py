@@ -806,8 +806,8 @@ def test_a_failed_strucrack_points_at_dbcrack_which_reads_a_mixed_version_databa
 
     assert refused.returncode == 1
     assert last_line(refused.stderr) == (
-        f"Error: strucrack cannot recover the KOD of {dbdir}; recover it with cronos-extract crack strucrack {dbdir} "
-        "and pass it with --kod or try --crack dbcrack"
+        f"Error: strucrack cannot recover the KOD of {dbdir}; try --crack dbcrack, or recover it with "
+        f"cronos-extract crack strucrack {dbdir} and pass it with --kod"
     )
     assert exported.returncode == 0
     assert '"erdgeist"' in exported.stdout

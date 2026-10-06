@@ -12,7 +12,7 @@ from .._diagnostic import STRU_FILE, for_table_definition
 from ..Database import Database
 from ..Datafile import Datafile
 from ..Datamodel import TableDefinition, describe_error, is_table_key, undecodable_table
-from ..koddecoder import kod_fits_header, select_kod
+from ..koddecoder import kod_fits_header
 from .datafiles import database_directory, list_directory, open_datafile, optional_file_info
 from .diagnostics import Diagnostic, DiagnosticKind, DiagnosticLog, RecordNumbers
 from .errors import DatabaseDefinitionError, WrongKod
@@ -381,9 +381,9 @@ def refuse_a_kod_the_header_rejects(datafile: Datafile, directory: Path, hint: s
         )
 
 
-def refuse_a_mismatched_kod(datafile: Datafile, kod: Kod | None, directory: Path, hint: str) -> None:
-    """Raise WrongKod, ending with `hint`, when `datafile` is read with a KOD it reports as mismatched_kod."""
-    _, problem = select_kod(datafile.header, kod_coder(kod), f"Cro{datafile.name}.dat")
+def refuse_a_mismatched_kod(datafile: Datafile, directory: Path, hint: str) -> None:
+    """Raise WrongKod, ending with `hint`, when `datafile` reported mismatched_kod while choosing its KOD."""
+    problem = datafile.kod_problem
     if problem is not None and problem.kind == DiagnosticKind.MISMATCHED_KOD:
         raise WrongKod(f"Cro{datafile.name}.dat in {directory}: {problem.message}. {hint}")
 
@@ -406,10 +406,11 @@ def open(
     CroBank's .tad header lists, which are not read; a header listing more than the .tad has entries is reported as
     unexpected_structure, and `deleted_records` is then the number of entries.
 
-    `strict_kod` refuses every way a KOD can be wrong that open() would otherwise survive: a CroStru or CroBank that
+    `strict_kod` refuses the wrong KODs that open() can detect but would otherwise survive: a CroStru or CroBank that
     reports mismatched_kod raises WrongKod, such as a v3 file encrypted with its own KOD (01.04, 01.05) read with
     the default, or a KOD-encoded file read with `kod` None; a database definition that yields no tables raises
-    DatabaseDefinitionError.
+    DatabaseDefinitionError. No header can show that a KOD given for a v3 file encrypted with its own KOD is wrong, so
+    such a KOD is not refused.
 
     Raises OSError when `path` does not exist, is not a directory or cannot be listed; TypeError for a bytes path;
     NotACronosFile or UnsupportedVersion when CroStru or CroBank cannot be read; WrongKod when the header of a
@@ -424,12 +425,12 @@ def open(
         stack.callback(stru.close)
         refuse_a_kod_the_header_rejects(stru, directory, STRU_KOD_HINT)
         if strict_kod:
-            refuse_a_mismatched_kod(stru, kod, directory, STRU_KOD_HINT)
+            refuse_a_mismatched_kod(stru, directory, STRU_KOD_HINT)
         bank_file, bank_info = open_datafile(directory, names, "Bank", compact=compact, kod=kod, log=log)
         stack.callback(bank_file.close)
         refuse_a_kod_the_header_rejects(bank_file, directory, BANK_KOD_HINT)
         if strict_kod:
-            refuse_a_mismatched_kod(bank_file, kod, directory, BANK_KOD_HINT)
+            refuse_a_mismatched_kod(bank_file, directory, BANK_KOD_HINT)
         deleted_records = bank_file.nrdeleted
         if deleted_records > bank_file.nrofrecords:
             log.record(
@@ -455,7 +456,7 @@ def open(
         if strict_kod and not bank.tables:
             raise DatabaseDefinitionError(
                 f"the database definition in {STRU_FILE} of {directory} yields no table that can be read. "
-                f"{DEFINITION_HINT}"
+                f"{DEFINITION_HINT} If the KOD is right, the database has no table; open it without strict_kod."
             )
         stack.pop_all()
     return bank
