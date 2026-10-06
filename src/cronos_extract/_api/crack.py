@@ -114,13 +114,19 @@ def header_rejects(datafile: Datafile, kod: list[int]) -> bool:
     return kod_fits_header(datafile.header, KODcoding(kod)) is False
 
 
+def open_refuses(datafile: Datafile, kod: list[int]) -> bool:
+    """Whether open() would refuse `kod` for `datafile` with WrongKod: it is KOD-encoded and its header rejects it."""
+    return datafile.header.kod_encoded and header_rejects(datafile, kod)
+
+
 def crack_kod(path: str | os.PathLike[str], method: Literal["strucrack", "dbcrack"]) -> Kod | None:
     """
     Recover the KOD table of the database in the directory `path` from its encrypted records, printing nothing.
 
     "strucrack" reads CroStru; "dbcrack" reads CroBank and CroIndex. Returns None when the method cannot recover a
-    permutation of 0-255, including when dbcrack finds no readable CroIndex, and when the v4 header of the file it
-    checks, CroStru for strucrack and CroBank for dbcrack, shows that the permutation is not the database's KOD.
+    permutation of 0-255, including when dbcrack finds no readable CroIndex, and when the v4 header of CroStru or of
+    CroBank shows that the permutation is not the database's KOD, so open() would refuse it with WrongKod. A
+    database can mix versions: strucrack can recover the default KOD from a v3 CroStru whose v4 CroBank has its own.
     Records that cannot be read are skipped. Raises NotACronosFile or UnsupportedVersion when CroStru or CroBank
     cannot be read, and ValueError for an unknown method.
     """
@@ -137,7 +143,7 @@ def crack_kod(path: str | os.PathLike[str], method: Literal["strucrack", "dbcrac
         if method == "strucrack":
             kod, confidence = kod_from_xref(stru_xref(stru))
             fill_single_gap(kod, confidence)
-            checked = stru
+            read, other = stru, bank
         else:
             try:
                 index, _ = open_datafile(directory, names, "Index", compact=True, kod=None, log=log)
@@ -145,7 +151,7 @@ def crack_kod(path: str | os.PathLike[str], method: Literal["strucrack", "dbcrac
                 return None
             stack.callback(index.close)
             kod, confidence = kod_from_xref(bank_and_index_xref(bank, index))
-            checked = bank
-    if not kod_is_resolved(kod, confidence) or header_rejects(checked, kod):
-        return None
+            read, other = bank, stru
+        if not kod_is_resolved(kod, confidence) or header_rejects(read, kod) or open_refuses(other, kod):
+            return None
     return Kod.from_table(kod)

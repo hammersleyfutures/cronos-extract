@@ -2,6 +2,7 @@
 # ABOUTME: Uses real databases from tests/cronos_builder.py, and checks that opening prints nothing.
 import os
 from pathlib import Path
+from typing import TypedDict
 
 import pytest
 from cronos_builder import (
@@ -15,6 +16,7 @@ from cronos_builder import (
     database_with_missing_definition,
     database_with_own_kod_v4_bank,
     database_with_wrong_kod_record_out_of_range,
+    definition_with_extra_key,
     patched_table_definition,
     random_kod,
     stru_records_from_test_db,
@@ -40,6 +42,12 @@ SECTION_2_WARNINGS = [
 
 class StopReading(Exception):
     pass
+
+
+class KodArgument(TypedDict, total=False):
+    """open()'s kod argument, given or left out."""
+
+    kod: cronos_extract.Kod | None
 
 
 # Every test here also asserts that opening and reading printed nothing.
@@ -364,7 +372,7 @@ def test_a_kod_a_v4_header_rejects_raises_wrong_kod_naming_the_file_checked_firs
 ) -> None:
     dbdir = v4_database(tmp_path / "db", stru_kod, bank_kod)
     seen: list[cronos_extract.Diagnostic] = []
-    kod = {} if opened_with is None else {"kod": opened_with}
+    kod: KodArgument = {} if opened_with is None else {"kod": opened_with}
 
     with pytest.raises(cronos_extract.WrongKod) as refused:
         cronos_extract.open(dbdir, compact=compact, on_diagnostic=seen.append, **kod)
@@ -500,6 +508,115 @@ def test_crack_kod_recovers_the_kod_of_an_own_kod_v4_bank_that_open_refuses(tmp_
     with pytest.raises(cronos_extract.WrongKod):
         cronos_extract.open(dbdir)
     assert cronos_extract.crack_kod(dbdir, "dbcrack") == OTHER_KOD
+
+
+def test_an_own_kod_v3_database_read_with_the_default_kod_is_not_refused_by_its_headers(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [a_record()], kod=random_kod(seed=1))
+    seen: list[cronos_extract.Diagnostic] = []
+
+    # Without strict_kod, nothing in a v3 header can tell, so only the garbage definition stops opening.
+    with pytest.raises(cronos_extract.DatabaseDefinitionError):
+        cronos_extract.open(dbdir, on_diagnostic=seen.append)
+
+    assert [(diagnostic.kind, diagnostic.file) for diagnostic in seen if diagnostic.kind in KOD_KINDS] == (
+        MISMATCHED_IN_BOTH
+    )
+
+
+@pytest.mark.parametrize("compact", [False, True], ids=["in-memory", "compact"])
+def test_strict_kod_refuses_an_own_kod_v3_stru_read_with_the_default_kod(tmp_path: Path, compact: bool) -> None:
+    dbdir = write_database(tmp_path / "db", [a_record()], kod=random_kod(seed=1))
+    seen: list[cronos_extract.Diagnostic] = []
+
+    with pytest.raises(cronos_extract.WrongKod) as refused:
+        cronos_extract.open(dbdir, strict_kod=True, compact=compact, on_diagnostic=seen.append)
+
+    assert str(refused.value) == (
+        f"CroStru.dat in {dbdir}: the file is encrypted with its own KOD, but is read with the default one; if its "
+        "records do not decode, recover its KOD by cracking it. "
+        'cronos_extract.crack_kod(path, "strucrack") can recover the database\'s KOD.'
+    )
+    assert [(diagnostic.kind, diagnostic.file) for diagnostic in seen] == [
+        (cronos_extract.DiagnosticKind.MISMATCHED_KOD, "CroStru.dat")
+    ]
+
+
+def test_strict_kod_refuses_an_own_kod_v3_bank_read_with_the_default_kod(tmp_path: Path) -> None:
+    write_datafile(tmp_path / "db", "Stru", stru_records_from_test_db(), version=b"01.02", encoded=True)
+    write_datafile(tmp_path / "db", "Bank", [a_record()], kod=random_kod(seed=1), version=b"01.05")
+
+    with pytest.raises(cronos_extract.WrongKod, match=r"^CroBank\.dat .*\"dbcrack\""):
+        cronos_extract.open(tmp_path / "db", strict_kod=True)
+
+
+def test_strict_kod_refuses_a_kod_encoded_file_read_without_kod_decoding(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [a_record()], version=b"01.02", encoded=True)
+
+    with pytest.raises(cronos_extract.WrongKod, match="is KOD-encoded, but is read without KOD decoding"):
+        cronos_extract.open(dbdir, kod=None, strict_kod=True)
+
+
+@pytest.mark.parametrize(
+    ("version", "encoded", "kod"),
+    [
+        (b"01.02", False, None),
+        (b"01.02", True, None),
+        (b"01.04", False, random_kod(seed=1)),
+        (b"01.05", False, random_kod(seed=1)),
+        (b"01.11", True, random_kod(seed=1)),
+    ],
+    ids=["v3-unencoded", "v3-default-kod", "01.04-own-kod", "01.05-own-kod", "v4-own-kod"],
+)
+def test_strict_kod_opens_a_database_read_with_its_kod(
+    tmp_path: Path, version: bytes, encoded: bool, kod: list[int] | None
+) -> None:
+    dbdir = write_database(tmp_path / "db", [a_record()], kod=kod, version=version, encoded=encoded)
+    given = cronos_extract.Kod.default() if kod is None else cronos_extract.Kod.from_table(kod)
+
+    with cronos_extract.open(dbdir, kod=given, strict_kod=True) as bank:
+        assert [record["Entry #1"].text for table in bank.tables for record in table.records()] == ["42"]
+        assert not [diagnostic for diagnostic in bank.diagnostics if diagnostic.kind in KOD_KINDS]
+
+
+def test_strict_kod_refuses_an_own_kod_version_encrypted_with_the_default_kod(tmp_path: Path) -> None:
+    # A v3 header cannot tell this file from one encrypted with its own KOD, so strict_kod refuses both.
+    dbdir = write_database(tmp_path / "db", [a_record()], version=b"01.04", encoded=True)
+
+    with pytest.raises(cronos_extract.WrongKod, match="encrypted with its own KOD, but is read with the default"):
+        cronos_extract.open(dbdir, strict_kod=True)
+
+
+def database_without_tables(directory: Path, undecodable_table: bool = False) -> str:
+    """
+    Write a database whose definition renames Base001 to Xase001, so it holds only the Files table; with
+    `undecodable_table`, it also holds a Base002 that cannot be decoded, as a wrong KOD can leave it.
+    """
+    stru = stru_records_from_test_db()
+    dbinfo = stru[0]
+    assert dbinfo is not None
+    dbinfo = dbinfo.replace(b"\x07Base001", b"\x07Xase001")
+    stru[0] = definition_with_extra_key(dbinfo, "Base002", b"\x00") if undecodable_table else dbinfo
+    write_datafile(directory, "Stru", stru)
+    write_datafile(directory, "Bank", [])
+    return str(directory)
+
+
+@pytest.mark.parametrize("undecodable_table", [False, True], ids=["no-table-key", "undecodable-table"])
+def test_a_definition_without_tables_opens_without_strict_kod(tmp_path: Path, undecodable_table: bool) -> None:
+    with cronos_extract.open(database_without_tables(tmp_path / "db", undecodable_table)) as bank:
+        assert bank.tables == ()
+
+
+@pytest.mark.parametrize("undecodable_table", [False, True], ids=["no-table-key", "undecodable-table"])
+def test_strict_kod_refuses_a_definition_without_tables(tmp_path: Path, undecodable_table: bool) -> None:
+    dbdir = database_without_tables(tmp_path / "db", undecodable_table)
+
+    with pytest.raises(cronos_extract.DatabaseDefinitionError) as refused:
+        cronos_extract.open(dbdir, strict_kod=True)
+
+    assert str(refused.value).startswith(
+        f"the database definition in CroStru.dat of {dbdir} yields no table that can be read. "
+    )
 
 
 def test_an_exception_from_on_diagnostic_during_open_reaches_the_caller(tmp_path: Path) -> None:

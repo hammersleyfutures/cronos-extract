@@ -22,6 +22,7 @@ from cronos_builder import (
     compressed_record,
     corrupt_compressed_record,
     crackable_database,
+    crackable_mixed_version_database,
     database_with_extra_definition_key,
     database_with_files_abbreviation,
     database_with_missing_definition,
@@ -795,6 +796,21 @@ def test_a_crack_whose_kod_the_v4_header_rejects_exits_1_naming_the_crack_comman
         f"Error: dbcrack cannot recover the KOD of {dbdir}; recover it with cronos-extract crack dbcrack {dbdir} "
         "and pass it with --kod\n",
     )
+
+
+def test_a_failed_strucrack_points_at_dbcrack_which_reads_a_mixed_version_database(tmp_path: Path) -> None:
+    dbdir = crackable_mixed_version_database(tmp_path / "db", random_kod(seed=7))
+
+    refused = run_command("cli", ["export", "--jsonl", "--crack", "strucrack", dbdir])
+    exported = run_command("cli", ["export", "--jsonl", "--crack", "dbcrack", dbdir])
+
+    assert refused.returncode == 1
+    assert last_line(refused.stderr) == (
+        f"Error: strucrack cannot recover the KOD of {dbdir}; recover it with cronos-extract crack strucrack {dbdir} "
+        "and pass it with --kod or try --crack dbcrack"
+    )
+    assert exported.returncode == 0
+    assert '"erdgeist"' in exported.stdout
 
 
 def test_strict_exits_1_after_writing_the_output(tmp_path: Path) -> None:
