@@ -15,6 +15,7 @@ This API promises:
 - Only the names in ``__all__`` are public. Other modules and names in the package are private and may change.
 - Iteration is lazy: each step of ``Table.records()`` and ``Bank.files()`` reads CroBank only up to the table's next
   record. CroBank is scanned once for all tables together; each table then reads only its own records.
+  ``Bank.records()`` reads every table's records in one sequential pass, decoding each record once.
 - A ``Bank`` is not thread-safe. Generators from one bank may be interleaved on one thread.
 - The library never prints. Problems that reading survives are ``Diagnostic``s: ``bank.diagnostics`` keeps the first
   1,000, ``bank.diagnostic_counts`` counts every one, and ``on_diagnostic`` receives every one. Diagnostics from

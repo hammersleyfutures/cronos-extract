@@ -11,6 +11,9 @@ This file lists the changes in each release of cronos-extract.
   own KOD (`01.04` or `01.05`) and is read with the default KOD. If the database definition gives no table that the
   library can read, `open()` raises `DatabaseDefinitionError`. Without `strict_kod`, these records decode as garbage,
   and only a diagnostic tells you.
+- `Bank.records()` gives the records of all tables as `(Table, Record)` pairs, in one sequential read of CroBank. It
+  reads and decodes each record one time. Before, a program that read all tables read CroBank again for each table
+  after the first, in an order that is not sequential.
 
 ### Fixes
 
@@ -18,6 +21,11 @@ This file lists the changes in each release of cronos-extract.
   from `crack_kod()`. Before, `"strucrack"` could return the default KOD of a v3 CroStru when CroBank was v4 and
   encrypted with its own KOD.
 - If `export --crack strucrack` cannot recover the KOD, the `Error:` line tells you to try `--crack dbcrack` first.
+- The library reads each record from the `.dat` file with `os.pread()`, where the system has it. Thus it reads only the
+  bytes of the record. Before, each read of a record outside the buffer of the file filled the full buffer. On a
+  network file system with a buffer of 128 KiB, this read about 2,600 times more bytes than the records held. On
+  Windows, which has no `os.pread()`, the library reads as before. The library also reads no more bytes than the file
+  holds for a record with a corrupt length.
 
 ## 1.0.0
 

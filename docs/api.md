@@ -53,7 +53,7 @@ private. A later version can change them without notice.
 **Imports.** `from cronos_extract import *` replaces the built-in `open`. For this reason, the examples use
 `import cronos_extract`.
 
-**Lazy reading.** `Table.records()` and `Bank.files()` are generators. Each step reads CroBank records only up to the
+**Lazy reading.** `Table.records()`, `Bank.records()` and `Bank.files()` are generators. Each step reads CroBank records only up to the
 next record of its table. The library reads CroBank one time for all tables together. The first generator that reaches a
 CroBank record adds it to an index of the records of each table. After that, a table reads only its own records.
 
@@ -172,6 +172,14 @@ If the `.tad` header of CroBank lists more deleted records than the `.tad` file 
 `bank.diagnostic_counts[kind]` is 0 for a kind that did not occur. But that kind is not `in` the mapping, and it is not
 one of its keys.
 
+`records()` is a generator of the records of all tables, as `(Table, Record)` pairs. It gives them in CroBank order,
+in one sequential read of CroBank. It reads and decodes each record one time. Use it to read the whole database, for
+example to export it: with `Table.records()`, each table after the first reads its records from CroBank again, in an
+order that is not sequential. `records()` does not give the records of the Files table, deleted records, or records
+of no table. If two tables have the same table id, `records()` gives each record of that id one time for each of these
+tables, in the order of `bank.tables`. The records that `records()` reaches go into the index of CroBank, as with
+`Table.records()`.
+
 `files()` is a generator of the files in the Files table, as `EmbeddedFile` objects. It gives them in CroBank order.
 Each step reads CroBank records only up to the next record of the Files table. Each `EmbeddedFile` from `files()` has
 the name `None`, because the Files table stores no names. If the database has no Files table, `files()` gives nothing.
@@ -200,7 +208,8 @@ reads CroBank records only up to the next record of the table.
 `records()` does not give deleted records. It also does not give a record that it cannot read. It records
 `corrupt_record` for that record instead.
 
-If the table id is more than 255, `records()` gives nothing and records `unsupported_table`.
+If the table id is more than 255, `records()` gives nothing and records `unsupported_table`. `Bank.records()` also
+records `unsupported_table` for this table, and gives none of its records.
 
 An `OSError` from reading a Cro file goes to the caller of the generator.
 
