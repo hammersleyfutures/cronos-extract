@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from typing import BinaryIO
 
 from ._diagnostic import Diagnostic, DiagnosticKind, Reporter
+from ._format.files import read_at
 from ._format.header import read_dat_header, read_kod_check
 from ._format.record import RecordParts, RecordSource, decode_record, decompress, is_compressed, read_stored
 from ._format.tad import DELETED_LENGTH, TadEntry, tad_layout
@@ -124,8 +125,7 @@ class Datafile:
                 f"Cro{self.name}.tad has no entry {index}; its entries are numbered 0 to {self.nrofrecords - 1}"
             )
         if self.compact:
-            self.tad.seek(self.tadhdrlen + index * self.tadentrysize)
-            raw = self.tad.read(self.tadentrysize)
+            raw = read_at(self.tad, self.tadhdrlen + index * self.tadentrysize, self.tadentrysize)
         else:
             start = index * self.tadentrysize
             raw = self.idxdata[start : start + self.tadentrysize]
@@ -133,15 +133,15 @@ class Datafile:
 
     def readdata(self, ofs: int, size: int) -> bytes:
         """
-        Read raw data from the .dat file.
+        Read up to `size` bytes of the .dat file at `ofs`, with read_at, so that each read costs about its size.
 
         Returns b"" without seeking when `ofs` is outside 0..self.datsize: some filesystems raise OSError on a
         seek far past the end of the file, where seeking within the file (or exactly to its end) does not.
         """
         if not 0 <= ofs <= self.datsize:
             return b""
-        self.dat.seek(ofs)
-        return self.dat.read(size)
+        # A corrupt length can be up to 4 GiB, which pread would allocate before reading.
+        return read_at(self.dat, ofs, max(0, min(size, self.datsize - ofs)))
 
     def read_record(self, recno: int) -> RecordParts | None:
         """

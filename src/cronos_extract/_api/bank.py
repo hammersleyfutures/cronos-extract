@@ -170,6 +170,20 @@ class Bank:
         if self._closed:
             raise ValueError(f"the bank in {self._directory} is closed")
 
+    def records(self) -> Iterator[tuple[Table, Record]]:
+        """
+        Every record of every table, as (table, record) pairs in CroBank order, read lazily in one sequential pass.
+
+        Each record is read and decoded once, so a full export does not read CroBank again for each table. A record
+        whose table id more than one table has is yielded once for each of them, in table order. Files table records
+        and records of no table are skipped. The records it reaches are indexed for every table, as Table.records()
+        does, so a table read afterwards reads only its own records.
+
+        Raises ValueError when the bank is closed, now or at any later step.
+        """
+        self._check_open()
+        return self._all_records()
+
     def files(self) -> Iterator[EmbeddedFile]:
         """
         The files stored in the Files table, in CroBank order, without names, read lazily: each step reads CroBank
@@ -260,25 +274,62 @@ class Bank:
             )
         return parts.data
 
-    def _records(self, table: Table) -> Iterator[Record]:
-        if table.id > LARGEST_TABLE_ID:
-            if table.id not in self._unsupported_tables:
-                self._unsupported_tables.add(table.id)
-                self._log.record(
-                    Diagnostic(
-                        DiagnosticKind.UNSUPPORTED_TABLE,
-                        f"the table has id {table.id}, but this release reads only tables with ids up to "
-                        f"{LARGEST_TABLE_ID}, so its records are not read",
-                        file=STRU_FILE,
-                        table=table.name,
-                    )
+    def _supported(self, table: Table) -> bool:
+        """Whether this release reads the records of `table`, reporting unsupported_table the first time it does not."""
+        if table.id <= LARGEST_TABLE_ID:
+            return True
+        if table.id not in self._unsupported_tables:
+            self._unsupported_tables.add(table.id)
+            self._log.record(
+                Diagnostic(
+                    DiagnosticKind.UNSUPPORTED_TABLE,
+                    f"the table has id {table.id}, but this release reads only tables with ids up to "
+                    f"{LARGEST_TABLE_ID}, so its records are not read",
+                    file=STRU_FILE,
+                    table=table.name,
                 )
+            )
+        return False
+
+    def _decode(self, table: Table, number: int, data: bytes) -> Record:
+        """Decode CroBank record `number`, whose `data` starts with its table-id byte, as a record of `table`."""
+        record = decode_record(number, table.name, table.fields, table._definition.fields, data[1:])
+        for diagnostic in record.diagnostics:
+            self._log.record(diagnostic)
+        return record
+
+    def _records(self, table: Table) -> Iterator[Record]:
+        if not self._supported(table):
             return
         for number, data in self._table_records(table.id):
-            record = decode_record(number, table.name, table.fields, table._definition.fields, data[1:])
-            for diagnostic in record.diagnostics:
-                self._log.record(diagnostic)
-            yield record
+            yield self._decode(table, number, data)
+
+    def _all_records(self) -> Iterator[tuple[Table, Record]]:
+        tables_by_id: dict[int, list[Table]] = {}
+        for table in self._tables:
+            if self._supported(table):
+                tables_by_id.setdefault(table.id, []).append(table)
+        for number, data in self._scan():
+            for table in tables_by_id.get(data[0], ()):
+                yield table, self._decode(table, number, data)
+
+    def _scan(self) -> Iterator[tuple[int, bytes]]:
+        """
+        Each readable CroBank record number with its data, table-id byte included, in CroBank order.
+
+        Records the shared scan has passed are read again; past them, each step advances the shared scan and indexes
+        its record, as _table_records does.
+        """
+        number = 1
+        while number <= self._bank_file.nrofrecords:
+            data = self._read(number)
+            if number == self._scan_position:
+                if data:
+                    self._listed(data[0]).append(number)
+                self._scan_position = number + 1
+            if data:
+                yield number, data
+            number += 1
 
     def _files(self) -> Iterator[EmbeddedFile]:
         if self._files_table_id is None:

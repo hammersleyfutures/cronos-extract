@@ -525,6 +525,101 @@ def test_a_scan_stopped_by_on_diagnostic_at_a_live_record_still_indexes_it(tmp_p
 
 
 @pytest.mark.usefixtures("prints_nothing")
+def test_bank_records_reads_every_record_once_in_crobank_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    dbdir = mixed_database(tmp_path / "db")
+    expected = sequential_reads(dbdir)
+
+    with cronos_extract.open(dbdir) as bank:
+        reads = record_reads(bank, monkeypatch)
+        first, second = bank.tables
+        pairs = list(bank.records())
+
+    assert [(table.name, table.id, record.number) for table, record in pairs] == [
+        (first.name, first.id, 1),
+        (second.name, second.id, 2),
+        (first.name, first.id, 6),
+        (second.name, second.id, 7),
+        (first.name, first.id, 9),
+    ]
+    assert [record for table, record in pairs if table is first] == expected[0]
+    assert [record for table, record in pairs if table is second] == expected[1]
+    assert reads == list(range(1, 10))
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_bank_records_indexes_crobank_for_the_tables_read_afterwards(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dbdir = mixed_database(tmp_path / "db")
+    expected = sequential_reads(dbdir)
+
+    with cronos_extract.open(dbdir) as bank:
+        first, second = bank.tables
+        pairs = bank.records()
+        # Stop after record 2, so the tables read the rest of CroBank themselves.
+        assert [record.number for _, record in (next(pairs), next(pairs))] == [1, 2]
+        reads = record_reads(bank, monkeypatch)
+        assert list(second.records()) == expected[1]
+        assert reads == [2, *range(3, 10)]
+        reads.clear()
+        assert list(first.records()) == expected[0]
+        assert reads == TABLE_1_NUMBERS
+        assert [record.number for _, record in pairs] == [6, 7, 9]
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_bank_records_after_the_tables_yields_what_they_did(tmp_path: Path) -> None:
+    dbdir = mixed_database(tmp_path / "db")
+    expected = sequential_reads(dbdir)
+
+    with cronos_extract.open(dbdir) as bank:
+        first, second = bank.tables
+        list(first.records())
+        pairs = list(bank.records())
+
+    assert [record for table, record in pairs if table is first] == expected[0]
+    assert [record for table, record in pairs if table is second] == expected[1]
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_bank_records_yields_a_record_once_for_each_table_with_its_id(tmp_path: Path) -> None:
+    other = renamed_table_definition(patched_table_definition(tableid=TEST_TABLE_ID), name=b"other")
+    dbdir = database_with_extra_definition_key(tmp_path / "db", "Base002", other, [person(), person()])
+
+    with cronos_extract.open(dbdir) as bank:
+        pairs = [(table.name, record.number) for table, record in bank.records()]
+
+    assert pairs == [("erdgeist", 1), ("other", 1), ("erdgeist", 2), ("other", 2)]
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_bank_records_reports_a_table_with_an_id_above_255_once(tmp_path: Path) -> None:
+    dbdir = database_with_extra_definition_key(
+        tmp_path / "db", "Base002", patched_table_definition(tableid=300), [person()]
+    )
+
+    with cronos_extract.open(dbdir) as bank:
+        assert [(table.name, record.number) for table, record in bank.records()] == [("erdgeist", 1)]
+        assert list(bank.tables[1].records()) == []
+        assert counts(bank, cronos_extract.DiagnosticKind.UNSUPPORTED_TABLE) == 1
+
+
+@pytest.mark.usefixtures("prints_nothing")
+def test_bank_records_refuses_a_closed_bank(tmp_path: Path) -> None:
+    dbdir = write_database(tmp_path / "db", [person(), person()])
+    bank = cronos_extract.open(dbdir)
+    pairs = bank.records()
+    next(pairs)
+
+    bank.close()
+
+    with pytest.raises(ValueError, match="is closed"):
+        next(pairs)
+    with pytest.raises(ValueError, match="is closed"):
+        bank.records()
+
+
+@pytest.mark.usefixtures("prints_nothing")
 def test_files_yields_the_files_table_records_without_names(tmp_path: Path) -> None:
     dbdir = write_database(tmp_path / "db", [person(), file_record(b"first"), None, file_record(b"second")])
 

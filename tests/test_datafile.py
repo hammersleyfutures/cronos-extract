@@ -1,6 +1,7 @@
 # ABOUTME: Tests for cronos_extract.Datafile reading records stored in extension blocks, including corrupt ones.
 # ABOUTME: Lays out .dat and .tad files byte by byte with tests/cronos_builder.write_raw_datafile.
 import argparse
+import os
 import struct
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -263,3 +264,26 @@ def test_a_datafile_keeps_the_kod_check_bytes_on_its_header(tmp_path: Path) -> N
     with open_bank(tmp_path) as bank:
         assert bank.header.kod_check == (tmp_path / "CroBank.dat").read_bytes()[19:27]
         assert len(bank.header.kod_check) == 8
+
+
+@pytest.mark.parametrize("compact", [False, True], ids=["in-memory", "compact"])
+@pytest.mark.skipif(not hasattr(os, "pread"), reason="the system has no pread")
+def test_a_corrupt_record_length_reads_no_more_than_the_file_holds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, compact: bool
+) -> None:
+    write_raw_datafile(tmp_path, "Bank", b"\x01abc", [(FIRST_BLOCK, 0x7FFFFFF0 | V3_INLINE_BIT)])
+    asked: list[int] = []
+    real_pread = os.pread
+
+    def counting_pread(descriptor: int, size: int, offset: int) -> bytes:
+        asked.append(size)
+        return real_pread(descriptor, size, offset)
+
+    monkeypatch.setattr(os, "pread", counting_pread)
+    with (tmp_path / "CroBank.dat").open("rb") as dat, (tmp_path / "CroBank.tad").open("rb") as tad:
+        datafile = Datafile("Bank", dat, tad, compact, None, report=ignore_problems)
+        with pytest.raises(ValueError, match=r"record 1 .* runs past the end of the file"):
+            datafile.read_record(1)
+
+    # A 2 GiB length would make pread allocate 2 GiB before it reads; the read stops at the end of the file.
+    assert max(asked) <= datafile.datsize
