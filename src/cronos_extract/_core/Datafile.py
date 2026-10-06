@@ -44,6 +44,8 @@ class Datafile:
         self.datsize = self.dat.tell()
 
         self.kod, problem = select_kod(self.header, kod, f"Cro{self.name}.dat")
+        # The diagnostic choosing the KOD reported, kept so that open(strict_kod=True) can refuse what was decided.
+        self.kod_problem = problem
         if problem is not None:
             self.report(problem)
         self.source = RecordSource(self.name, self.readdata, self.datsize, self.blocksize, self.use64bit, self.kod)

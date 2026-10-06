@@ -65,11 +65,16 @@ def selected_kod(args: argparse.Namespace) -> Kod | None:
     if args.crack is not None:
         kod = crack_kod(args.dbdir, args.crack)
         if kod is None:
-            # A database can mix a v3 CroStru with a v4 CroBank whose own KOD only CroBank's records give.
-            other = " or try --crack dbcrack" if args.crack == "strucrack" else ""
+            if args.crack == "strucrack":
+                # A database can mix a v3 CroStru with a v4 CroBank whose own KOD only CroBank's records give, and
+                # crack strucrack, which reads only CroStru, would print the KOD CroBank's header rejects.
+                raise Failure(
+                    f"strucrack cannot recover the KOD of {args.dbdir}; try --crack dbcrack, or recover it with "
+                    f"cronos-extract crack strucrack {args.dbdir} and pass it with --kod"
+                )
             raise Failure(
                 f"{args.crack} cannot recover the KOD of {args.dbdir}; recover it with "
-                f"cronos-extract crack {args.crack} {args.dbdir} and pass it with --kod{other}"
+                f"cronos-extract crack {args.crack} {args.dbdir} and pass it with --kod"
             )
         return kod
     return Kod.default()

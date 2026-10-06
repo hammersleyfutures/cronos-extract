@@ -1,5 +1,7 @@
 # ABOUTME: open() and the Bank and Table classes, the public way to read a CronosPro database.
 # ABOUTME: Drives the internal Database, TableDefinition and Datafile readers and reports problems as diagnostics.
+import bisect
+import heapq
 import os
 from array import array
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -11,7 +13,7 @@ from typing import Self, override
 from .._core.Database import Database
 from .._core.Datafile import Datafile
 from .._core.Datamodel import TableDefinition, describe_error, is_table_key, undecodable_table
-from .._core.koddecoder import kod_fits_header, select_kod
+from .._core.koddecoder import kod_fits_header
 from .._diagnostic import STRU_FILE, for_table_definition
 from .datafiles import database_directory, list_directory, open_datafile, optional_file_info
 from .diagnostics import Diagnostic, DiagnosticKind, DiagnosticLog, RecordNumbers
@@ -177,7 +179,8 @@ class Bank:
         Each record is read and decoded once, so a full export does not read CroBank again for each table. A record
         whose table id more than one table has is yielded once for each of them, in table order. Files table records
         and records of no table are skipped. The records it reaches are indexed for every table, as Table.records()
-        does, so a table read afterwards reads only its own records.
+        does, so a table read afterwards reads only its own records; records an earlier generator indexed are read
+        only when they belong to a table.
 
         Raises ValueError when the bank is closed, now or at any later step.
         """
@@ -309,25 +312,33 @@ class Bank:
         for table in self._tables:
             if self._supported(table):
                 tables_by_id.setdefault(table.id, []).append(table)
-        for number, data in self._scan():
-            for table in tables_by_id.get(data[0], ()):
+        for number, data in self._scan(set(tables_by_id)):
+            for table in tables_by_id[data[0]]:
                 yield table, self._decode(table, number, data)
 
-    def _scan(self) -> Iterator[tuple[int, bytes]]:
+    def _scan(self, table_ids: set[int]) -> Iterator[tuple[int, bytes]]:
         """
-        Each readable CroBank record number with its data, table-id byte included, in CroBank order.
+        Each readable CroBank record number of the tables `table_ids` with its data, table-id byte included, in
+        CroBank order.
 
-        Records the shared scan has passed are read again; past them, each step advances the shared scan and indexes
-        its record, as _table_records does.
+        Below the shared scan's position when it starts, it reads only the records the index lists under `table_ids`;
+        from there, each step advances the shared scan and indexes its record, as _table_records does.
         """
-        number = 1
+        start = self._scan_position
+        listed = [self._listed(table_id) for table_id in table_ids]
+        # The index only grows past the scan position, so the records below `start` are fixed.
+        for number in heapq.merge(*(numbers[: bisect.bisect_left(numbers, start)] for numbers in listed)):
+            data = self._read(number)
+            if data and data[0] in table_ids:
+                yield number, data
+        number = start
         while number <= self._bank_file.nrofrecords:
             data = self._read(number)
             if number == self._scan_position:
                 if data:
                     self._listed(data[0]).append(number)
                 self._scan_position = number + 1
-            if data:
+            if data and data[0] in table_ids:
                 yield number, data
             number += 1
 
@@ -432,9 +443,9 @@ def refuse_a_kod_the_header_rejects(datafile: Datafile, directory: Path, hint: s
         )
 
 
-def refuse_a_mismatched_kod(datafile: Datafile, kod: Kod | None, directory: Path, hint: str) -> None:
-    """Raise WrongKod, ending with `hint`, when `datafile` is read with a KOD it reports as mismatched_kod."""
-    _, problem = select_kod(datafile.header, kod_coder(kod), f"Cro{datafile.name}.dat")
+def refuse_a_mismatched_kod(datafile: Datafile, directory: Path, hint: str) -> None:
+    """Raise WrongKod, ending with `hint`, when `datafile` reported mismatched_kod while choosing its KOD."""
+    problem = datafile.kod_problem
     if problem is not None and problem.kind == DiagnosticKind.MISMATCHED_KOD:
         raise WrongKod(f"Cro{datafile.name}.dat in {directory}: {problem.message}. {hint}")
 
@@ -457,10 +468,11 @@ def open(
     CroBank's .tad header lists, which are not read; a header listing more than the .tad has entries is reported as
     unexpected_structure, and `deleted_records` is then the number of entries.
 
-    `strict_kod` refuses every way a KOD can be wrong that open() would otherwise survive: a CroStru or CroBank that
+    `strict_kod` refuses the wrong KODs that open() can detect but would otherwise survive: a CroStru or CroBank that
     reports mismatched_kod raises WrongKod, such as a v3 file encrypted with its own KOD (01.04, 01.05) read with
     the default, or a KOD-encoded file read with `kod` None; a database definition that yields no tables raises
-    DatabaseDefinitionError.
+    DatabaseDefinitionError. No header can show that a KOD given for a v3 file encrypted with its own KOD is wrong, so
+    such a KOD is not refused.
 
     Raises OSError when `path` does not exist, is not a directory or cannot be listed; TypeError for a bytes path;
     NotACronosFile or UnsupportedVersion when CroStru or CroBank cannot be read; WrongKod when the header of a
@@ -475,12 +487,12 @@ def open(
         stack.callback(stru.close)
         refuse_a_kod_the_header_rejects(stru, directory, STRU_KOD_HINT)
         if strict_kod:
-            refuse_a_mismatched_kod(stru, kod, directory, STRU_KOD_HINT)
+            refuse_a_mismatched_kod(stru, directory, STRU_KOD_HINT)
         bank_file, bank_info = open_datafile(directory, names, "Bank", compact=compact, kod=kod, log=log)
         stack.callback(bank_file.close)
         refuse_a_kod_the_header_rejects(bank_file, directory, BANK_KOD_HINT)
         if strict_kod:
-            refuse_a_mismatched_kod(bank_file, kod, directory, BANK_KOD_HINT)
+            refuse_a_mismatched_kod(bank_file, directory, BANK_KOD_HINT)
         deleted_records = bank_file.nrdeleted
         if deleted_records > bank_file.nrofrecords:
             log.record(
@@ -506,7 +518,7 @@ def open(
         if strict_kod and not bank.tables:
             raise DatabaseDefinitionError(
                 f"the database definition in {STRU_FILE} of {directory} yields no table that can be read. "
-                f"{DEFINITION_HINT}"
+                f"{DEFINITION_HINT} If the KOD is right, the database has no table; open it without strict_kod."
             )
         stack.pop_all()
     return bank
