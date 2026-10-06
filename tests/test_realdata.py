@@ -19,12 +19,12 @@ from cronos_extract._api.datafiles import list_directory, open_datafile
 from cronos_extract._api.diagnostics import DiagnosticLog
 from cronos_extract._api.info import read_file_info
 from cronos_extract._cli.sql_out import unique_sql_table_name
+from cronos_extract._cli.survey import SurveyedDatabase, read_path_list, survey_databases
+from cronos_extract._core.Datamodel import TableDefinition, is_table_key
+from cronos_extract._core.koddecoder import KODcoding, kod_fits_header
 from cronos_extract._format.header import read_dat_header, read_kod_check
 from cronos_extract._format.tad import DELETED_LENGTH, V4_FLAG_SHIFT, is_v4_deleted
 from cronos_extract._format.tad import tad_layout as production_tad_layout
-from cronos_extract.Datamodel import TableDefinition, is_table_key
-from cronos_extract.koddecoder import KODcoding, kod_fits_header
-from cronos_extract.survey import SurveyedDatabase, read_path_list, survey_databases
 
 pytestmark = pytest.mark.realdata
 

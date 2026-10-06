@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-from ._api.info import FileInfo, read_file_info
+from .._api.info import FileInfo, read_file_info
 
 
 @dataclass(frozen=True)

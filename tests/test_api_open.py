@@ -27,8 +27,8 @@ from cronos_builder import (
 )
 
 import cronos_extract
+from cronos_extract._core.koddecoder import INITIAL_KOD
 from cronos_extract._format.header import DAT_HEADER
-from cronos_extract.koddecoder import INITIAL_KOD
 
 SECTION_2_WARNINGS = [
     cronos_extract.Diagnostic(

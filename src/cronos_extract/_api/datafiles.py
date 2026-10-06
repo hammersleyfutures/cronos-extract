@@ -4,10 +4,10 @@ import os
 from contextlib import ExitStack
 from pathlib import Path
 
+from .._core.Datafile import Datafile
 from .._format.files import open_regular_file
 from .._format.header import read_dat_header
 from .._format.tad import tad_layout
-from ..Datafile import Datafile
 from .diagnostics import Diagnostic, DiagnosticKind, DiagnosticLog
 from .errors import NotACronosFile, UnsupportedVersion
 from .info import FileInfo, info_from_header, info_from_problem, read_file_info

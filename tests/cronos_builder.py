@@ -7,12 +7,12 @@ from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from cronos_extract._core.Database import Database
+from cronos_extract._core.Datamodel import TableDefinition
+from cronos_extract._core.koddecoder import INITIAL_KOD, KODcoding
+from cronos_extract._core.readers import ByteReader
 from cronos_extract._diagnostic import Diagnostic
 from cronos_extract._format.header import KOD_CHECK_SIZE
-from cronos_extract.Database import Database
-from cronos_extract.Datamodel import TableDefinition
-from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
-from cronos_extract.readers import ByteReader
 
 TEST_DB = Path(__file__).resolve().parent.parent / "test_data" / "all_field_types"
 
@@ -593,3 +593,41 @@ def write_kod_check(directory: Path, name: str, kod: Sequence[int]) -> None:
     data = bytearray(path.read_bytes())
     data[DAT_HEADER.size : DAT_HEADER.size + KOD_CHECK_SIZE] = KODcoding(list(kod)).encode(0, bytes(KOD_CHECK_SIZE))
     path.write_bytes(bytes(data))
+
+
+# The CroBank records of test_data/sample_bank, which write_sample_bank writes; see test_data/README.md.
+SAMPLE_BANK_RECORDS = [
+    bank_record(
+        TEST_TABLE_ID,
+        [
+            b"1",
+            b"Hammersley",
+            "Привет".encode("cp1251"),
+            b"1240315",
+            b"0930",
+            file_reference_field("notes", "txt", 4),
+            b"",
+            b"",
+            b"",
+            b"",
+            b"",
+        ],
+    ),
+    compressed_record(bank_record(TEST_TABLE_ID, [b"2", b"Ivanova", b"", b"850000", b"", b"", b"seven"] + [b""] * 4)),
+    bank_record(
+        TEST_TABLE_ID,
+        [b"3", b"Smith", b"", b"", b"1745", file_reference_field("scan", "jpg", ""), b"", b"", b"", b"", b""],
+    ),
+    file_record(b"Hello from the Files table.\n"),
+]
+
+
+def write_sample_bank(directory: Path) -> str:
+    """
+    Write test_data/sample_bank to `directory`: TEST_DB's table definitions and SAMPLE_BANK_RECORDS, as version
+    01.02 KOD-encoded with the default KOD, as many real databases store them; return its directory path.
+
+    Its table has three live records: a date, a year-only date, times, Cyrillic text, a compressed record, a file
+    reference to a stored file, and a file reference with no record number; the Files table stores one file.
+    """
+    return write_database(directory, SAMPLE_BANK_RECORDS, version=b"01.02", encoded=True)

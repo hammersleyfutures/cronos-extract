@@ -5,8 +5,8 @@ from collections.abc import Iterator
 from contextlib import ExitStack
 from typing import Literal
 
-from ..Datafile import Datafile
-from ..koddecoder import KODcoding, kod_fits_header
+from .._core.Datafile import Datafile
+from .._core.koddecoder import KODcoding, kod_fits_header
 from .datafiles import database_directory, list_directory, open_datafile
 from .diagnostics import DiagnosticLog
 from .errors import NotACronosFile, UnsupportedVersion

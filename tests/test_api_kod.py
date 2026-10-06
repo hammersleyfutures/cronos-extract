@@ -5,7 +5,7 @@ from cronos_builder import random_kod
 
 from cronos_extract import Kod
 from cronos_extract._api.kod import kod_coder
-from cronos_extract.koddecoder import INITIAL_KOD, KODcoding
+from cronos_extract._core.koddecoder import INITIAL_KOD, KODcoding
 
 
 def test_the_default_kod_is_the_initial_kod_table() -> None:

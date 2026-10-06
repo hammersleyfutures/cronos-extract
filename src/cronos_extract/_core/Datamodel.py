@@ -4,7 +4,7 @@
 import argparse
 from typing import cast, override
 
-from ._diagnostic import STRU_FILE, Diagnostic, DiagnosticKind, Reporter
+from .._diagnostic import STRU_FILE, Diagnostic, DiagnosticKind, Reporter
 from .hexdump import ashex, tohex
 from .readers import ByteReader, decode_cp1251
 

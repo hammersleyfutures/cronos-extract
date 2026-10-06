@@ -270,6 +270,12 @@ returns the file.
 | `referrer` | The CroBank record number of the record that holds the reference. |
 | `field` | The name of the field that holds the reference. |
 
+A reference with the `record` `None` names a file that the database does not store. Real databases hold many such
+references, for example to a file that CronosPro linked from the disk and did not embed. The `name` and the
+`extension` of such a reference are correct, and they are the only record of the file that the record refers to.
+Thus keep them: do not treat the reference as empty. `Bank.read_file()` returns `None` for such a reference and
+records `unresolved_file_reference`. The CSV, PostgreSQL and JSON Lines exports keep the name and the extension.
+
 If you make a `FileReference` without `table`, `referrer` and `field`, they are `None`. The diagnostic
 `unresolved_file_reference` uses them as its location.
 

@@ -1,4 +1,4 @@
-# ABOUTME: Tests for cronos_extract.survey, which reports the CronosPro version of every database under a directory.
+# ABOUTME: Tests for cronos_extract._cli.survey, which reports the CronosPro version of every database in a directory.
 # ABOUTME: Uses databases from tests/cronos_builder.py and header-only files for v4 and v7.
 import json
 import os
@@ -9,7 +9,7 @@ import pytest
 from cli import run_command
 from cronos_builder import write_database, write_header_only_datafile
 
-from cronos_extract.survey import survey_databases, survey_roots
+from cronos_extract._cli.survey import survey_databases, survey_roots
 
 
 def test_survey_describes_a_built_database(tmp_path: Path) -> None:
