@@ -103,7 +103,7 @@ and the table definitions. It does not read the records.
 | `path` | The directory of the database, as `str` or `os.PathLike[str]`. The names of the Cro files match without regard to case. |
 | `kod` | The KOD that decodes the records. The default is `Kod.default()`. With `None`, `open()` reads all records without KOD decoding. |
 | `compact` | With `True`, `open()` reads the `.tad` index of CroStru and CroBank from the disk for each record. With `False`, it keeps each `.tad` file in memory. `compact=True` is for very large databases. |
-| `strict_kod` | With `True`, `open()` raises an exception for each KOD problem that it otherwise survives. The section [Strict KOD](#strict-kod) gives the cases. |
+| `strict_kod` | With `True`, `open()` raises an exception for the KOD problems that it can find but otherwise survives. The section [Strict KOD](#strict-kod) gives the cases. |
 | `on_diagnostic` | A function that receives each diagnostic at the time that the library records it. |
 
 `open()` uses the `kod` only for a Cro file that is encrypted with its own KOD. These files are versions `01.04`,
@@ -126,8 +126,15 @@ cases, a wrong KOD gives only a `mismatched_kod` diagnostic, and the records dec
   wrong KOD can decode the definition into data that has the correct layout, but that has no table definitions that
   the library can decode.
 
-Thus, with `strict_kod=True`, one `except` clause for `WrongKod` and `DatabaseDefinitionError` catches all wrong-KOD
-cases. Then, you can recover the KOD with `crack_kod()`.
+Thus, with `strict_kod=True`, one `except` clause for `WrongKod` and `DatabaseDefinitionError` catches each wrong KOD
+that the library can find. Then, you can recover the KOD with `crack_kod()`.
+
+`strict_kod` cannot find all wrong KODs. If you give a KOD for a v3 file that is encrypted with its own KOD, no header
+shows whether this KOD is correct. If the database definition also decodes, `open()` does not raise an exception, and
+the records of this file decode as garbage.
+
+If the KOD is correct but the database has no table, `open()` with `strict_kod=True` raises
+`DatabaseDefinitionError` too. Open such a database without `strict_kod`.
 
 An exception from `on_diagnostic` goes to the code that recorded the diagnostic. This code is `open()`, a generator
 step, or `Bank.read_file()`. Thus, `on_diagnostic` can stop the reading with an exception.
@@ -335,9 +342,10 @@ To open a database that is encrypted with its own KOD, do these steps:
    `crack_kod(path, "dbcrack")`.
 6. If this result is not `None`, do step 4 again with it.
 
-Step 5 is for v3 files that are encrypted with their own KOD. Give `strict_kod=True` to `open()` in step 4. Then a
-wrong KOD for these files also raises `WrongKod` or `DatabaseDefinitionError`, and does not decode the records as
-garbage.
+Step 5 is for v3 files that are encrypted with their own KOD. If you give `strict_kod=True` to `open()` in step 4, more
+wrong KODs raise `WrongKod` or `DatabaseDefinitionError`. But then a `01.04` or `01.05` database that is encrypted with
+the default KOD also raises `WrongKod`, because its header cannot show which KOD encrypted it. If `crack_kod()` gives
+the default KOD for such a database, open it without `strict_kod`.
 
 ## FileInfo
 
